@@ -26,17 +26,18 @@ from agentxray.stochastic_baselines import (
 )
 from agentxray.stochastic_minimizer import StochasticDeltaDebugMinimizer
 from benchmarks.model_pilot.ground_truth import evaluate_model_pilot_ground_truth
-from benchmarks.model_pilot.tasks import get_all_model_pilot_tasks
+from benchmarks.model_pilot.tasks import get_model_pilot_tasks
 
 
 def dry_run_model_pilot(
     provider_type: str = "fake",
     model_name: str = "fake-model-pilot",
     live: bool = False,
+    task_filter: str | None = "all",
     trials_per_candidate: int = 5,
     max_trials: int = 50,
-    max_model_requests: int = 500,
-    max_spend_usd: float = 2.00,
+    max_model_requests: int = 150,
+    max_spend_usd: float = 1.00,
 ) -> dict[str, Any]:
     """Inspect and validate experiment parameters and estimate costs without contacting any provider."""
     # Check credentials
@@ -49,16 +50,7 @@ def dry_run_model_pilot(
     )
     tracker = CostTracker(budget_cfg)
 
-    # Pre-flight cost estimation for 3 tasks
-    planned_target_calls = min(max_trials, 3 * 15)  # estimate ~15 calls per task
-    cost_est = tracker.estimate_preflight_cost(
-        planned_trials=planned_target_calls,
-        turns_per_trial=2,
-        est_prompt_tokens_per_turn=250,
-        est_completion_tokens_per_turn=50,
-    )
-
-    tasks_info = [
+    all_tasks_meta = [
         {
             "task_id": "pilot_baseline_calc",
             "name": "Model Pilot Baseline (Control)",
@@ -79,7 +71,32 @@ def dry_run_model_pilot(
         },
     ]
 
+    filter_key = (task_filter or "all").strip().lower()
+    if filter_key in ("baseline", "pilot_baseline_calc", "control"):
+        tasks_info = [all_tasks_meta[0]]
+    elif filter_key in ("conflicting_prompt", "pilot_conflicting_prompt", "prompt"):
+        tasks_info = [all_tasks_meta[1]]
+    elif filter_key in ("distractor_override", "pilot_distractor_override", "distractor"):
+        tasks_info = [all_tasks_meta[2]]
+    else:
+        tasks_info = all_tasks_meta
+
+    # Pre-flight cost estimation based on selected tasks
+    planned_target_calls = min(max_trials, len(tasks_info) * 15)  # estimate ~15 calls per task
+    cost_est = tracker.estimate_preflight_cost(
+        planned_trials=planned_target_calls,
+        turns_per_trial=2,
+        est_prompt_tokens_per_turn=250,
+        est_completion_tokens_per_turn=50,
+    )
+
     can_execute_live = (provider_type == "openai" and live and api_key_set)
+
+    # Validate spend limit
+    spend_cap_valid = (max_spend_usd <= 1.00) if live else True
+    status = "VALID" if ((provider_type == "fake" or can_execute_live) and spend_cap_valid) else (
+        "INVALID_SPEND_CAP_EXCEEDS_PILOT_LIMIT" if not spend_cap_valid else "REQUIRES_AUTH_OR_OPT_IN"
+    )
 
     return {
         "provider_type": provider_type,
@@ -89,11 +106,12 @@ def dry_run_model_pilot(
         "connectivity_verified": False,
         "network_transport_contacted": False,
         "can_execute_live": can_execute_live,
+        "task_filter": task_filter,
         "tasks": tasks_info,
         "trials_per_candidate": trials_per_candidate,
         "max_trials_per_algorithm": max_trials,
         "cost_estimation": cost_est,
-        "status": "VALID" if (provider_type == "fake" or can_execute_live) else "REQUIRES_AUTH_OR_OPT_IN",
+        "status": status,
     }
 
 
@@ -101,17 +119,18 @@ def run_model_pilot_benchmark(
     provider_type: str = "fake",
     model_name: str | None = None,
     live: bool = False,
+    task_filter: str | None = "all",
     max_trials: int = 50,
     trials_per_candidate: int = 5,
-    max_model_requests: int = 500,
-    max_spend_usd: float = 2.00,
+    max_model_requests: int = 150,
+    max_spend_usd: float = 1.00,
     failure_threshold: float = 0.50,
     alpha: float = 0.05,
     confidence: float = 0.95,
     timeout_seconds: float = 60.0,
     output_dir: Path | str = ".",
 ) -> ModelPilotExperimentReport:
-    """Execute the model-backed agent pilot across the 3 pilot tasks.
+    """Execute the model-backed agent pilot across the selected pilot task(s).
 
     Parameters
     ----------
@@ -121,6 +140,8 @@ def run_model_pilot_benchmark(
         Target model identifier.
     live : bool
         Explicit opt-in required to make external API calls.
+    task_filter : str | None
+        'all' (default), 'conflicting_prompt', 'distractor_override', or 'baseline'.
     max_trials : int
         Maximum target evaluations per algorithm run.
     trials_per_candidate : int
@@ -128,7 +149,7 @@ def run_model_pilot_benchmark(
     max_model_requests : int
         Hard safeguard cap on model requests.
     max_spend_usd : float
-        Hard safeguard cap on estimated expenditure in USD.
+        Hard safeguard cap on estimated expenditure in USD (must be <= 1.00 for initial live pilot).
     failure_threshold : float
         Proportion threshold to classify candidate as failing.
     alpha : float
@@ -145,6 +166,12 @@ def run_model_pilot_benchmark(
     ModelPilotExperimentReport
         Complete validated experimental report.
     """
+    if live and max_spend_usd > 1.00:
+        raise ValueError(
+            f"Safety safeguard violation: max_spend_usd is ${max_spend_usd:.2f}, "
+            "but initial real-model validation pilots strictly mandate max_spend_usd <= $1.00 USD."
+        )
+
     # 1. Resolve Provider and Execution Tier
     if provider_type == "openai":
         if not live:
@@ -181,13 +208,14 @@ def run_model_pilot_benchmark(
             "tier": tier.value,
             "provider": provider.provider_name,
             "model": resolved_model,
+            "task_filter": task_filter,
             "trials_per_candidate": trials_per_candidate,
             "failure_threshold": failure_threshold,
         },
     )
 
     # 3. Load Pilot Benchmark Tasks
-    tasks = get_all_model_pilot_tasks(provider=provider, cost_tracker=cost_tracker)
+    tasks = get_model_pilot_tasks(provider=provider, cost_tracker=cost_tracker, task_filter=task_filter)
     evaluations: list[ModelPilotEvaluationResult] = []
     total_calls = 0
 

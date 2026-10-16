@@ -270,7 +270,28 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
         "",
         "---",
         "",
-        "## 1. Executive Summary & Cost Accounting",
+        "## 1. Experimental Protocol & Epistemic Boundaries",
+        "",
+        "### A. Validation Tier Distinction",
+        "- **Software Validation**: In-memory unit and property tests verifying tool isolation, token accounting, and search invariants.",
+        f"- **Synthetic Validation (`FAKE_PROVIDER`)**: {'Active in this report' if report.execution_tier.value == 'fake_provider' else 'Not active (simulated)'}. Rule-based heuristic simulation testing runner coordination without neural model drift.",
+        f"- **Real-Model Observations (`LIVE_MODEL`)**: {'Active in this report' if report.execution_tier.value == 'live_model' else 'Not active (no live calls made)'}. Empirical outputs from an external language model subjected to black-box intervention experiments.",
+        "",
+        "### B. Research Question & Pre-Specified Hypotheses",
+        "- **Research Question**: Can AgentXRay's black-box delta debugging algorithm isolate the 1-minimal failure-inducing condition in a model-backed agent using observable tool interactions alone, without access to model weights or hidden prompts?",
+        "- **Hypotheses**:",
+        "  * $H_1$ (Trigger Recovery): Delta debugging isolates the planted reference trigger with precision $\\ge 0.80$ and recall $= 1.0$ under active intervention.",
+        "  * $H_0$ (False Discovery Resistance): Under clean baseline control (no failure trigger), delta debugging reports zero failure triggers (minimality status: `not_applicable`).",
+        "  * $H_2$ (1-Minimality Verification): Every single-element removal from the isolated trigger produces a statistically significant drop in failure rate ($q < 0.05$ under Benjamini-Hochberg FDR control).",
+        "",
+        "### C. Epistemic Separation & Ground-Truth Methodology",
+        "- **Observable Evaluator**: The outcome evaluator (`ToolCallingTaskEvaluator`) inspects ONLY runtime interaction traces (tool invocations, argument schemas, execution outputs, and final response text). It has zero access to ground truth.",
+        "- **Reference Ground Truth**: Planted triggers serve as independently specified intervention hypotheses; empirical ground truth is established only if the model's observed failure rate under intervention is statistically separated from control.",
+        "- **Separation of Protocol vs. Results**: Planned budgets ($n$ trials, request caps, spending limits) are fixed a priori; observed usage, failure rates, and uncertainty intervals are empirical outputs.",
+        "",
+        "---",
+        "",
+        "## 2. Executive Summary & Cost Accounting",
         "",
         report.summary,
         "",
@@ -301,7 +322,7 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
         "",
         "*(Note: Estimated spend is calculated strictly from published standard per-token pricing tables; it does not represent an actual invoice.)*",
         "",
-        "## 2. Benchmark Comparison Matrix",
+        "## 3. Benchmark Comparison Matrix",
         "",
         "| Pilot Task | Method | Discovered Trigger | Minimality Status | Target Calls | Distractors Left | Matches Ground Truth |",
         "| :--- | :--- | :--- | :---: | :---: | :---: | :---: |",
@@ -326,7 +347,7 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
 
     lines.extend([
         "",
-        "## 3. Detailed Experimental Evaluations",
+        "## 4. Detailed Experimental Evaluations",
         "",
     ])
 
@@ -370,7 +391,7 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
     lines.extend([
         "---",
         "",
-        "## 4. Limitations and Reproducibility Notice",
+        "## 5. Limitations and Reproducibility Notice",
         "",
     ])
     for lim in report.limitations:

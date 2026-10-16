@@ -436,3 +436,131 @@ def test_null_case_undefined_precision_and_recall():
     assert excess == ()
     assert missing == ()
 
+
+def test_model_pilot_task_filtering():
+    """Verify get_model_pilot_tasks properly filters benchmark tasks by task_filter."""
+    from benchmarks.model_pilot.tasks import get_model_pilot_tasks
+
+    # 1. Single task: conflicting_prompt
+    tasks_prompt = get_model_pilot_tasks(task_filter="conflicting_prompt")
+    assert len(tasks_prompt) == 1
+    assert tasks_prompt[0][2].task_id == "pilot_conflicting_prompt"
+
+    # 2. Single task: distractor_override
+    tasks_dist = get_model_pilot_tasks(task_filter="distractor_override")
+    assert len(tasks_dist) == 1
+    assert tasks_dist[0][2].task_id == "pilot_distractor_override"
+
+    # 3. Single task: baseline
+    tasks_base = get_model_pilot_tasks(task_filter="baseline")
+    assert len(tasks_base) == 1
+    assert tasks_base[0][2].task_id == "pilot_baseline_calc"
+
+    # 4. All tasks
+    tasks_all = get_model_pilot_tasks(task_filter="all")
+    assert len(tasks_all) == 3
+
+    # 5. Invalid filter
+    with pytest.raises(ValueError, match="Unknown task_filter"):
+        get_model_pilot_tasks(task_filter="non_existent_filter")
+
+
+def test_dry_run_task_filtering_and_cost_estimation():
+    """Verify dry_run_model_pilot scales planned cost estimation with filtered task selection."""
+    dry_all = dry_run_model_pilot(task_filter="all")
+    dry_single = dry_run_model_pilot(task_filter="conflicting_prompt")
+
+    assert len(dry_all["tasks"]) == 3
+    assert len(dry_single["tasks"]) == 1
+    assert dry_single["tasks"][0]["task_id"] == "pilot_conflicting_prompt"
+
+    # Single-task planned requests should be 1/3 of all tasks
+    req_all = dry_all["cost_estimation"]["estimated_requests"]
+    req_single = dry_single["cost_estimation"]["estimated_requests"]
+    assert req_single < req_all
+    assert dry_single["cost_estimation"]["estimated_spend_usd"] < dry_all["cost_estimation"]["estimated_spend_usd"]
+
+
+def test_strict_live_spending_cap_enforcement():
+    """Verify live pilot benchmark strictly rejects max_spend_usd > $1.00 USD."""
+    with pytest.raises(ValueError, match="mandate max_spend_usd <= \\$1.00 USD"):
+        run_model_pilot_benchmark(
+            provider_type="openai",
+            live=True,
+            max_spend_usd=1.50,
+        )
+
+
+def test_single_task_benchmark_execution_with_fake_provider(tmp_path: Path):
+    """Verify execution of a single filtered task with FakeProvider produces valid reports."""
+    report = run_model_pilot_benchmark(
+        provider_type="fake",
+        task_filter="conflicting_prompt",
+        trials_per_candidate=3,
+        max_trials=30,
+        output_dir=tmp_path,
+    )
+
+    assert len(report.evaluations) == 1
+    eval_item = report.evaluations[0]
+    assert eval_item.task_name == "Model Pilot Conflicting Prompt Constraint"
+    assert eval_item.matches_ground_truth is True
+
+    # Verify Markdown report structure has protocol and epistemic sections
+    md_path = tmp_path / "model_pilot_report.md"
+    assert md_path.exists()
+    content = md_path.read_text(encoding="utf-8")
+    assert "## 1. Experimental Protocol & Epistemic Boundaries" in content
+    assert "## 2. Executive Summary & Cost Accounting" in content
+    assert "## 3. Benchmark Comparison Matrix" in content
+    assert "## 4. Detailed Experimental Evaluations" in content
+    assert "## 5. Limitations and Reproducibility Notice" in content
+    assert "Not active (no live calls made)" in content
+
+
+def test_openai_provider_message_formatting_with_null_content_for_tools():
+    """Verify OpenAIProvider formats assistant tool calls with content: None when empty."""
+    import json
+    import unittest.mock
+    from agentxray.providers.base import Message, ToolCall
+    from agentxray.providers.openai_adapter import OpenAIProvider
+
+    provider = OpenAIProvider(api_key="sk-testkey12345678")
+
+    # Mock urllib.request.urlopen to inspect formatted request payload
+    captured_payload = None
+
+    def fake_urlopen(req, *args, **kwargs):
+        nonlocal captured_payload
+        captured_payload = json.loads(req.data.decode("utf-8"))
+        # Return minimal valid response
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.read.return_value = json.dumps({
+            "choices": [{"message": {"role": "assistant", "content": "Done."}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+        return mock_resp
+
+    messages = [
+        Message(role="system", content="System instruction."),
+        Message(
+            role="assistant",
+            content="",  # empty content with tool call
+            tool_calls=(ToolCall(call_id="call_abc", name="calculator", arguments={"expression": "1+1"}),),
+        ),
+        Message(role="tool", content="2", tool_call_id="call_abc"),
+    ]
+
+    with unittest.mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        resp = provider.generate(messages=messages)
+
+    assert resp.content == "Done."
+    assert captured_payload is not None
+    # Assistant message should have content None (null in JSON), not empty string
+    assistant_msg = captured_payload["messages"][1]
+    assert assistant_msg["role"] == "assistant"
+    assert assistant_msg["content"] is None
+    assert assistant_msg["tool_calls"][0]["function"]["name"] == "calculator"
+
+

@@ -174,13 +174,51 @@ def create_model_pilot_distractor_task(
     return target, initial_input, ground_truth
 
 
+def get_model_pilot_tasks(
+    provider: ModelProvider | None = None,
+    cost_tracker: CostTracker | None = None,
+    task_filter: str | None = "all",
+) -> list[tuple[ModelBackedAgentTarget, InputCase, ModelPilotGroundTruthSpec]]:
+    """Return model-backed pilot benchmark tasks filtered by task_filter.
+
+    Parameters
+    ----------
+    provider : ModelProvider | None
+        Underlying model provider instance.
+    cost_tracker : CostTracker | None
+        Centralized request and spend tracker.
+    task_filter : str | None
+        'all' (default), 'conflicting_prompt', 'distractor_override', or 'baseline'.
+
+    Returns
+    -------
+    list[tuple[ModelBackedAgentTarget, InputCase, ModelPilotGroundTruthSpec]]
+        Selected benchmark tasks.
+    """
+    filter_key = (task_filter or "all").strip().lower()
+
+    if filter_key in ("all", "*"):
+        return [
+            create_model_pilot_baseline_task(provider=provider, cost_tracker=cost_tracker),
+            create_model_pilot_conflicting_prompt_task(provider=provider, cost_tracker=cost_tracker),
+            create_model_pilot_distractor_task(provider=provider, cost_tracker=cost_tracker),
+        ]
+    elif filter_key in ("baseline", "pilot_baseline_calc", "control"):
+        return [create_model_pilot_baseline_task(provider=provider, cost_tracker=cost_tracker)]
+    elif filter_key in ("conflicting_prompt", "pilot_conflicting_prompt", "prompt"):
+        return [create_model_pilot_conflicting_prompt_task(provider=provider, cost_tracker=cost_tracker)]
+    elif filter_key in ("distractor_override", "pilot_distractor_override", "distractor"):
+        return [create_model_pilot_distractor_task(provider=provider, cost_tracker=cost_tracker)]
+    else:
+        raise ValueError(
+            f"Unknown task_filter: {task_filter!r}. "
+            "Supported options: 'all', 'conflicting_prompt', 'distractor_override', 'baseline'."
+        )
+
+
 def get_all_model_pilot_tasks(
     provider: ModelProvider | None = None,
     cost_tracker: CostTracker | None = None,
 ) -> list[tuple[ModelBackedAgentTarget, InputCase, ModelPilotGroundTruthSpec]]:
     """Return all 3 model-backed pilot benchmark tasks configured with the given provider."""
-    return [
-        create_model_pilot_baseline_task(provider=provider, cost_tracker=cost_tracker),
-        create_model_pilot_conflicting_prompt_task(provider=provider, cost_tracker=cost_tracker),
-        create_model_pilot_distractor_task(provider=provider, cost_tracker=cost_tracker),
-    ]
+    return get_model_pilot_tasks(provider=provider, cost_tracker=cost_tracker, task_filter="all")

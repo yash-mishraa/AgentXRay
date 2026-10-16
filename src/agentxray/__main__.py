@@ -317,16 +317,22 @@ def main() -> None:
         help="Pre-flight validation: inspect proposed experiment size and estimated costs without calling providers.",
     )
     parser.add_argument(
+        "--task",
+        type=str,
+        default="all",
+        help="Pilot task to run: 'all' (default), 'conflicting_prompt', 'distractor_override', 'baseline'.",
+    )
+    parser.add_argument(
         "--max-spend",
         type=float,
-        default=2.00,
-        help="Hard cap on estimated spend in USD for model-backed experiments (default: 2.00).",
+        default=1.00,
+        help="Hard cap on estimated spend in USD for model-backed experiments (default: 1.00, max: 1.00 for initial pilot).",
     )
     parser.add_argument(
         "--max-model-requests",
         type=int,
-        default=500,
-        help="Hard cap on total model generation requests for model-backed experiments (default: 500).",
+        default=150,
+        help="Hard cap on total model generation requests for model-backed experiments (default: 150).",
     )
     parser.add_argument(
         "--audit-seeds",
@@ -450,6 +456,14 @@ def main() -> None:
         print(format_audit_markdown_report(audit_report))
 
     if args.mode in ("model", "all"):
+        if args.live and args.max_spend > 1.00:
+            print(
+                f"\n[ERROR] Safety safeguard violation: --max-spend is ${args.max_spend:.2f}, "
+                "but initial real-model validation pilots strictly mandate --max-spend <= $1.00 USD.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
         pilot_tpc = args.trials_per_candidate if args.trials_per_candidate is not None else 5
         pilot_max_trials = args.max_trials if args.max_trials is not None else 50
         resolved_model = args.model or ("gpt-4o-mini" if args.provider == "openai" else "fake-model-pilot")
@@ -460,6 +474,7 @@ def main() -> None:
                 provider_type=args.provider,
                 model_name=resolved_model,
                 live=args.live,
+                task_filter=args.task,
                 trials_per_candidate=pilot_tpc,
                 max_trials=pilot_max_trials,
                 max_model_requests=args.max_model_requests,
@@ -470,6 +485,7 @@ def main() -> None:
             print(f"- Live API Calls Authorized (--live): `{dry_info['live_requested']}`")
             print(f"- API Key Present in Environment: `{dry_info['api_key_configured']}`")
             print("- Endpoint Connectivity: NOT CHECKED (offline dry-run makes zero network requests)")
+            print(f"- Selected Task Filter: `{args.task}`")
             print(f"- Planned Pilot Tasks: `{len(dry_info['tasks'])}`")
             for t in dry_info["tasks"]:
                 print(f"  * {t['name']} ({t['initial_elements_count']} candidate elements) - {t['type']}")
@@ -482,13 +498,15 @@ def main() -> None:
             if not dry_info["can_execute_live"] and args.provider == "openai":
                 print("\n> [!CAUTION]")
                 print("> Live OpenAI API calls require 'OPENAI_API_KEY' set in environment AND the '--live' CLI flag.")
-                print("> Command to run live experiment: `agentxray --mode model --provider openai --live`")
+                print(f"> Planned maximum spend: ${cost['estimated_spend_usd']:.4f} USD (Hard cap: ${args.max_spend:.2f} USD).")
+                print(f"> Command to run live experiment: `OPENAI_API_KEY='sk-...' agentxray --mode model --provider openai --task {args.task} --live --max-spend {args.max_spend:.2f}`")
         else:
-            print(f"\n[Running Model-Backed Agent Pilot (provider={args.provider}, model={resolved_model}, live={args.live})]")
+            print(f"\n[Running Model-Backed Agent Pilot (provider={args.provider}, model={resolved_model}, task={args.task}, live={args.live})]")
             pilot_report = run_model_pilot_benchmark(
                 provider_type=args.provider,
                 model_name=resolved_model,
                 live=args.live,
+                task_filter=args.task,
                 max_trials=pilot_max_trials,
                 trials_per_candidate=pilot_tpc,
                 max_model_requests=args.max_model_requests,

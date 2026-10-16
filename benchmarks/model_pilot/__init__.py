@@ -13,6 +13,7 @@ from benchmarks.model_pilot.tasks import (
     create_model_pilot_conflicting_prompt_task,
     create_model_pilot_distractor_task,
     get_all_model_pilot_tasks,
+    get_model_pilot_tasks,
 )
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "create_model_pilot_conflicting_prompt_task",
     "create_model_pilot_distractor_task",
     "get_all_model_pilot_tasks",
+    "get_model_pilot_tasks",
     "dry_run_model_pilot",
     "run_model_pilot_benchmark",
 ]

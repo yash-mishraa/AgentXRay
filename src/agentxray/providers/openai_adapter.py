@@ -97,16 +97,24 @@ class OpenAIProvider(ModelProvider):
         # Format messages for OpenAI API
         formatted_msgs: list[dict[str, Any]] = []
         for m in messages:
-            entry: dict[str, Any] = {"role": m.role, "content": m.content}
+            entry: dict[str, Any] = {"role": m.role}
             if m.tool_calls:
+                entry["content"] = m.content if m.content else None
                 entry["tool_calls"] = [
                     {
                         "id": tc.call_id,
                         "type": "function",
-                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                        "function": {
+                            "name": tc.name,
+                            "arguments": tc.arguments.get("_raw_arguments", json.dumps(tc.arguments))
+                            if isinstance(tc.arguments, dict) and "_raw_arguments" in tc.arguments
+                            else json.dumps(tc.arguments),
+                        },
                     }
                     for tc in m.tool_calls
                 ]
+            else:
+                entry["content"] = m.content or ""
             if m.tool_call_id:
                 entry["tool_call_id"] = m.tool_call_id
             formatted_msgs.append(entry)

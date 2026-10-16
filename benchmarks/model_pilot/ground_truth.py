@@ -17,7 +17,15 @@ from agentxray.models import StochasticDiscoveredCondition
 
 @dataclass(frozen=True)
 class ModelPilotGroundTruthSpec:
-    """Planted causal intervention rule for model-backed pilot tasks."""
+    """Independently specified reference condition or intervention hypothesis.
+
+    EPISTEMIC BOUNDARY:
+    In synthetic benchmarks with FakeProvider, ground-truth triggers are programmed
+    deterministically. In real-model experiments, the reference trigger represents an
+    independently specified intervention hypothesis. It is considered an empirical
+    ground truth only if the experimental setup genuinely controls it and independently
+    verifies its effect against a baseline control condition.
+    """
 
     task_id: str
     name: str
@@ -25,6 +33,7 @@ class ModelPilotGroundTruthSpec:
     trigger_elements: tuple[str, ...]
     is_null_case: bool = False
     alternative_valid_triggers: tuple[tuple[str, ...], ...] = ()
+    reference_type: str = "planted_reference_hypothesis"
 
     @property
     def trigger_set(self) -> set[str]:
