@@ -3,7 +3,7 @@
 **Date**: 2026-10-16  
 **Status**: Completed (Empirical Discovery, 1-Minimality Verification & Baseline Comparison Verified)  
 **Starting Checkpoint**: `ead243f` on `main`  
-**Current Checkpoint**: In progress  
+**Phase 1G.2 Checkpoint**: `8eeff98` on `main`  
 **Repository Remote**: `https://github.com/yash-mishraa/AgentXRay.git`  
 **Target Model**: Meta `llama3.2:3b` (GGUF `Q4_K_M`, digest `sha256:a80c4f17acd5...`) via Ollama on Apple Silicon  
 **Total Phase 1G.2 Model Requests**: 102 requests (18 calibration + 84 confirmation) out of **120 hard cap** (18 headroom remaining)  
