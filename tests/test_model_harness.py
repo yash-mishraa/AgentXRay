@@ -589,4 +589,28 @@ def test_openai_provider_and_dry_run_load_key_from_env_file(tmp_path: Path, monk
     assert prov._api_key == "sk-from-env-file-12345678"
 
 
+def test_target_aborts_on_provider_infrastructure_error():
+    """Verify ModelBackedAgentTarget aborts immediately on provider crashes without treating them as agent failures."""
+    from agentxray.agent_harness.agent import AgentExecutionTrace, ControlledAgent
+    from agentxray.agent_harness.cost_tracker import CostTracker, ExperimentBudgetConfig
+    from agentxray.agent_harness.evaluator import ToolCallingTaskEvaluator
+    from agentxray.agent_harness.target import ModelBackedAgentTarget
+    from agentxray.models import InputCase
+    from agentxray.providers.fake import FakeProvider
+
+    class CrashingProvider(FakeProvider):
+        def generate(self, *args, **kwargs):
+            raise RuntimeError("Connection reset by peer / quota exhausted")
+
+    prov = CrashingProvider()
+    tracker = CostTracker(ExperimentBudgetConfig(max_model_requests=10, max_spend_usd=1.0, model_name="fake"))
+    agent = ControlledAgent(provider=prov, mock_env=None, cost_tracker=tracker, max_turns=2)
+    evaluator = ToolCallingTaskEvaluator(required_tool="calculator")
+    target = ModelBackedAgentTarget(agent=agent, evaluator=evaluator, user_prompt="test")
+
+    with pytest.raises(RuntimeError, match="Controlled agent execution aborted due to provider infrastructure error"):
+        target.execute(InputCase(case_id="c1", elements=("el1",)))
+
+
+
 

@@ -502,22 +502,26 @@ def main() -> None:
                 print(f"> Command to run live experiment: `OPENAI_API_KEY='sk-...' agentxray --mode model --provider openai --task {args.task} --live --max-spend {args.max_spend:.2f}`")
         else:
             print(f"\n[Running Model-Backed Agent Pilot (provider={args.provider}, model={resolved_model}, task={args.task}, live={args.live})]")
-            pilot_report = run_model_pilot_benchmark(
-                provider_type=args.provider,
-                model_name=resolved_model,
-                live=args.live,
-                task_filter=args.task,
-                max_trials=pilot_max_trials,
-                trials_per_candidate=pilot_tpc,
-                max_model_requests=args.max_model_requests,
-                max_spend_usd=args.max_spend,
-                failure_threshold=args.failure_threshold,
-                alpha=args.alpha,
-                confidence=args.confidence,
-                timeout_seconds=args.timeout,
-                output_dir=args.output_dir,
-            )
-            print(format_model_pilot_markdown_report(pilot_report))
+            try:
+                pilot_report = run_model_pilot_benchmark(
+                    provider_type=args.provider,
+                    model_name=resolved_model,
+                    live=args.live,
+                    task_filter=args.task,
+                    max_trials=pilot_max_trials,
+                    trials_per_candidate=pilot_tpc,
+                    max_model_requests=args.max_model_requests,
+                    max_spend_usd=args.max_spend,
+                    failure_threshold=args.failure_threshold,
+                    alpha=args.alpha,
+                    confidence=args.confidence,
+                    timeout_seconds=args.timeout,
+                    output_dir=args.output_dir,
+                )
+                print(format_model_pilot_markdown_report(pilot_report))
+            except RuntimeError as exc:
+                print(f"\n[ABORTED] {exc}", file=sys.stderr)
+                sys.exit(1)
 
     print("\n" + "=" * 75)
     print(" Execution finished successfully.")

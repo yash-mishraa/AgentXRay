@@ -181,3 +181,29 @@ def test_openai_provider_retries_telemetry():
     parsed = provider._parse_response(raw, latency_ms=10.0, retries=2)
     assert parsed.usage.retries == 2
 
+
+def test_openai_provider_quota_exhausted_fail_fast():
+    """Verify OpenAIProvider immediately raises ProviderAuthError on credit_balance_exhausted without retrying."""
+    import io
+    import urllib.error
+    from unittest.mock import patch
+
+    provider = OpenAIProvider(api_key="sk-testmockkey")
+
+    err_json = b'{"error": {"message": "You have no credits remaining.", "type": "insufficient_quota", "code": "credit_balance_exhausted"}}'
+    http_error = urllib.error.HTTPError(
+        url="https://api.openai.com/v1/chat/completions",
+        code=429,
+        msg="Too Many Requests",
+        hdrs={},
+        fp=io.BytesIO(err_json),
+    )
+
+    with patch("urllib.request.urlopen", side_effect=http_error) as mock_urlopen:
+        with pytest.raises(ProviderAuthError, match="credit balance exhausted"):
+            provider.generate([Message(role="user", content="hello")])
+
+        # Must fail fast on first attempt without executing retries
+        assert mock_urlopen.call_count == 1
+
+

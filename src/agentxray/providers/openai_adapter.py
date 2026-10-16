@@ -191,6 +191,10 @@ class OpenAIProvider(ModelProvider):
                 if http_err.code in (401, 403):
                     raise ProviderAuthError(f"Authentication failed: {redacted_msg}") from http_err
                 elif http_err.code == 429:
+                    if "insufficient_quota" in err_body or "credit_balance_exhausted" in err_body:
+                        raise ProviderAuthError(
+                            f"OpenAI account credit balance exhausted (insufficient quota): {redacted_msg}"
+                        ) from http_err
                     last_error = ProviderRateLimitError(f"Rate limit exceeded: {redacted_msg}")
                     # Brief backoff if retrying
                     if attempts <= self._max_retries:

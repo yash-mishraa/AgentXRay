@@ -88,6 +88,13 @@ class ModelBackedAgentTarget:
             from agentxray.agent_harness.cost_tracker import CostBudgetExceededError
             raise CostBudgetExceededError(trace.error_message or "Model request or spend budget exhausted.")
 
+        # Immediately abort on provider infrastructure error (auth, quota, network, provider 5xx)
+        # Provider crashes must never be conflated with observable agent behavioral failures.
+        if trace.finish_reason == "error":
+            raise RuntimeError(
+                f"Controlled agent execution aborted due to provider infrastructure error: {trace.error_message}"
+            )
+
         is_success, msg = self.evaluator.evaluate(trace)
 
         outcome = TargetOutcome.SUCCESS if is_success else TargetOutcome.FAILURE
