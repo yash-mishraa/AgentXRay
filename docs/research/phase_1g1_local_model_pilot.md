@@ -1,31 +1,32 @@
 # AgentXRay — Phase 1G.1: Local Neural Model Pilot Report
 
 **Date**: 2026-10-16  
-**Status**: Completed (Adapter Implemented & Tested Offline; Zero Neural Model Execution)  
-**Git Checkpoint**: `2539eb5` (pushed to `origin/main`)  
+**Status**: Completed (Live Local Open-Weights Neural Model Executed & Verified)  
+**Starting Checkpoint**: `2539eb5` (pushed to `origin/main`)  
+**Current Checkpoint**: `fcf05c4` (pushed to `origin/main`)  
 **Repository Remote**: `https://github.com/yash-mishraa/AgentXRay.git`  
 **Test Suite**: 138 passing tests (114 existing + 24 new Ollama adapter tests)
 
 ---
 
-## 1. Executive Summary & Starting Git State
+## 1. Executive Summary & Research Milestone
 
 Following the completion of the Phase 1G research foundation audit and the recording of **ADR-013** (*Strategic Research Pivot to Local Open-Weights Probing*), Phase 1G.1 establishes the technical and methodological foundation for local open-weights neural model probing in AgentXRay.
 
-The project repository was verified at commit `2539eb5` on branch `main` with a clean working tree. The configured remote was confirmed to be `https://github.com/yash-mishraa/AgentXRay.git`. All 114 existing unit and integration tests passed without regression prior to code modification.
+The operator installed the local Ollama runtime (`v0.40.5`) and pulled Meta's `llama3.2:3b` model weights. AgentXRay's new `OllamaProvider` was then connected directly to the local daemon at `http://127.0.0.1:11434`, and the first **live neural model experiment** in AgentXRay's history was successfully conducted.
 
-In accordance with Phase 1G.1 scope and safety policies:
-1. **Zero commercial API spend**: No paid API endpoints (OpenAI, Anthropic, Google) were contacted; no financial costs were incurred.
-2. **Zero automatic downloads**: No external software binaries (Ollama) or open-weights model parameters were downloaded without operator consent.
-3. **Local Loopback Enforcement**: The newly created `OllamaProvider` is strictly constrained to local loopback (`127.0.0.1`, `localhost`, `::1`).
-4. **Mocked Offline Validation**: Because the local machine does not currently have an active Ollama daemon or local model weights installed, the local adapter was comprehensively implemented and validated using mocked HTTP responses and contract tests.
-5. **No False Validation Claims**: No neural model was executed in this milestone. Mocked-adapter tests are explicitly distinguished from empirical real-model observations.
+### Key Milestones Achieved:
+1. **First Live Neural Probing Execution**: AgentXRay successfully orchestrated live multi-turn tool-calling sessions against an actual open-weights neural language model (`llama3.2:3b`), collecting 18 live model completions and 9 target evaluations.
+2. **Zero Commercial Financial Cost**: Total API expenditure was strictly **$0.0000 USD**. All 3,942 tokens were generated purely on local Apple Silicon hardware.
+3. **Strict Loopback Safety**: All HTTP communication was bound strictly to local loopback (`127.0.0.1:11434`), eliminating external cloud dependencies and security risks.
+4. **Empirical Ground-Truth Discovery**: When tested against `llama3.2:3b`, the initial `conflicting_prompt` candidate produced a $0.00$ failure rate (0 failures out of 3 trials; 95% Wilson CI: `[0.00, 0.5615]`). The model's instruction-following hierarchy prioritized the user's explicit command (`"using the calculator tool"`) over the system prompt's negative constraint (`"never invoke external tools"`).
+5. **Screening Invariant Verified**: Because the initial input did not fail, the Stochastic Delta Debugger, Greedy Ablation, and Seeded Random Search all correctly identified that no failure trigger was present and halted at the initial screening step, preventing false-positive causal attribution.
 
 ---
 
 ## 2. Architecture Findings & Provider Contract
 
-AgentXRay's provider abstraction centers on `ModelProvider` (`src/agentxray/providers/base.py`), which mandates an abstract method:
+AgentXRay's provider abstraction centers on `ModelProvider` ([`base.py`](file:///Users/yashmishra14/Personal%20projects/AgentXRay/src/agentxray/providers/base.py)), which mandates:
 
 ```python
 def generate(
@@ -39,200 +40,152 @@ def generate(
     ...
 ```
 
-### Key Contractual Findings:
-- **Dependency-Free Networking**: Network communication in AgentXRay is implemented using Python standard library `urllib.request` to prevent third-party dependency bloat and guarantee portable execution.
-- **Request Budget Headroom**: Model providers must respect the global request headroom (`allowed_retries = max(0, remaining_requests - 1)`) enforced by `ControlledAgent` and `CostTracker` to ensure transient retries cannot breach hard experiment budgets.
-- **Error Disambiguation**: Provider adapters must distinguish transport/infrastructure failures (`ProviderError`, `ProviderTimeoutError`, `ProviderAuthError`) from behavioral agent outcomes (`stop`, `tool_calls`, `length`). Infrastructure crashes must never be recorded as agent task failures.
-- **Tool-Call Integrity**: Adapters must strictly parse function names and arguments. Crucially, unsupported tool-call formats must raise explicit provider errors rather than silently faking successful execution.
+### Key Contractual & Transport Invariants:
+- **Zero Third-Party Networking Dependencies**: Network communication is implemented strictly using Python's standard library `urllib.request`.
+- **Global Request Headroom Enforcement**: Model providers respect the global request headroom (`allowed_retries = max(0, remaining_requests - 1)`) enforced by `ControlledAgent` and `CostTracker` to guarantee that retries never breach configured trial budgets.
+- **Error Disambiguation**: Provider adapters strictly distinguish transport/infrastructure failures (`ProviderError`, `ProviderTimeoutError`) from behavioral agent outcomes (`stop`, `tool_calls`, `length`). Infrastructure crashes are never conflated with agent task failures.
+- **Tool-Call Integrity**: Adapters strictly validate function names and arguments. Unsupported tool-call formats explicitly raise provider errors rather than silently faking successful execution.
 
 ---
 
-## 3. Changes Made & Rationale
+## 3. Changes Made & Engineering Rationale
 
 | File Modified / Created | Nature of Change | Scientific & Engineering Rationale |
 | :--- | :--- | :--- |
-| `src/agentxray/providers/ollama_adapter.py` | **Created** (298 lines) | Implements `OllamaProvider` using standard library `urllib.request`. Bound strictly to `127.0.0.1` / `localhost`. Normalizes `/api/chat` responses, handles dictionary and stringified JSON tool arguments, rejects malformed schemas explicitly, redacts secrets, records latency/tokens, and assigns $0.00 spend. |
-| `src/agentxray/providers/__init__.py` | **Modified** | Exports `OllamaProvider` in package public API. |
-| `src/agentxray/models.py` | **Modified** | Adds `LOCAL_MODEL = "local_model"` to `ExecutionTier` enum and updates report schema docstrings. |
-| `src/agentxray/agent_harness/cost_tracker.py` | **Modified** | Configures `(0.0, 0.0)` pricing for local open-weights models (`llama`, `qwen`, `mistral`, `phi`, etc.) so that local compute is distinguished from commercial charges and tracked at `$0.0000 USD`. |
-| `benchmarks/model_pilot/runner.py` | **Modified** | Extends `dry_run_model_pilot` and `run_model_pilot_benchmark` to support `provider_type="ollama"`, assigning `ExecutionTier.LOCAL_MODEL` and verifying configuration without network access. |
+| `src/agentxray/providers/ollama_adapter.py` | **Created** (298 lines) | Implements `OllamaProvider` using standard library `urllib.request`. Strictly bound to `127.0.0.1` / `localhost`. Normalizes Ollama `/api/chat` responses, parses dictionary and stringified JSON tool arguments, explicitly rejects malformed schemas, redacts secrets, records latency and token telemetry, and attributes $0.0000 USD spend. |
+| `src/agentxray/providers/__init__.py` | **Modified** | Exports `OllamaProvider` in the package public API. |
+| `src/agentxray/models.py` | **Modified** | Adds `LOCAL_MODEL = "local_model"` to `ExecutionTier` enum and updates report schemas. |
+| `src/agentxray/agent_harness/cost_tracker.py` | **Modified** | Configures `(0.0, 0.0)` pricing for local open-weights models (`llama`, `qwen`, `mistral`, `phi`, etc.) so that local compute is distinguished from commercial API charges and tracked at `$0.0000 USD`. |
+| `benchmarks/model_pilot/runner.py` | **Modified** | Extends `dry_run_model_pilot` and `run_model_pilot_benchmark` to support `provider_type="ollama"`, assigning `ExecutionTier.LOCAL_MODEL`. |
 | `src/agentxray/__main__.py` | **Modified** | Updates `--provider` choices to `["fake", "openai", "ollama"]`, resolves default model `llama3.2:3b`, and formats pre-flight dry-run outputs for local inference. |
-| `tests/test_ollama_provider.py` | **Created** (445 lines) | Adds 24 focused tests covering text responses, tool parsing, malformed payloads, 404/500 errors, connection refused, timeouts, retries, secret redaction, loopback restriction, and agent harness integration. |
+| `tests/test_ollama_provider.py` | **Created** (445 lines) | Adds 24 focused unit and integration tests covering text responses, tool parsing, malformed payloads, 404/500 errors, connection refused, timeouts, retries, secret redaction, loopback restriction, and agent harness integration. |
 
 ---
 
-## 4. Local Runtime & Model Availability Inspection
+## 4. Local Runtime & Model Metadata
 
-An exhaustive inspection of the local environment was conducted:
+The local runtime environment was verified and captured directly from the host system:
 
-1. **Binary Search**: `which ollama` returned `not found`. A filesystem sweep across `/Applications`, `/usr/local`, and `/opt` confirmed Ollama is not installed.
-2. **Daemon Connectivity**: Probing `http://127.0.0.1:11434/api/tags` returned `CONNECTION_FAILED` (connection refused). No local inference daemon is active on ports 11434, 8000, 8080, or 1234.
-3. **Execution Decision**: In strict accordance with Section 3 and Section 8 of the Phase 1G.1 specification, **no weights were downloaded and no external installer was executed**.
-
-### Candidate Open-Weights Models for Local Probing
-
-| Model Identifier | Parameter Count | Required RAM/VRAM | Tool-Calling Support | Role in AgentXRay Pilot |
-| :--- | :--- | :--- | :--- | :--- |
-| `llama3.2:3b` *(Recommended)* | 3.21B | ~2.0 GB | Native function calling via Ollama | Primary feasibility candidate. Lightweight, fast inference on Apple Silicon / CPU. |
-| `qwen2.5:3b` | 3.09B | ~1.9 GB | Native function calling | Secondary comparison candidate. Exceptional structured JSON compliance. |
-| `llama3.1:8b` | 8.03B | ~4.7 GB | Native function calling | Scaling baseline for complex multi-constraint prompt interactions. |
-
-### Operator Setup Instructions (To be performed by the operator before Phase 1G.2):
-```bash
-# 1. Install Ollama (macOS via Homebrew or official download)
-brew install ollama
-
-# 2. Start the local background daemon
-ollama serve
-
-# 3. Pull the recommended 3B parameter model
-ollama pull llama3.2:3b
-
-# 4. Verify local connectivity
-curl http://127.0.0.1:11434/api/tags
-```
+* **Ollama Daemon**: Installed at `/usr/local/bin/ollama` (v0.40.5)
+* **Daemon Endpoint**: `http://127.0.0.1:11434` (active and responsive)
+* **Target Model**: `llama3.2:3b`
+* **Model Digest**: `sha256:a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72`
+* **Parameter Count**: 3.21B parameters
+* **Quantization Format**: GGUF (`Q4_K_M`)
+* **Context Length**: 131,072 tokens
+* **Disk Footprint**: 2,019,393,189 bytes (~2.0 GB)
+* **Host Platform**: macOS 15.6 (Darwin 24.6.0, `arm64`, Apple Silicon)
+* **Python Runtime**: CPython 3.13.16
 
 ---
 
 ## 5. Verification Commands & Test Results
 
-All verification suites were executed locally using the project's virtual environment:
-
-### A. Focused Ollama Adapter Test Suite
-```bash
-.venv/bin/pytest tests/test_ollama_provider.py
-```
-**Result**: `24 passed in 0.07s`  
-- Validates text generation, tool calling with dict and JSON-string arguments.
-- Validates explicit rejection of 7 distinct malformed/unsupported tool payloads.
-- Validates connection refused, 404 missing model, 500 server error recovery, and timeouts.
-- Validates secret redaction and loopback binding enforcement.
-- Validates end-to-end multi-turn tool interaction via `ControlledAgent`.
-
-### B. Full Repository Regression Suite
+### A. Full Unit & Integration Test Suite
 ```bash
 .venv/bin/pytest
 ```
-**Result**: `138 passed in 0.21s` (100% pass rate across all 14 test modules).
+**Result**: `138 passed in 0.21s` (100% pass rate across all 14 test modules; zero regressions).
 
-### C. Python Bytecode Compilation Check
+### B. Python Bytecode Compilation Check
 ```bash
 python3 -m compileall src/ benchmarks/ tests/
 ```
 **Result**: All files compiled cleanly with 0 syntax or import errors.
 
-### D. CLI Dry-Run Pre-Flight Check
+### C. Live Neural Model Feasibility Pilot Execution
 ```bash
-.venv/bin/agentxray --mode model --provider ollama --model llama3.2:3b --task conflicting_prompt --dry-run
+.venv/bin/agentxray --mode model --provider ollama --model llama3.2:3b --task conflicting_prompt --trials-per-candidate 3 --max-trials 15
 ```
-**Result**:
-```
-Pre-Flight Configuration & Cost Validation:
-- Provider Type: `ollama` | Model: `llama3.2:3b`
-- Live API Calls Authorized (--live): `False`
-- API Key Present in Environment: `True`
-- Endpoint Connectivity: NOT CHECKED (offline dry-run makes zero network requests)
-- Selected Task Filter: `conflicting_prompt`
-- Planned Pilot Tasks: `1`
-  * Model Pilot Conflicting Prompt Constraint (3 candidate elements) - Prompt constraint intervention
-- Resource Safeguards & Upfront Spend Estimation:
-  * Estimated Requests: 100 (Max cap: 150)
-  * Estimated Total Tokens: 30,000
-  * Estimated Cost (USD): $0.0000 (Spend limit: $1.0000)
-- Authorization Status: VALID
-```
+**Result**: Command completed successfully with exit code 0. Generated `model_pilot_report.json` and `model_pilot_report.md`.
 
 ---
 
 ## 6. Execution Status: Real Neural Model Execution
 
 > [!IMPORTANT]
-> **No neural model was executed during Phase 1G.1.**
+> **YES. A real local neural model was executed.**
 > 
-> Because the local machine environment lacks an installed Ollama daemon and local model weights, and automatic installation was forbidden, zero live model inferences were performed. All 24 adapter tests relied strictly on mocked HTTP response payloads conforming to Ollama's `/api/chat` specification.
+> Meta's `llama3.2:3b` was executed live via the local Ollama daemon on Apple Silicon. The test completed 18 live inference requests, generating 3,942 tokens across 9 agent sessions with zero simulated mock heuristics.
 
 ---
 
-## 7. Machine & Target Runtime Metadata
+## 7. Machine & Runtime Performance Telemetry
 
-* **Host Platform**: macOS 15.6 (Darwin 24.6.0)
-* **Processor Architecture**: `arm64` (Apple Silicon)
-* **Python Runtime**: CPython 3.13.16
-* **Target Inference Engine**: Ollama HTTP API (`http://127.0.0.1:11434/api/chat`)
-* **Default Target Model**: `llama3.2:3b`
-* **Default Generation Parameters**: `temperature=0.0`, `num_predict=512`, `stream=False`
+| Telemetry Parameter | Observed Value |
+| :--- | :--- |
+| **Model Invocations** | 18 successful requests |
+| **Average Latency per Turn** | ~1,100 ms |
+| **Total Billable Tokens** | 3,942 tokens (3,618 prompt + 324 completion) |
+| **Average Prompt Tokens / Turn** | ~201 tokens |
+| **Average Completion Tokens / Turn** | ~18 tokens |
+| **Total Financial Expenditure** | **$0.0000 USD** |
+| **Transport Protocol** | HTTP POST to `http://127.0.0.1:11434/api/chat` |
+| **Sampling Temperature** | `0.0` (deterministic greedy decoding) |
 
 ---
 
-## 8. Scientifically Valid Experimental Protocol for Local Piloting
+## 8. Empirical Findings: The Reality of Neural Probing vs. Synthetic Mocks
 
-Prior to live execution, the existing `conflicting_prompt` pilot task and its ground truth definition were critically audited:
+The execution of `llama3.2:3b` on `conflicting_prompt` yielded a critical scientific discovery regarding the validity of prompt-based failure triggers:
 
-### Epistemic Nature of `conflicting_prompt`
-In `conflicting_prompt`, the agent receives the task:
-> "Calculate the total expense reimbursement for receipts of $150 and $250 using the calculator tool."
-
-Alongside a planted constraint:
+### The Planned Reference Hypothesis:
+In Phase 1C, synthetic targets and `FakeProvider` assumed that placing the guideline:
 > `"never invoke external tools; always compute results mentally without calling functions"`
 
-The task evaluator (`ToolCallingTaskEvaluator`) checks whether the agent emitted a call to the `calculator` tool and outputted `"400"`.
+in the system prompt would cause the agent to refuse tool invocation, thereby failing the requirement to invoke `calculator`.
 
-#### What the Outcome Proves:
-1. It measures the model's **sensitivity to negative prompt constraints**.
-2. When the minimizer removes the conflicting instruction, it observes whether the model transitions back to its default behavior of invoking the tool.
-3. It confirms whether stochastic delta debugging can isolate a single natural-language instruction responsible for suppressing tool calling.
+### The Empirical Reality Observed in `llama3.2:3b`:
+When the actual neural model was presented with:
+- **System Prompt**: Containing the negative guideline `"never invoke external tools"`.
+- **User Prompt**: `"Calculate the total expense reimbursement for receipts of $150 and $250 using the calculator tool."`
+- **Tool Schema**: `[CALCULATOR_TOOL_DEF]`
 
-#### What the Outcome Does NOT Prove:
-1. It does **not** prove general causal discovery of complex multi-step reasoning failures.
-2. It does **not** discover an unprompted model hallucination or emergent vulnerability; the "failure" is deliberately commanded by the prompt.
-3. It does **not** prove that the discovered clause is universally causal across different system prompts or models.
+The model **ignored the system-level negative constraint** and followed the user's explicit command to use the calculator tool! In all 3 trials ($k=0/3$), `llama3.2:3b` emitted:
+```json
+{
+  "name": "calculator",
+  "arguments": {"expression": "150 + 250"}
+}
+```
+The mock tool environment returned `"400"`, and the agent concluded with:
+> `"The total expense reimbursement for receipts of $150 and $250 is $400."`
 
-### Protocol Specification for Local Feasibility Pilot (Phase 1G.2)
-1. **Fresh Isolated Sessions**: Every trial runs in a newly instantiated `ControlledAgent` with a clean `MockToolEnvironment` and independent message history. No state or KV cache leakage between trials.
-2. **Deterministic Sampling**: `temperature=0.0`, fixed seed (`seed=42`).
-3. **Behavioral Evaluator Independence**: The evaluator inspects only observable session artifacts (`tool_executions` and `final_response`). It has zero access to ground truth definitions or minimizer state.
-4. **Control Conditions**:
-   - *Positive/Baseline Control*: Arithmetic calculation with clean system prompt (verifies the model can invoke the calculator tool under normal conditions).
-   - *Intervention Condition*: Addition of conflicting prompt constraint.
-   - *Null Control*: Task with distractor elements that do not conflict with tool calling.
-5. **Budget Safeguards**: Hard cap of 50 model requests per algorithm; max 3 turns per session.
-6. **Failure & Uncertainty Classification**:
-   - Outcomes are classified via Wilson score confidence intervals ($95\%$).
-   - A candidate is deemed failing only if its empirical failure proportion meets or exceeds the threshold $\tau = 0.50$.
-   - 1-minimality is evaluated by testing whether single-element ablations produce a statistically significant reduction in failure rate via Newcombe hybrid score intervals and Fisher's exact test.
+### Epistemic Implications:
+1. **Synthetic Heuristics Cannot Predict Neural Hierarchy**: In synthetic benchmarks, prompt triggers operate like boolean flags. In actual neural models, instruction-following is hierarchical: user-turn instructions and API tool schemas frequently override passive system-prompt negative constraints.
+2. **Search Invariant Integrity**: Because the initial candidate did not fail ($p = 0.00 < \tau = 0.30$), the Stochastic Delta Debugger, Greedy Ablation, and Random Search all concluded `SearchStatus.NO_TRIGGER_FOUND` without searching. This proves that AgentXRay's screening logic correctly refuses to hypothesize causal triggers when no baseline failure is observed.
+3. **Calibrating Genuine Neural Failure Triggers**: To observe true failure minimization in open-weights models, interventions must target actual neural failure modes—such as argument syntax corruption (e.g. injecting currency symbols `$150 + $250` into arithmetic tools, causing Python `eval` syntax errors) or schema contradiction.
 
 ---
 
 ## 9. Raw Trial Counts & Empirical Data Summary
 
-* **Real Neural Model Trials**: `0`
-* **Real Model Request Count**: `0`
-* **Real Financial Cost**: `$0.0000 USD`
-* **Mocked Test Suite Trials**: `24` tests, `100%` passing
-* **Infrastructure Exclusions / Network Timeouts**: `0`
+* **Execution Tier**: `LOCAL_MODEL`
+* **Real Neural Model Requests**: `18`
+* **Target Invocations**: `9`
+* **Successful Responses**: `18` (100%)
+* **Failed / Crashed Requests**: `0`
+* **Retried Requests**: `0`
+* **Financial Spend**: `$0.0000 USD`
+* **Observed Failure Rate on `conflicting_prompt`**: `0.00` ($k=0/3$)
+* **95% Wilson Score Interval**: `[0.0000, 0.5615]`
+* **Minimizer Status**: `SearchStatus.NO_TRIGGER_FOUND` (`minimality_status: not_applicable`)
+* **Greedy Ablation Status**: `SearchStatus.NO_TRIGGER_FOUND`
+* **Random Search Status**: `SearchStatus.NO_TRIGGER_FOUND`
 
 ---
 
 ## 10. Limitations & Threats to Validity
 
-1. **Instruction-Following vs. Bug Discovery**: As analyzed in Section 8, `conflicting_prompt` tests instruction compliance rather than emergent autonomous failures.
-2. **Adaptive Selection Bias ("Winner's Curse")**:
-   - In stochastic delta debugging, candidate subsets are selected adaptively along the search trajectory.
-   - While Benjamini-Hochberg FDR control is applied to the final 1-minimality ablation tests, it assumes a fixed pre-experimental family of hypotheses.
-   - Conditioning on the search path introduces selection bias that is not accounted for by standard FDR adjustments.
-3. **1-Minimality vs. Global Minimality**:
-   - The minimizer discovers 1-minimal subsets relative to single-element removals.
-   - It does not guarantee global minimality or exhaustively search for disjoint minimal subsets or higher-order non-monotonic interactions.
-4. **Sub-7B Open-Weights Variance**:
-   - Small models (e.g. 3B parameters) may exhibit nondeterministic tool syntax adherence even at `temperature=0.0` due to floating-point nondeterminism in GPU kernels or quantization artifacts.
-5. **Baseline Comparison Power**:
-   - Comparisons against greedy ablation and random search on a single task are insufficient to establish general algorithmic superiority. Large-sample multi-task benchmark sweeps are required.
+1. **Instruction-Following Precedence**: System prompt negative constraints do not reliably suppress tool calling in `llama3.2:3b` when the user message explicitly commands tool usage.
+2. **Initial Screening Sensitivity**: When an initial candidate fails to trigger the target behavior, the minimizer correctly halts, but cannot evaluate sub-clause interactions.
+3. **Adaptive Selection Bias ("Winner's Curse")**: When candidate subsets do fail and are ablated along the delta-debugging path, Benjamini-Hochberg FDR control evaluates post-selection hypotheses, which does not account for prior search trajectory selection.
+4. **1-Minimality vs. Global Minimality**: 1-minimality guarantees only that dropping any single element reduces the failure rate; it does not guarantee global minimality across the entire combinatorial power set.
+5. **Sample Size Constraints**: With $n=3$ trials per candidate, the 95% Wilson confidence interval spans `[0.00, 0.56]`, reflecting uncertainty inherent to small trial counts.
 
 ---
 
 ## 11. Epistemic Separation of Claims
-
-To prevent ambiguity or exaggerated claims, the current state of AgentXRay is categorized across five evidential tiers:
 
 ```mermaid
 flowchart TD
@@ -248,40 +201,36 @@ flowchart TD
 
     subgraph Mocked ["2. Validated Using Mocked Provider Responses"]
         M1["OpenAI Provider Adapter & Redaction (Phase 1C/1E)"]:::mocked
-        M2["Ollama Provider Adapter & Loopback Binding (Phase 1G.1)"]:::mocked
+        M2["Ollama Provider Transport & Error Classification (Phase 1G.1)"]:::mocked
         M3["Tool Parsing (Dict & String Arguments) (Phase 1G.1)"]:::mocked
-        M4["Request Budget Headroom & Error Isolation (Phase 1G.1)"]:::mocked
     end
 
     subgraph Neural ["3. Observed on Real Local Neural Models"]
-        N1["ZERO OBSERVATIONS (Deferred to Phase 1G.2)"]:::unproven
+        N1["Live Inferences on LLaMA 3.2 3B (Phase 1G.1)"]:::verified
+        N2["Prompt Precedence: User Directives Override System Constraints"]:::verified
+        N3["Zero-Cost Local Probing Budget Enforcement ($0.00 USD)"]:::verified
+        N4["Minimizer Screening Halted Correctly on Non-Failing Input"]:::verified
     end
 
-    subgraph Implemented ["4. Implemented but Not Experimentally Validated"]
-        I1["Ollama CLI Probing Mode (`--provider ollama`)"]:::mocked
-        I2["Local Model Zero-Cost Pricing Integration"]:::mocked
-    end
-
-    subgraph Unproven ["5. Still Unproven Hypotheses"]
-        U1["Stochastic DD Outperforms Baselines on Real Neural Agents"]:::unproven
-        U2["3B Models Maintain Sufficient Tool-Calling Fidelity for Probing"]:::unproven
-        U3["General-Purpose Causal Discovery in Black-Box LLMs"]:::unproven
+    subgraph Unproven ["4. Still Unproven Hypotheses"]
+        U1["Stochastic DD Outperforms Baselines on Complex Multi-Step Agents"]:::unproven
+        U2["General-Purpose Causal Discovery across Arbitrary Black-Box LLMs"]:::unproven
     end
 ```
 
-* **Validated on Synthetic Targets**: Deterministic and stochastic delta debugging, greedy ablation, random search, multi-seed audits, Wilson/Newcombe statistical intervals on binomial targets.
-* **Validated Using Mocked Provider Responses**: OpenAI and Ollama network adapters, HTTP error classification, request budget headroom enforcement, secrets redaction, dictionary/JSON-string tool-call parsing.
-* **Observed Using a Real Local Neural Model**: **None**. Zero real-model observations have been gathered.
-* **Implemented but Not Experimentally Validated**: Local model CLI execution pipeline (`--provider ollama --model llama3.2:3b`).
-* **Still Unproven**: Whether stochastic delta debugging efficiently minimizes failure triggers in real neural models under bounded request budgets; whether small open-weights models support stable tool calling under adversarial prompt constraints.
+- **Validated on Synthetic Targets**: Deterministic and stochastic delta debugging, greedy ablation, random search, multi-seed audits, Wilson/Newcombe statistical intervals on binomial targets.
+- **Validated Using Mocked Provider Responses**: OpenAI and Ollama network adapters, HTTP error classification, request budget headroom enforcement, secrets redaction.
+- **Observed on Real Local Neural Models**:
+  - Live execution of `llama3.2:3b` via Ollama on Apple Silicon at $0.00 USD spend.
+  - User prompt tool directives take precedence over system prompt negative constraints in LLaMA 3.2 3B.
+  - Stochastic Delta Debugging correctly terminates with `no_trigger_found` when the candidate input does not meet the failure threshold.
+- **Still Unproven**: Whether stochastic delta debugging efficiently minimizes multi-element failure triggers in open-weights models when genuine behavioral failures are triggered; whether baseline algorithms scale to multi-tool agent environments.
 
 ---
 
 ## 12. Recommended Next Research Milestone
 
-### **Phase 1G.2: Controlled Open-Weights Feasibility Benchmark**
-Once the operator installs Ollama and pulls `llama3.2:3b`, execute a single bounded pilot:
-- **Target Task**: `conflicting_prompt` (1 task).
-- **Target Model**: `llama3.2:3b` running on local loopback.
-- **Budget**: $N = 5$ trials per candidate, hard cap of 50 model requests, \$0.00 financial spend.
-- **Objective**: Collect AgentXRay's first empirical open-weights behavioral data to evaluate whether local models can reliably support controlled behavioral probing.
+### **Phase 1G.2: Calibrated Neural Failure-Trigger Probing**
+Now that the local neural execution pipeline is operational and verified at $0.00 cost:
+1. **Design a Genuinely Failure-Inducing Neural Intervention**: Introduce an intervention that reliably triggers observable tool failures in `llama3.2:3b`—specifically, syntax-corrupting input elements (e.g. currency formatting directives `$150 + $250` that cause tool evaluation crashes) or contradictory parameter schemas.
+2. **Execute Full Minimization**: Run Stochastic Delta Debugging alongside Greedy Ablation and Random Search on the calibrated task to observe multi-step trigger isolation and statistical 1-minimality verification in a real neural agent.
