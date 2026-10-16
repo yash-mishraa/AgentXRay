@@ -21,6 +21,7 @@
 | **ADR-010** | Multi-Seed Stochastic Audit and Honest Epistemic Disclaimers | **Accepted** | Empirical match rates with Wilson CIs, winner's curse and theoretical power disclaimers |
 | **ADR-011** | Model-Backed Agent Harness and Provider Abstraction Layer | **Accepted** | Hermetic mock tools, AST safety, zero-dependency OpenAI adapter, and execution trace isolation |
 | **ADR-012** | Explicit Live Opt-In, Pre-Flight Dry-Run, and Multi-Tier Resource Limits | **Accepted** | Guardrails preventing accidental spend: fake provider by default, --live requirement, and hard spend caps |
+| **ADR-013** | Strategic Research Pivot: Local Open-Weights Probing Prior to Paid API Resumption | **Accepted** | Defers commercial API spend; validates real neural models locally (Ollama) with bit-for-bit reproducibility |
 
 ---
 
@@ -186,5 +187,22 @@
 * **Consequences**:
   * *Positive*: Zero accidental financial spend, complete auditability, safe CI/CD execution.
   * *Negative*: Operators running live benchmarks must pass explicit opt-in flags and set environment variables.
+
+---
+
+### ADR-013: Strategic Research Pivot: Local Open-Weights Probing Prior to Paid API Resumption
+
+* **Context**: The initial Phase 1E live experiment against commercial cloud APIs (`gpt-4o-mini`) was halted due to account quota exhaustion (`credit_balance_exhausted`), producing zero valid real-model behavioral observations. Commercial cloud APIs impose monetary costs, opaque backend model updates, rate limiting, and administrative billing overhead that stall academic experimentation.
+* **Decision**: Defer commercial cloud API testing (Phase 1F) and pivot the immediate empirical research milestone to **local open-weights model probing (Phase 1G.1)**:
+  1. Implement a lightweight, zero-dependency `OllamaProvider` connecting to a locally hosted open-weights model server (e.g., Llama-3.2-3B, Qwen-2.5-3B, or Llama-3.1-8B).
+  2. Execute the model-pilot benchmark locally on Apple Silicon hardware with zero API expenditure.
+  3. Establish real-model empirical proof-of-concept for delta debugging, observable evaluator isolation, and 1-minimality classification under true neural model stochasticity before re-engaging commercial APIs.
+* **Alternatives Considered**:
+  * *Immediate Commercial API Retry (Phase 1F)*: Rejected. Unnecessary financial barrier and administrative friction when local open-weights models provide identical functional tool-calling validation for free.
+  * *Staying Purely on Synthetic Targets*: Rejected. Synthetic Python functions cannot validate neural attention interference, prompt non-monotonicity, or tokenization subtleties.
+* **Consequences**:
+  * *Positive*: Zero monetary spend, zero rate limits or billing blocks, full weight persistence, reproducible seeds, and open science accessibility.
+  * *Negative*: Requires a local runtime (e.g. Ollama daemon) and sufficient local RAM/VRAM to host a 3B–8B model.
+
 
 
