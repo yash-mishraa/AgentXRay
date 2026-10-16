@@ -93,8 +93,11 @@ def dry_run_model_pilot(
     else:
         tasks_info = all_tasks_meta
 
-    # Pre-flight cost estimation based on selected tasks
-    planned_target_calls = min(max_trials, len(tasks_info) * 15)  # estimate ~15 calls per task
+    # Pre-flight cost estimation based on selected tasks and multi-algorithm benchmark suite
+    # (Stochastic Delta Debugging + Greedy Ablation + Seeded Random Search)
+    est_calls_per_task = min(max_trials, 15) + min(max_trials, 15) + min(max_trials, 20)
+    nominal_calls = len(tasks_info) * est_calls_per_task
+    planned_target_calls = min(nominal_calls, max_model_requests // 2)
     cost_est = tracker.estimate_preflight_cost(
         planned_trials=planned_target_calls,
         turns_per_trial=2,

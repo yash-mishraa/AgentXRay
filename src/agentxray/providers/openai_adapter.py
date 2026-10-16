@@ -65,17 +65,20 @@ class OpenAIProvider(ModelProvider):
         self._max_retries = max_retries
 
         # Credentials must only come from explicit parameter, OPENAI_API_KEY env var, or local gitignored .env
-        resolved_key = api_key or os.environ.get("OPENAI_API_KEY", "")
-        if not resolved_key:
-            env_path = Path(".env")
-            if env_path.is_file():
-                for line in env_path.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if line.startswith("export "):
-                        line = line[7:].strip()
-                    if line.startswith("OPENAI_API_KEY="):
-                        resolved_key = line.split("=", 1)[1].strip().strip("'\"")
-                        break
+        if api_key is not None:
+            resolved_key = api_key
+        else:
+            resolved_key = os.environ.get("OPENAI_API_KEY", "")
+            if not resolved_key:
+                env_path = Path(".env")
+                if env_path.is_file():
+                    for line in env_path.read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if line.startswith("export "):
+                            line = line[7:].strip()
+                        if line.startswith("OPENAI_API_KEY="):
+                            resolved_key = line.split("=", 1)[1].strip().strip("'\"")
+                            break
         self._api_key = resolved_key.strip()
 
     @property
