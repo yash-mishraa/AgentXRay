@@ -42,6 +42,18 @@ def dry_run_model_pilot(
     """Inspect and validate experiment parameters and estimate costs without contacting any provider."""
     # Check credentials
     api_key_set = bool(os.environ.get("OPENAI_API_KEY", "").strip())
+    if not api_key_set:
+        env_path = Path(".env")
+        if env_path.is_file():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("export "):
+                    line = line[7:].strip()
+                if line.startswith("OPENAI_API_KEY="):
+                    val = line.split("=", 1)[1].strip().strip("'\"")
+                    if val:
+                        api_key_set = True
+                        break
 
     budget_cfg = ExperimentBudgetConfig(
         max_model_requests=max_model_requests,

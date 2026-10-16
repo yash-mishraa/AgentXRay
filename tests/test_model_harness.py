@@ -564,3 +564,29 @@ def test_openai_provider_message_formatting_with_null_content_for_tools():
     assert assistant_msg["tool_calls"][0]["function"]["name"] == "calculator"
 
 
+def test_openai_provider_and_dry_run_load_key_from_env_file(tmp_path: Path, monkeypatch):
+    """Verify OpenAIProvider and dry_run_model_pilot read credentials from local .env if unset in os.environ."""
+    from agentxray.providers.openai_adapter import OpenAIProvider
+
+    # Clear OPENAI_API_KEY from os.environ
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    # Without .env, should be missing
+    dry_missing = dry_run_model_pilot(provider_type="openai")
+    assert dry_missing["api_key_configured"] is False
+
+    # Create local .env file
+    env_file = tmp_path / ".env"
+    env_file.write_text('OPENAI_API_KEY="sk-from-env-file-12345678"\n', encoding="utf-8")
+
+    # Now dry run should detect it
+    dry_detected = dry_run_model_pilot(provider_type="openai")
+    assert dry_detected["api_key_configured"] is True
+
+    # OpenAIProvider should also resolve it
+    prov = OpenAIProvider()
+    assert prov._api_key == "sk-from-env-file-12345678"
+
+
+
