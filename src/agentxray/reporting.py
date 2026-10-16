@@ -9,7 +9,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentxray.models import ExperimentReport, StochasticExperimentReport
+from agentxray.models import (
+    ExecutionTier,
+    ExperimentReport,
+    ModelPilotExperimentReport,
+    StochasticExperimentReport,
+)
 from agentxray.statistics import compare_proportions, estimate_two_proportion_power
 
 
@@ -245,3 +250,145 @@ def write_stochastic_reports(
 
     json_p.write_text(format_stochastic_json_report(report), encoding="utf-8")
     md_p.write_text(format_stochastic_markdown_report(report), encoding="utf-8")
+
+
+def format_model_pilot_json_report(report: ModelPilotExperimentReport) -> str:
+    """Format a ModelPilotExperimentReport into an indented JSON string."""
+    return report.model_dump_json(indent=2)
+
+
+def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> str:
+    """Format a ModelPilotExperimentReport into a detailed Markdown report."""
+    tier_label = f"[{report.execution_tier.value.upper()}]"
+    lines: list[str] = [
+        f"# AgentXRay Model-Backed Agent Pilot Report: {tier_label} {report.experiment_name}",
+        "",
+        f"> **Generated at**: {report.timestamp.isoformat()}  ",
+        f"> **Execution Tier**: `{report.execution_tier.value.upper()}`  ",
+        f"> **Provider**: `{report.provider_name}` | **Model**: `{report.model_name}`  ",
+        f"> **Trials per Candidate Subset ($n$)**: `{report.trials_per_candidate}` | **Total Target Invocations**: `{report.total_target_calls}`  ",
+        "",
+        "---",
+        "",
+        "## 1. Executive Summary & Cost Accounting",
+        "",
+        report.summary,
+        "",
+        "### Resource Consumption & Budget Summary",
+        "",
+        "| Metric | Observed Usage | Configured Limit | Status |",
+        "| :--- | :---: | :---: | :---: |",
+    ]
+
+    bs = report.budget_summary
+    req_used = bs.get("total_requests", 0)
+    req_max = bs.get("max_requests", "N/A")
+    lines.append(f"| **Model Requests** | {req_used} | {req_max} | `{'OK' if req_used <= req_max else 'EXCEEDED'}` |")
+
+    spend_used = bs.get("estimated_spend_usd", 0.0)
+    spend_max = bs.get("max_spend_usd", 0.0)
+    lines.append(f"| **Estimated Spend (USD)** | `${spend_used:.4f}` | `${spend_max:.4f}` | `{'OK' if spend_used <= spend_max else 'EXCEEDED'}` |")
+
+    p_tok = bs.get("prompt_tokens", 0)
+    c_tok = bs.get("completion_tokens", 0)
+    t_tok = bs.get("total_tokens", p_tok + c_tok)
+    lines.append(f"| **Prompt Tokens** | {p_tok:,} | N/A | Logged |")
+    lines.append(f"| **Completion Tokens** | {c_tok:,} | N/A | Logged |")
+    lines.append(f"| **Total Tokens** | {t_tok:,} | N/A | Logged |")
+    lines.append(f"| **Retries** | {bs.get('retries', 0)} | N/A | Logged |")
+
+    lines.extend([
+        "",
+        "*(Note: Estimated spend is calculated strictly from published standard per-token pricing tables; it does not represent an actual invoice.)*",
+        "",
+        "## 2. Benchmark Comparison Matrix",
+        "",
+        "| Pilot Task | Method | Discovered Trigger | Minimality Status | Target Calls | Distractors Left | Matches Ground Truth |",
+        "| :--- | :--- | :--- | :---: | :---: | :---: | :---: |",
+    ])
+
+    for eval_item in report.evaluations:
+        cond = eval_item.minimizer_condition
+        trigger_str = ", ".join(f"`{e}`" for e in cond.subset_elements) if cond.subset_elements else "*(None - Null Case)*"
+        match_str = "YES" if eval_item.matches_ground_truth else "NO"
+        lines.append(
+            f"| **{eval_item.task_name}** | Stochastic Delta Debugging | {trigger_str} | "
+            f"`{cond.minimality_status.value}` | {cond.target_calls_used} | {len(eval_item.excess_elements)} | **{match_str}** |"
+        )
+
+        for b in eval_item.baseline_comparisons:
+            b_trig = ", ".join(f"`{e}`" for e in b.discovered_elements) if b.discovered_elements else "*(None - Null Case)*"
+            b_match = "YES" if b.matches_ground_truth else "NO"
+            lines.append(
+                f"| | *{b.baseline_name}* | {b_trig} | `{b.minimality_status.value}` | "
+                f"{b.target_calls} | {b.irrelevant_elements_remaining} | {b_match} |"
+            )
+
+    lines.extend([
+        "",
+        "## 3. Detailed Experimental Evaluations",
+        "",
+    ])
+
+    for eval_item in report.evaluations:
+        gt_str = ", ".join(f"`{e}`" for e in eval_item.ground_truth_trigger) if eval_item.ground_truth_trigger else "*(None - Null Case / Control)*"
+        init_str = ", ".join(f"`{e}`" for e in eval_item.initial_elements)
+        cond = eval_item.minimizer_condition
+
+        lines.extend([
+            f"### Pilot Task: {eval_item.task_name}",
+            f"- **Description**: {eval_item.description}",
+            f"- **Initial Candidate Elements ({len(eval_item.initial_elements)})**: {init_str}",
+            f"- **Planted Ground Truth**: {gt_str}",
+            f"- **Minimizer Precision**: `{eval_item.precision * 100:.1f}%` | **Recall**: `{eval_item.recall * 100:.1f}%`",
+            f"- **Minimality Classification**: `{cond.minimality_status.value}`",
+            f"- **Final Candidate Failure Rate**: `{cond.candidate_evaluation.failure_rate:.2f}` (95% Wilson CI: `[{cond.candidate_evaluation.confidence_interval[0]:.2f}, {cond.candidate_evaluation.confidence_interval[1]:.2f}]`, $k={cond.candidate_evaluation.failures}/{cond.candidate_evaluation.trials}$)",
+            f"- **Status Narrative**: {cond.status_message}",
+        ])
+
+        if cond.removal_evaluations:
+            lines.append("- **Single-Element Removal Uncertainty Checks & Risk Differences**:")
+            for elem, rem_eval in cond.removal_evaluations.items():
+                comp = compare_proportions(
+                    k1=cond.candidate_evaluation.failures,
+                    n1=cond.candidate_evaluation.trials,
+                    k2=rem_eval.failures,
+                    n2=rem_eval.trials,
+                    alpha=0.05,
+                )
+                lines.append(
+                    f"  - Without `{elem}`: failure rate `{rem_eval.failure_rate:.2f}` "
+                    f"(95% Wilson CI: `[{rem_eval.confidence_interval[0]:.2f}, {rem_eval.confidence_interval[1]:.2f}]`, $k={rem_eval.failures}/{rem_eval.trials}$); "
+                    f"Risk Difference $\\Delta={comp.difference:+.2f}$ (95% Newcombe Hybrid CI: `[{comp.difference_ci[0]:.2f}, {comp.difference_ci[1]:.2f}]`, "
+                    f"$z={comp.z_statistic:.2f}$, two-sided $p={comp.p_value:.4f}$, Fisher exact $p={comp.fisher_exact_p_value:.4f}$)"
+                )
+        lines.append("")
+
+    lines.extend([
+        "---",
+        "",
+        "## 4. Limitations and Reproducibility Notice",
+        "",
+    ])
+    for lim in report.limitations:
+        lines.append(f"* {lim}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_model_pilot_reports(
+    report: ModelPilotExperimentReport,
+    json_path: Path | str,
+    md_path: Path | str,
+) -> None:
+    """Write both JSON and Markdown model pilot experiment reports to disk."""
+    json_p = Path(json_path)
+    md_p = Path(md_path)
+
+    json_p.parent.mkdir(parents=True, exist_ok=True)
+    md_p.parent.mkdir(parents=True, exist_ok=True)
+
+    json_p.write_text(format_model_pilot_json_report(report), encoding="utf-8")
+    md_p.write_text(format_model_pilot_markdown_report(report), encoding="utf-8")
+

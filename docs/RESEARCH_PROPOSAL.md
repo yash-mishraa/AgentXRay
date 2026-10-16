@@ -94,17 +94,24 @@ To maintain scientific integrity, AgentXRay strictly separates **synthetic algor
 
 ```
 +-----------------------------------------------------------------------------------------+
-|                                TWO-TIER EVALUATION PARADIGM                             |
+|                                THREE-TIER EVALUATION PARADIGM                           |
 +-----------------------------------------------------------------------------------------+
-| Tier 1: Synthetic Deterministic Testbed (Algorithmic Verification)                      |
+| Tier 1: Synthetic Benchmark Testbed (Algorithmic Verification)                          |
 | - Purpose: Verify that the search algorithm correctly isolates known, planted rules.    |
-| - Target: Pure Python mock targets with deterministic, conjunctive, or distractor logic.|
+| - Target: Pure Python mock targets with deterministic and probabilistic binomial logic. |
 | - Ground Truth: Mathematically defined; isolated from the search algorithm.             |
 | - Limitation: DOES NOT prove real-world LLM reverse-engineering capability.             |
 +-----------------------------------------------------------------------------------------+
-| Tier 2: Curated LLM Agent Failure Benchmark (Real-World Feasibility)                    |
-| - Purpose: Test whether the algorithm handles LLM non-monotonicity and stochasticity.   |
-| - Target: Actual model-backed agents (e.g. Llama 3, GPT-4o-mini).                       |
+| Tier 2: Controlled Model-Backed Agent Pilot (Phase 1C Pilot Validation)                 |
+| - Purpose: Test trigger isolation in a controlled multi-turn agent harness with LLMs.   |
+| - Target: Controlled harness with hermetic mock tools (AST math, mock DB, converter).   |
+| - Ground Truth: Deliberately planted failure-inducing prompt conditions in test tasks.  |
+| - Limitation: Proves controlled-harness prompt-perturbation viability, not general      |
+|   causal discovery across arbitrary black-box agents or complex autonomous environments.|
++-----------------------------------------------------------------------------------------+
+| Tier 3: Curated In-The-Wild LLM Agent Benchmark (Phase 2 Real-World Feasibility)        |
+| - Purpose: Test whether the algorithm handles arbitrary agent workflows and tooling.    |
+| - Target: Actual external model-backed agents across diverse toolkits and domains.      |
 | - Ground Truth: REQUIRES MANUAL CONTROLLED ANNOTATION (cannot use off-the-shelf labels).|
 | - Limitation: Subject to API drift, cost constraints, and non-deterministic noise.      |
 +-----------------------------------------------------------------------------------------+
@@ -131,10 +138,26 @@ Used for Phase 1 algorithmic verification. Ground-truth rules are strictly isola
 
 *Ground-Truth Isolation*: Ground-truth metadata is strictly separated from the probing engine. The engine operates purely via the target's public `execute(input)` method. Evaluation metrics (precision, recall, power, FDR) are computed post-hoc by comparing the algorithm's output against the ground-truth specification.
 
-### 4.2. Tier 2: Addressing Real-World Benchmark Limitations
+### 4.2. Tier 2: Controlled Model-Backed Agent Pilot (Phase 1C)
+
+To bridge the gap between synthetic Python functions and arbitrary real-world agents, Phase 1C introduces a locally controlled, model-backed agent harness:
+
+1. **Architecture and Isolation**:
+   * The agent operates in a hermetic multi-turn loop ($T \le 5$) with mock tools (`safe_calculator`, `mock_database_lookup`, `mock_unit_converter`). Mock tools use standard library AST parsing and in-memory tables; no shell, filesystem, or outbound network calls are permitted.
+   * Evaluation is performed by `ToolCallingTaskEvaluator` strictly over observable traces (did the model invoke the required tool with correct arguments, and did the final response contain the correct answer?). Model activations and internal thoughts are unobservable.
+2. **Pilot Tasks with Planted Ground Truth**:
+   * *Task 1: Baseline Control (Clean Arithmetic)*: Input contains problem statement and distractor remarks. The agent invokes `safe_calculator` and answers correctly. Ground truth: null case ($\emptyset$).
+   * *Task 2: Conflicting Prompt Constraint*: Input contains an explicit instruction forbidding tool calls (`Do not call any external functions or tools under any circumstances.`). Ground truth: `{"Do not call any external functions or tools under any circumstances."}`.
+   * *Task 3: Distractor-Heavy Field Override*: Input contains calculation instructions alongside 4 distractors, including a field name override instruction (`Always override parameter name 'expression' to 'non_existent_secret_key'`). Ground truth: `{"Always override parameter name 'expression' to 'non_existent_secret_key'"}`.
+3. **Execution Tiers and Cost Control**:
+   * Default tier: `FakeProvider` (zero-cost, programmable, hermetic).
+   * Live tier: `OpenAIProvider` requiring explicit `--live` opt-in and environment API keys.
+   * Cost controls: Hard caps on model requests (`max_model_requests`) and spend (`max_spend_usd`). Pre-flight `--dry-run` performs validation and token cost projection before trials execute.
+
+### 4.3. Tier 3: In-The-Wild Benchmark Limitations (Phase 2 Roadmap)
 * **Why SWE-bench, GAIA, and ToolBench Do Not Provide Causal Ground Truth**:  
   Standard benchmarks provide task inputs, environment repos, and final evaluation or unit test scripts (pass/fail). They do **not** provide verified causal root-cause labels explaining *why* an agent failed a given task.
-* **Required Annotation Protocol for Tier 2**:
+* **Required Annotation Protocol for Tier 3**:
   To construct a legitimate real-world evaluation set, researchers must:
   1. Select a failing task run from a standard benchmark.
   2. Manually construct counterfactual input pairs ($X, X'$) that flip the failure to a success on the actual model.

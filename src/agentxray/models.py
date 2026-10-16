@@ -292,12 +292,23 @@ class StochasticEvaluationResult(BaseModel):
     missing_elements: tuple[str, ...] = Field(default=(), description="True causal elements omitted.")
 
 
+class ExecutionTier(str, Enum):
+    """Tier of experimental target execution."""
+
+    SYNTHETIC = "synthetic"
+    FAKE_PROVIDER = "fake_provider"
+    LIVE_MODEL = "live_model"
+
+
 class StochasticExperimentReport(BaseModel):
     """Complete report combining all stochastic task evaluations, power metrics, and aggregate comparisons."""
 
     model_config = ConfigDict(frozen=True)
 
     experiment_name: str = Field(..., description="Experiment name.")
+    execution_tier: ExecutionTier = Field(
+        default=ExecutionTier.SYNTHETIC, description="Tier: synthetic, fake_provider, or live_model."
+    )
     config: ExperimentConfig = Field(..., description="Experiment config.")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Completion timestamp.")
     trials_per_candidate: int = Field(..., ge=1, description="Number of trials executed per candidate subset.")
@@ -315,4 +326,55 @@ class StochasticExperimentReport(BaseModel):
         ),
         description="Explicit scientific and engineering limitations.",
     )
+
+
+class ModelPilotEvaluationResult(BaseModel):
+    """Comprehensive evaluation record of a model-backed agent pilot task."""
+
+    model_config = ConfigDict(frozen=True)
+
+    task_name: str = Field(..., description="Name of the pilot task.")
+    description: str = Field(..., description="Task explanation.")
+    initial_elements: tuple[str, ...] = Field(..., description="Initial input elements.")
+    ground_truth_trigger: tuple[str, ...] = Field(..., description="Planted causal failure condition.")
+    is_null_case: bool = Field(default=False, description="Whether this is a non-failing control task.")
+    minimizer_condition: StochasticDiscoveredCondition = Field(..., description="Minimizer result.")
+    baseline_comparisons: tuple[StochasticBaselineComparison, ...] = Field(
+        default=(), description="Baseline comparison results."
+    )
+    matches_ground_truth: bool = Field(..., description="Whether minimizer output matches ground truth.")
+    precision: float = Field(..., ge=0.0, le=1.0, description="Precision.")
+    recall: float = Field(..., ge=0.0, le=1.0, description="Recall.")
+    excess_elements: tuple[str, ...] = Field(default=(), description="Distractor elements falsely retained.")
+    missing_elements: tuple[str, ...] = Field(default=(), description="True causal elements omitted.")
+
+
+class ModelPilotExperimentReport(BaseModel):
+    """Complete experimental report for model-backed agent pilots."""
+
+    model_config = ConfigDict(frozen=True)
+
+    experiment_name: str = Field(..., description="Experiment identifier.")
+    execution_tier: ExecutionTier = Field(..., description="Tier: fake_provider or live_model.")
+    provider_name: str = Field(..., description="Model provider used (e.g. fake, openai).")
+    model_name: str = Field(..., description="Model identifier (e.g. fake-model-pilot, gpt-4o-mini).")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Completion timestamp.")
+    config: ExperimentConfig = Field(..., description="Experiment configuration.")
+    budget_summary: dict[str, Any] = Field(..., description="Model requests, spend USD, and token accounting.")
+    trials_per_candidate: int = Field(..., ge=1, description="Number of trials per candidate subset.")
+    total_target_calls: int = Field(..., ge=0, description="Sum of all target calls.")
+    evaluations: tuple[ModelPilotEvaluationResult, ...] = Field(..., description="Per-task evaluation records.")
+    aggregate_metrics: dict[str, Any] = Field(default_factory=dict, description="Aggregate accuracy and recovery.")
+    summary: str = Field(..., description="Executive narrative summary.")
+    limitations: tuple[str, ...] = Field(
+        default=(
+            "Model-backed pilot evaluations reflect a controlled local harness with hermetic mock tools; they do not imply capability to reverse-engineer arbitrary black-box commercial agents.",
+            "Planted failure triggers are controlled experimental interventions; they do not reveal hidden neural weights or unobservable internal model chain-of-thought.",
+            "Model stochasticity and temperature drift can introduce run-to-run outcome variability.",
+            "Benjamini-Hochberg FDR control applies to candidate ablation tests; adaptive selection bias (winner's curse) along the search path remains a factor.",
+            "Estimated spend calculations rely on published standard per-token pricing tables and represent estimates, not provider billing invoices.",
+        ),
+        description="Explicit scientific and engineering limitations.",
+    )
+
 

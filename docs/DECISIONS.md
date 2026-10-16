@@ -17,8 +17,10 @@
 | **ADR-005** | Tier 1 Synthetic Ground-Truth Decoupled from Real-World Claims | **Accepted** | Algorithmic verification without conflating synthetic with LLM capability |
 | **ADR-006** | Hermetic Mock Tool Interception by Default | **Accepted** | Guarantees safety and isolation during automated probing |
 | **ADR-007** | Target 1-Minimality in Delta Debugging (Explicitly Not Global) | **Accepted** | Algorithmic tractability and precision without false global claims |
-| **ADR-008** | Wilson Score & Newcombe Hybrid Score for Binomial Proportions | **Accepted** | Rigorous uncertainty intervals without boundary degeneracy or SciPy dependency |
-| **ADR-009** | Four-Tier Epistemic Classification for Stochastic 1-Minimality | **Accepted** | Distinguishes statistically verified vs observed-only minimal failure triggers |
+| **ADR-009** | Five-Tier Epistemic Classification for Stochastic 1-Minimality | **Accepted** | Distinguishes statistically verified vs observed-only minimal failure triggers |
+| **ADR-010** | Multi-Seed Stochastic Audit and Honest Epistemic Disclaimers | **Accepted** | Empirical match rates with Wilson CIs, winner's curse and theoretical power disclaimers |
+| **ADR-011** | Model-Backed Agent Harness and Provider Abstraction Layer | **Accepted** | Hermetic mock tools, AST safety, zero-dependency OpenAI adapter, and execution trace isolation |
+| **ADR-012** | Explicit Live Opt-In, Pre-Flight Dry-Run, and Multi-Tier Resource Limits | **Accepted** | Guardrails preventing accidental spend: fake provider by default, --live requirement, and hard spend caps |
 
 ---
 
@@ -150,4 +152,39 @@
 * **Consequences**:
   * *Positive*: Total epistemic honesty, reproducible multi-seed verification, transparent trade-offs between algorithms.
   * *Negative*: Multi-seed execution requires $M \times$ more target calls than single-seed runs.
+
+---
+
+### ADR-011: Model-Backed Agent Harness and Provider Abstraction Layer
+
+* **Context**: Moving from synthetic targets to model-backed agents requires calling LLMs and executing tool loops while preserving architectural isolation, cost safeguards, and reproducibility. Using heavy third-party agent frameworks (e.g. LangChain, CrewAI, AutoGen) adds external dependencies, hidden prompts, telemetry, and networking overhead.
+* **Decision**: Implement a minimalist, lightweight provider abstraction and agent harness in standard library Python:
+  1. `ModelProvider` protocol with typed inputs (`Message`, `ToolDefinition`) and outputs (`ModelResponse`, `ToolCall`, `UsageMetadata`).
+  2. `FakeProvider`: A deterministic, zero-cost mock provider with programmable responses, multi-turn tool calling, and simulated failure patterns for testing and dry-runs.
+  3. `OpenAIProvider`: A zero-dependency REST adapter built using standard library `urllib.request`, automatic token secret redaction (`_redact_secrets`), retry backoff, and published per-token pricing lookup (`gpt-4o-mini`, `gpt-4o`).
+  4. `ControlledAgent`: A standard multi-turn agent loop executing up to a fixed turn limit ($T=5$), dispatching tool calls to a local `MockToolEnvironment`.
+  5. `MockToolEnvironment`: Hermetic tools with zero live network or filesystem side effects (`safe_calculator` evaluated using standard library AST inspection, `mock_database_lookup`, `mock_unit_converter`).
+  6. `ToolCallingTaskEvaluator`: Evaluates task success/failure purely based on observable execution traces (emitted tool calls and final text answers) without inspecting internal model activations.
+* **Alternatives Considered**:
+  * *LangChain / LlamaIndex / OpenAI SDK*: Rejected to avoid third-party networking bloat, framework churn, and credential leakage.
+  * *Arbitrary Python `eval()` for mock math*: Rejected as unsafe; AST inspection allows safe arithmetic evaluation without arbitrary code execution.
+* **Consequences**:
+  * *Positive*: Ultra-fast execution, zero external networking dependencies, 100% hermetic safety, bit-for-bit test reproducibility via `FakeProvider`.
+  * *Negative*: Provider implementations must manually format JSON schemas and REST payloads.
+
+---
+
+### ADR-012: Explicit Live Opt-In, Pre-Flight Dry-Run, and Multi-Tier Resource Limits
+
+* **Context**: Uncontrolled automated probing of commercial LLM endpoints can incur significant monetary costs, rate limits, and non-deterministic failures. Automated scripts must never incur live financial charges unintentionally.
+* **Decision**: Implement strict multi-tier cost and safety guardrails across the experimentation engine:
+  1. **Default Tier**: CLI commands default to `--provider fake` (zero cost, offline).
+  2. **Explicit Live Opt-In**: Live model calls strictly require the `--live` flag. If `--provider openai` is selected without `--live`, the engine raises an immediate, actionable error preventing execution.
+  3. **Pre-Flight Dry-Run**: `--dry-run` performs configuration validation, checks provider connectivity / credentials, simulates one turn, and computes estimated token consumption and spend before executing any benchmark runs.
+  4. **Multi-Tier Hard Limits**: `CostTracker` enforces hard stops on both `max_model_requests` (default: 300) and `max_spend_usd` (default: \$2.00). If either cap is hit, execution halts immediately with a `CostLimitExceededError`.
+  5. **Credential Masking**: API keys are scrubbed from all logs, traces, exceptions, and serialization artifacts via `_redact_secrets()`.
+* **Consequences**:
+  * *Positive*: Zero accidental financial spend, complete auditability, safe CI/CD execution.
+  * *Negative*: Operators running live benchmarks must pass explicit opt-in flags and set environment variables.
+
 

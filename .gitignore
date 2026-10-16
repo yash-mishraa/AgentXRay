@@ -44,4 +44,6 @@ stochastic_report.json
 stochastic_report.md
 audit_report.json
 audit_report.md
+model_pilot_report.json
+model_pilot_report.md
 reports/

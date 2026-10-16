@@ -85,7 +85,21 @@ AgentXRay is architected around a strict separation between its **Core Experimen
    * Stochastic target and 6 scenarios (`stochastic_target.py`, `stochastic_tasks.py`, `stochastic_ground_truth.py`): single-factor, conjunctive, distractor-heavy, null, non-monotonic, and weak-signal.
    * **Ground truth is strictly isolated**: The probing algorithms have zero access to ground-truth rules, rule metadata, or internal evaluation code.
 7. **`reporting.py` (Report Generation)**:
-   * Emits machine-readable JSON and human-readable Markdown reports for both deterministic and stochastic benchmarks.
+   * Emits machine-readable JSON and human-readable Markdown reports for deterministic, stochastic, and model pilot benchmarks.
+8. **`providers/` (Provider Abstraction Layer)**:
+   * `base.py`: Protocol definitions (`ModelProvider`), message types (`Message`), tool schemas (`ToolDefinition`), response objects (`ModelResponse`, `ToolCall`), usage metadata (`UsageMetadata`), and provider exceptions.
+   * `fake.py`: `FakeProvider` for zero-cost, hermetic testing with programmable responses, multi-turn tool calling, and simulated failure patterns.
+   * `openai_adapter.py`: Zero-dependency OpenAI REST adapter implemented via standard library `urllib.request`, automatic token secret redaction (`_redact_secrets`), and pricing registry (`gpt-4o-mini`, `gpt-4o`).
+9. **`agent_harness/` (Controlled Agent Execution Environment)**:
+   * `tools.py`: Hermetic mock tools (`safe_calculator` evaluated via standard library AST parsing, `mock_database_lookup`, `mock_unit_converter`) and dispatch environment. Zero filesystem or network access.
+   * `cost_tracker.py`: Tracks model requests, tokens, and estimated spend; enforces hard stops (`max_model_requests`, `max_spend_usd`).
+   * `evaluator.py`: `ToolCallingTaskEvaluator` assessing required tool invocation and response correctness purely from observable traces.
+   * `agent.py`: `ControlledAgent` multi-turn loop generating `AgentExecutionTrace` telemetry.
+   * `target.py`: `ModelBackedAgentTarget` implementing `execute(InputCase) -> TargetResult`.
+10. **`benchmarks/model_pilot/` (Model-Backed Pilot Benchmark)**:
+    * `tasks.py`: 3 pilot tasks (Baseline Control, Conflicting Prompt Constraint, Distractor-Heavy Field Override).
+    * `ground_truth.py`: Isolated ground-truth specifications for post-hoc evaluation.
+    * `runner.py`: Benchmark orchestrator and pre-flight dry-run engine (`dry_run_model_pilot`, `run_model_pilot_benchmark`).
 
 ---
 
@@ -127,25 +141,42 @@ AgentXRay/
 ├── src/
 │   └── agentxray/
 │       ├── __init__.py              # Package export
-│       ├── models.py                # Validated Pydantic models (inputs, trials, stochastic reports)
+│       ├── models.py                # Validated Pydantic models (inputs, trials, stochastic reports, pilot models)
 │       ├── statistics.py            # Wilson score, Newcombe CIs, FDR correction, power estimation
 │       ├── runner.py                # Intervention runner with budget and timeout enforcement
 │       ├── minimizer.py             # Deterministic 1-minimal delta debugging algorithm
 │       ├── stochastic_minimizer.py  # Probabilistic multi-trial delta debugging with FDR control
 │       ├── baselines.py             # Deterministic greedy ablation & seeded random search
 │       ├── stochastic_baselines.py  # Stochastic greedy ablation & seeded random search
-│       ├── reporting.py             # Deterministic & stochastic JSON and Markdown report generators
+│       ├── reporting.py             # Deterministic, stochastic, and model pilot report generators
 │       ├── audit.py                 # Multi-seed audit runner and comparative uncertainty reporter
+│       ├── providers/               # Provider abstraction layer
+│       │   ├── __init__.py
+│       │   ├── base.py              # ModelProvider protocol, message and tool call types
+│       │   ├── fake.py              # Hermetic FakeProvider for testing and dry runs
+│       │   └── openai_adapter.py    # Zero-dependency OpenAI REST adapter with secret redaction
+│       ├── agent_harness/           # Controlled agent harness
+│       │   ├── __init__.py
+│       │   ├── tools.py             # Hermetic mock tools with AST safe evaluation
+│       │   ├── cost_tracker.py      # Hard spend and request limits
+│       │   ├── evaluator.py         # Observable trace evaluator
+│       │   ├── agent.py             # Controlled multi-turn agent loop
+│       │   └── target.py            # ModelBackedAgentTarget adapter
 │       └── __main__.py              # CLI entry point (`agentxray` / `python -m agentxray`)
 ├── benchmarks/
-│   └── synthetic/
+│   ├── synthetic/
+│   │   ├── __init__.py
+│   │   ├── target.py                # Deterministic synthetic black-box target
+│   │   ├── ground_truth.py          # Deterministic ground-truth specifications (isolated)
+│   │   ├── tasks.py                 # Deterministic benchmark tasks
+│   │   ├── stochastic_target.py     # Probabilistic black-box target with isolated PRNG
+│   │   ├── stochastic_ground_truth.py # Stochastic ground-truth specifications (isolated)
+│   │   └── stochastic_tasks.py      # 6 stochastic benchmark tasks (single, conj, dist, null, non-mono, weak)
+│   └── model_pilot/
 │       ├── __init__.py
-│       ├── target.py                # Deterministic synthetic black-box target
-│       ├── ground_truth.py          # Deterministic ground-truth specifications (isolated)
-│       ├── tasks.py                 # Deterministic benchmark tasks
-│       ├── stochastic_target.py     # Probabilistic black-box target with isolated PRNG
-│       ├── stochastic_ground_truth.py # Stochastic ground-truth specifications (isolated)
-│       └── stochastic_tasks.py      # 6 stochastic benchmark tasks (single, conj, dist, null, non-mono, weak)
+│       ├── ground_truth.py          # Isolated model pilot ground-truth specifications
+│       ├── tasks.py                 # 3 pilot tasks (Control, Conflicting Prompt, Field Override)
+│       └── runner.py                # Model pilot benchmark runner and pre-flight dry run
 ├── tests/
 │   ├── __init__.py
 │   ├── test_models.py               # Pydantic schema validation tests
@@ -159,7 +190,9 @@ AgentXRay/
 │   ├── test_isolation.py            # Ground-truth isolation tests
 │   ├── test_reporting.py            # Deterministic reporting tests
 │   ├── test_stochastic_reporting.py # Stochastic reporting tests
-│   └── test_audit.py                # Multi-seed audit and reporting tests
+│   ├── test_audit.py                # Multi-seed audit and reporting tests
+│   ├── test_providers.py            # Provider abstraction and secret redaction tests
+│   └── test_model_harness.py        # Mock tools, cost tracker, agent, and pilot runner tests
 └── docs/
     ├── PRIOR_ART_REVIEW.md
     ├── RESEARCH_PROPOSAL.md
@@ -183,9 +216,14 @@ gantt
     Statistical Evaluation Layer     :done, 2026-10-16, 2026-10-16
     Stochastic Delta Debugging      :done, 2026-10-16, 2026-10-16
     Stochastic Baselines & Reports  :done, 2026-10-16, 2026-10-16
-    section Phase 2: Controlled Adapters
-    Controlled-Testbed Adapters      :2026-11-03, 2026-11-17
-    Human-Annotated LLM Benchmark    :2026-11-18, 2026-12-01
+    section Phase 1C: Model-Backed Pilot
+    Provider Layer & Fake Provider  :done, 2026-10-16, 2026-10-16
+    Controlled Harness & Safe Tools :done, 2026-10-16, 2026-10-16
+    Pilot Tasks & Cost Safeguards   :done, 2026-10-16, 2026-10-16
+    Dry-Run & Model Reports         :done, 2026-10-16, 2026-10-16
+    section Phase 2: Full Adapters & Benchmarks
+    Extended LLM Adapter Matrix     :2026-11-03, 2026-11-17
+    Human-Annotated LLM Benchmark   :2026-11-18, 2026-12-01
     section Phase 3: Multi-Surface
     Multi-Surface Schema Minimization:2026-12-02, 2026-12-22
 ```

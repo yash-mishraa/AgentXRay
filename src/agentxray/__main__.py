@@ -34,6 +34,7 @@ from agentxray.models import (
 )
 from agentxray.reporting import (
     format_markdown_report,
+    format_model_pilot_markdown_report,
     format_stochastic_markdown_report,
     write_reports,
     write_stochastic_reports,
@@ -44,6 +45,10 @@ from agentxray.stochastic_baselines import (
     run_stochastic_random_search,
 )
 from agentxray.stochastic_minimizer import StochasticDeltaDebugMinimizer
+from benchmarks.model_pilot import (
+    dry_run_model_pilot,
+    run_model_pilot_benchmark,
+)
 from benchmarks.synthetic.ground_truth import evaluate_ground_truth
 from benchmarks.synthetic.stochastic_ground_truth import evaluate_stochastic_ground_truth
 from benchmarks.synthetic.stochastic_tasks import get_all_stochastic_benchmark_tasks
@@ -282,9 +287,46 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["deterministic", "stochastic", "audit", "all"],
+        choices=["deterministic", "stochastic", "audit", "model", "all"],
         default="deterministic",
         help="Benchmark execution mode (default: deterministic).",
+    )
+    parser.add_argument(
+        "--provider",
+        type=str,
+        choices=["fake", "openai"],
+        default="fake",
+        help="Model provider for model-backed pilot experiments (default: fake).",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Model identifier (e.g. 'gpt-4o-mini' for openai, 'fake-model-pilot' for fake).",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        default=False,
+        help="Explicit authorization flag required to execute live model API calls.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Pre-flight validation: inspect proposed experiment size and estimated costs without calling providers.",
+    )
+    parser.add_argument(
+        "--max-spend",
+        type=float,
+        default=2.00,
+        help="Hard cap on estimated spend in USD for model-backed experiments (default: 2.00).",
+    )
+    parser.add_argument(
+        "--max-model-requests",
+        type=int,
+        default=500,
+        help="Hard cap on total model generation requests for model-backed experiments (default: 500).",
     )
     parser.add_argument(
         "--audit-seeds",
@@ -296,13 +338,13 @@ def main() -> None:
         "--max-trials",
         type=int,
         default=None,
-        help="Maximum trial budget per algorithm execution (default: 100 for deterministic, 300 for stochastic).",
+        help="Maximum trial budget per algorithm execution (default: 100 for deterministic, 300 for stochastic, 50 for model pilot).",
     )
     parser.add_argument(
         "--trials-per-candidate",
         type=int,
-        default=20,
-        help="Number of trials per candidate subset evaluation in stochastic mode (default: 20).",
+        default=None,
+        help="Number of trials per candidate subset evaluation in stochastic mode (default: 20 for synthetic, 5 for model pilot).",
     )
     parser.add_argument(
         "--failure-threshold",
@@ -370,10 +412,11 @@ def main() -> None:
 
     if args.mode in ("stochastic", "all"):
         stoch_max_trials = args.max_trials if args.max_trials is not None else 300
-        print(f"\n[Running Stochastic Benchmark (max_trials={stoch_max_trials}, trials_per_candidate={args.trials_per_candidate})]")
+        stoch_tpc = args.trials_per_candidate if args.trials_per_candidate is not None else 20
+        print(f"\n[Running Stochastic Benchmark (max_trials={stoch_max_trials}, trials_per_candidate={stoch_tpc})]")
         stoch_report = run_stochastic_benchmark(
             max_trials=stoch_max_trials,
-            trials_per_candidate=args.trials_per_candidate,
+            trials_per_candidate=stoch_tpc,
             failure_threshold=args.failure_threshold,
             alpha=args.alpha,
             confidence=args.confidence,
@@ -387,11 +430,12 @@ def main() -> None:
     if args.mode in ("audit", "all"):
         seeds = [int(s.strip()) for s in args.audit_seeds.split(",") if s.strip()]
         audit_max_trials = args.max_trials if args.max_trials is not None else 300
-        print(f"\n[Running Multi-Seed Stochastic Audit (seeds={seeds}, max_trials={audit_max_trials}, trials_per_candidate={args.trials_per_candidate})]")
+        audit_tpc = args.trials_per_candidate if args.trials_per_candidate is not None else 20
+        print(f"\n[Running Multi-Seed Stochastic Audit (seeds={seeds}, max_trials={audit_max_trials}, trials_per_candidate={audit_tpc})]")
         audit_report = run_multiseed_audit(
             seeds=seeds,
             max_trials=audit_max_trials,
-            trials_per_candidate=args.trials_per_candidate,
+            trials_per_candidate=audit_tpc,
             failure_threshold=args.failure_threshold,
             alpha=args.alpha,
             confidence=args.confidence,
@@ -404,6 +448,57 @@ def main() -> None:
             md_path=out_path / "audit_report.md",
         )
         print(format_audit_markdown_report(audit_report))
+
+    if args.mode in ("model", "all"):
+        pilot_tpc = args.trials_per_candidate if args.trials_per_candidate is not None else 5
+        pilot_max_trials = args.max_trials if args.max_trials is not None else 50
+        resolved_model = args.model or ("gpt-4o-mini" if args.provider == "openai" else "fake-model-pilot")
+
+        if args.dry_run:
+            print(f"\n[Executing Pre-Flight Dry Run for Model Pilot ({args.provider} / {resolved_model})]")
+            dry_info = dry_run_model_pilot(
+                provider_type=args.provider,
+                model_name=resolved_model,
+                live=args.live,
+                trials_per_candidate=pilot_tpc,
+                max_trials=pilot_max_trials,
+                max_model_requests=args.max_model_requests,
+                max_spend_usd=args.max_spend,
+            )
+            print("\nPre-Flight Configuration & Cost Validation:")
+            print(f"- Provider Type: `{dry_info['provider_type']}` | Model: `{dry_info['model_name']}`")
+            print(f"- Live API Calls Authorized (--live): `{dry_info['live_requested']}`")
+            print(f"- API Key Present in Environment: `{dry_info['api_key_configured']}`")
+            print(f"- Planned Pilot Tasks: `{len(dry_info['tasks'])}`")
+            for t in dry_info["tasks"]:
+                print(f"  * {t['name']} ({t['initial_elements_count']} candidate elements) - {t['type']}")
+            cost = dry_info["cost_estimation"]
+            print("- Resource Safeguards & Upfront Spend Estimation:")
+            print(f"  * Estimated Requests: {cost['estimated_requests']} (Max cap: {cost['max_allowed_requests']})")
+            print(f"  * Estimated Total Tokens: {cost['estimated_total_tokens']:,}")
+            print(f"  * Estimated Cost (USD): ${cost['estimated_spend_usd']:.4f} (Spend limit: ${cost['max_allowed_spend_usd']:.4f})")
+            print(f"- Authorization Status: **{dry_info['status']}**")
+            if not dry_info["can_execute_live"] and args.provider == "openai":
+                print("\n> [!CAUTION]")
+                print("> Live OpenAI API calls require 'OPENAI_API_KEY' set in environment AND the '--live' CLI flag.")
+                print("> Command to run live experiment: `agentxray --mode model --provider openai --live`")
+        else:
+            print(f"\n[Running Model-Backed Agent Pilot (provider={args.provider}, model={resolved_model}, live={args.live})]")
+            pilot_report = run_model_pilot_benchmark(
+                provider_type=args.provider,
+                model_name=resolved_model,
+                live=args.live,
+                max_trials=pilot_max_trials,
+                trials_per_candidate=pilot_tpc,
+                max_model_requests=args.max_model_requests,
+                max_spend_usd=args.max_spend,
+                failure_threshold=args.failure_threshold,
+                alpha=args.alpha,
+                confidence=args.confidence,
+                timeout_seconds=args.timeout,
+                output_dir=args.output_dir,
+            )
+            print(format_model_pilot_markdown_report(pilot_report))
 
     print("\n" + "=" * 75)
     print(" Execution finished successfully.")
