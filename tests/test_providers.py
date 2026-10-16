@@ -137,3 +137,47 @@ def test_secret_redaction():
 
     assert secret not in redacted
     assert "sk-...6789" in redacted
+
+
+def test_openai_provider_regex_redaction_without_explicit_secret():
+    """Verify _redact_secrets catches OpenAI key patterns via regex even when secret parameter is None."""
+    raw_error = "Failed to connect: Bearer sk-antigravitysecretkey987654321 in request headers"
+    redacted = _redact_secrets(raw_error)
+
+    assert "sk-antigravitysecretkey987654321" not in redacted
+    assert "sk-...4321" in redacted
+
+
+def test_openai_provider_malformed_response_handling():
+    """Verify malformed provider response payloads raise ProviderError safely."""
+    provider = OpenAIProvider(api_key="mock-key")
+    with pytest.raises(ProviderError, match="missing 'choices'"):
+        provider._parse_response({"id": "resp_1"}, latency_ms=10.0)
+
+
+def test_openai_provider_fallback_tokens_for_omitted_usage():
+    """Verify token counts are not silently zeroed when provider omits usage telemetry."""
+    provider = OpenAIProvider(api_key="mock-key")
+    raw = {
+        "choices": [{"message": {"role": "assistant", "content": "This is a response text"}, "finish_reason": "stop"}]
+    }
+    parsed = provider._parse_response(
+        raw,
+        latency_ms=10.0,
+        messages=[Message(role="user", content="A user prompt for estimation")],
+    )
+    assert parsed.usage.prompt_tokens > 0
+    assert parsed.usage.completion_tokens > 0
+    assert parsed.usage.estimated_cost_usd > 0.0
+
+
+def test_openai_provider_retries_telemetry():
+    """Verify retries parameter is preserved in UsageMetadata."""
+    provider = OpenAIProvider(api_key="mock-key")
+    raw = {
+        "choices": [{"message": {"role": "assistant", "content": "Response"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 50, "completion_tokens": 10, "total_tokens": 60},
+    }
+    parsed = provider._parse_response(raw, latency_ms=10.0, retries=2)
+    assert parsed.usage.retries == 2
+

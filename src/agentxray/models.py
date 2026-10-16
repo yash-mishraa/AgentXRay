@@ -343,8 +343,8 @@ class ModelPilotEvaluationResult(BaseModel):
         default=(), description="Baseline comparison results."
     )
     matches_ground_truth: bool = Field(..., description="Whether minimizer output matches ground truth.")
-    precision: float = Field(..., ge=0.0, le=1.0, description="Precision.")
-    recall: float = Field(..., ge=0.0, le=1.0, description="Recall.")
+    precision: float | None = Field(default=None, description="Precision (None if undefined for null case).")
+    recall: float | None = Field(default=None, description="Recall (None if undefined for null case).")
     excess_elements: tuple[str, ...] = Field(default=(), description="Distractor elements falsely retained.")
     missing_elements: tuple[str, ...] = Field(default=(), description="True causal elements omitted.")
 
@@ -369,6 +369,9 @@ class ModelPilotExperimentReport(BaseModel):
     limitations: tuple[str, ...] = Field(
         default=(
             "Model-backed pilot evaluations reflect a controlled local harness with hermetic mock tools; they do not imply capability to reverse-engineer arbitrary black-box commercial agents.",
+            "When using FakeProvider, response rules are programmed via heuristic string matches; fake-provider results validate harness mechanics and search integration, NOT real-world neural LLM diagnostic capability.",
+            "Reported Fisher exact p-values and risk differences represent exploratory post-selection metrics along an adaptive delta-debugging search path, not confirmatory hypothesis tests on independent validation samples.",
+            "For null cases (where true trigger and predicted trigger are empty), precision and recall are mathematically undefined (0/0) and reported as N/A.",
             "Planted failure triggers are controlled experimental interventions; they do not reveal hidden neural weights or unobservable internal model chain-of-thought.",
             "Model stochasticity and temperature drift can introduce run-to-run outcome variability.",
             "Benjamini-Hochberg FDR control applies to candidate ablation tests; adaptive selection bias (winner's curse) along the search path remains a factor.",

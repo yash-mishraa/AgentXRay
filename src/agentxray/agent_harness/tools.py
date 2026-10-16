@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import ast
+import math
 import operator
 from typing import Any, Callable
 
 from agentxray.providers.base import ToolDefinition
+
+# Safeguard thresholds for AST arithmetic evaluation
+_MAX_EXPRESSION_LENGTH = 250
+_MAX_AST_DEPTH = 10
+_MAX_POWER_BASE = 10000
+_MAX_POWER_EXPONENT = 100
 
 # Supported safe arithmetic operators for calculator
 _SAFE_OPERATORS: dict[type[ast.AST], Callable[[Any, Any], Any]] = {
@@ -20,12 +27,25 @@ _SAFE_OPERATORS: dict[type[ast.AST], Callable[[Any, Any], Any]] = {
 }
 
 
+def _check_ast_depth(node: ast.AST, current_depth: int = 1) -> None:
+    """Ensure expression does not exceed nesting recursion limit."""
+    if current_depth > _MAX_AST_DEPTH:
+        raise ValueError(f"Expression exceeds maximum nesting depth of {_MAX_AST_DEPTH}")
+    for child in ast.iter_child_nodes(node):
+        _check_ast_depth(child, current_depth + 1)
+
+
 def _safe_eval_math(node: ast.AST) -> float | int:
     """Safely evaluate an arithmetic AST expression without using eval()."""
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        if not math.isfinite(node.value):
+            raise ValueError("Non-finite numeric constant (inf or nan) is not permitted")
         return node.value
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-        return -_safe_eval_math(node.operand)
+        val = -_safe_eval_math(node.operand)
+        if not math.isfinite(val):
+            raise ValueError("Result is non-finite (inf or nan)")
+        return val
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd):
         return _safe_eval_math(node.operand)
     if isinstance(node, ast.BinOp):
@@ -36,7 +56,13 @@ def _safe_eval_math(node: ast.AST) -> float | int:
         right = _safe_eval_math(node.right)
         if op_type in (ast.Div, ast.FloorDiv, ast.Mod) and right == 0:
             raise ZeroDivisionError("Division by zero")
-        return _SAFE_OPERATORS[op_type](left, right)
+        if op_type is ast.Pow:
+            if abs(left) > _MAX_POWER_BASE or abs(right) > _MAX_POWER_EXPONENT:
+                raise ValueError("Exponentiation operands exceed safe limits")
+        res = _SAFE_OPERATORS[op_type](left, right)
+        if isinstance(res, (int, float)) and not math.isfinite(res):
+            raise ValueError("Calculation resulted in non-finite value (inf or nan)")
+        return res
     raise ValueError(f"Unsafe or invalid syntax in mathematical expression: {type(node).__name__}")
 
 
@@ -45,16 +71,21 @@ def safe_calculator(expression: str) -> str:
 
     Zero shell execution, zero code evaluation, zero file access.
     """
+    if not isinstance(expression, str):
+        return "Error: Expression must be a string"
     expr_clean = expression.strip()
     if not expr_clean:
         return "Error: Empty expression"
+    if len(expr_clean) > _MAX_EXPRESSION_LENGTH:
+        return f"Error: Expression exceeds maximum length of {_MAX_EXPRESSION_LENGTH} characters"
     try:
         parsed = ast.parse(expr_clean, mode="eval")
+        _check_ast_depth(parsed)
         result = _safe_eval_math(parsed.body)
         if isinstance(result, float) and result.is_integer():
             return str(int(result))
         return str(round(result, 6))
-    except (ValueError, ZeroDivisionError, SyntaxError) as err:
+    except (ValueError, ZeroDivisionError, SyntaxError, OverflowError) as err:
         return f"Error: {err}"
 
 
@@ -170,12 +201,32 @@ class MockToolEnvironment:
             return [defn for defn, _ in self._tools.values()]
         return [self._tools[name][0] for name in tool_names if name in self._tools]
 
-    def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
+    def execute(self, tool_name: str, arguments: Any) -> str:
         """Safely execute a tool by name in the hermetic environment."""
         if tool_name not in self._tools:
             return f"Error: Tool '{tool_name}' is not recognized in mock environment."
 
-        _, fn = self._tools[tool_name]
+        if not isinstance(arguments, dict):
+            return f"Error: Arguments for tool '{tool_name}' must be a dictionary, got {type(arguments).__name__}."
+
+        defn, fn = self._tools[tool_name]
+
+        # Validate required parameters from definition schema
+        required_params = defn.parameters.get("required", [])
+        missing = [p for p in required_params if p not in arguments]
+        if missing:
+            return f"Error: Invalid arguments for '{tool_name}': Missing required argument(s): {', '.join(missing)}"
+
+        # Validate parameter types where declared
+        properties = defn.parameters.get("properties", {})
+        for param, val in arguments.items():
+            if param in properties:
+                expected_type = properties[param].get("type")
+                if expected_type == "number" and not isinstance(val, (int, float)):
+                    return f"Error: Invalid arguments for '{tool_name}': Parameter '{param}' must be a number, got {type(val).__name__}."
+                elif expected_type == "string" and not isinstance(val, str):
+                    return f"Error: Invalid arguments for '{tool_name}': Parameter '{param}' must be a string, got {type(val).__name__}."
+
         try:
             return fn(**arguments)
         except TypeError as err:

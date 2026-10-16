@@ -47,3 +47,12 @@ audit_report.md
 model_pilot_report.json
 model_pilot_report.md
 reports/
+
+# Secrets & Credentials
+.env
+.env.*
+*.pem
+*.key
+credentials/
+secrets/
+

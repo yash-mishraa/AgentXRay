@@ -469,6 +469,7 @@ def main() -> None:
             print(f"- Provider Type: `{dry_info['provider_type']}` | Model: `{dry_info['model_name']}`")
             print(f"- Live API Calls Authorized (--live): `{dry_info['live_requested']}`")
             print(f"- API Key Present in Environment: `{dry_info['api_key_configured']}`")
+            print("- Endpoint Connectivity: NOT CHECKED (offline dry-run makes zero network requests)")
             print(f"- Planned Pilot Tasks: `{len(dry_info['tasks'])}`")
             for t in dry_info["tasks"]:
                 print(f"  * {t['name']} ({t['initial_elements_count']} candidate elements) - {t['type']}")

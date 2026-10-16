@@ -52,7 +52,10 @@ def evaluate_model_pilot_ground_truth(
     # Null case handling
     if spec.is_null_case:
         if not discovered.is_failure and not discovered_set:
-            return (True, 1.0, 1.0, (), ())
+            # Correct null identification (zero false alarms).
+            # Precision and recall are mathematically undefined for empty predicted & true sets (0/0).
+            return (True, None, None, (), ())
+        # False alarm: non-causal elements were falsely identified as a trigger
         return (False, 0.0, 0.0, tuple(sorted(discovered_set)), ())
 
     if not discovered.is_failure or not discovered_set:

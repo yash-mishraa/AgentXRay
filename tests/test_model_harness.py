@@ -263,3 +263,176 @@ def test_model_pilot_ground_truth_isolation():
         assert "benchmarks.model_pilot.ground_truth" not in source
         assert "ModelPilotGroundTruthSpec" not in source
 
+
+def test_offline_dry_run_makes_no_network_requests(monkeypatch):
+    """Verify offline dry-run never invokes network transport, even if configured for live openai."""
+    def fail_transport(*args, **kwargs):
+        raise AssertionError("Network transport contacted during offline dry run!")
+
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", fail_transport)
+
+    dry = dry_run_model_pilot(
+        provider_type="openai",
+        model_name="gpt-4o-mini",
+        live=True,
+    )
+    assert dry["connectivity_verified"] is False
+    assert dry["network_transport_contacted"] is False
+    assert dry["status"] in ("VALID", "REQUIRES_AUTH_OR_OPT_IN")
+
+
+def test_safe_calculator_hardened_boundaries():
+    """Verify safe calculator handles oversized expressions, deep nesting, overflow, and non-finite values safely."""
+    # 1. Non-string
+    assert "Expression must be a string" in safe_calculator(12345)  # type: ignore
+
+    # 2. Oversized string (>250 chars)
+    oversized = "1 + " * 100 + "1"
+    assert "exceeds maximum length" in safe_calculator(oversized)
+
+    # 3. Excessive AST nesting (>10 depth)
+    deep_nesting = "1 + " * 12 + "1"
+    assert "exceeds maximum nesting depth" in safe_calculator(deep_nesting)
+
+    # 4. Exponentiation overflow bounds
+    assert "Exponentiation operands exceed safe limits" in safe_calculator("2 ** 1000")
+    assert "Exponentiation operands exceed safe limits" in safe_calculator("100000 ** 2")
+
+    # 5. Non-finite values
+    assert "non-finite" in safe_calculator("1e300 * 1e300")
+
+
+def test_mock_tool_environment_schema_validation():
+    """Verify MockToolEnvironment validates arguments against schemas before dispatch."""
+    env = MockToolEnvironment()
+
+    # 1. Non-dict arguments
+    assert "must be a dictionary" in env.execute("calculator", "150 + 250")
+
+    # 2. Missing required argument
+    assert "Missing required argument" in env.execute("database_lookup", {"entity": "user_42"})
+
+    # 3. Type mismatch for numeric argument
+    assert "must be a number" in env.execute("unit_converter", {"value": "invalid_number", "from_unit": "km", "to_unit": "m"})
+
+
+def test_cost_tracker_pre_request_budget_check():
+    """Verify check_budget_before_request halts before initiating call when budget is breached."""
+    cfg = ExperimentBudgetConfig(max_model_requests=2, max_spend_usd=1.0)
+    tracker = CostTracker(cfg)
+
+    # 1 successful request
+    from agentxray.providers.base import UsageMetadata
+    tracker.record_usage(UsageMetadata(prompt_tokens=10, completion_tokens=5, total_tokens=15))
+    assert tracker.total_requests == 1
+    # Check passes when under budget
+    tracker.check_budget_before_request()
+
+    # Pre-flight check halts if total_requests reaches max_model_requests
+    tracker.total_requests = 2
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted before request"):
+        tracker.check_budget_before_request()
+
+    # Pre-flight check halts if projected spend would breach max_spend_usd
+    tracker.total_requests = 1
+    with pytest.raises(CostBudgetExceededError, match="Estimated spend budget would be exceeded before request"):
+        tracker.check_budget_before_request(est_prompt_tokens=10_000_000)
+
+
+def test_cost_tracker_unknown_model_pricing():
+    """Verify CostTracker rejects unknown models unless custom pricing is provided."""
+    with pytest.raises(ValueError, match="Unknown pricing for model 'unlisted-expensive-model'"):
+        CostTracker(ExperimentBudgetConfig(model_name="unlisted-expensive-model"))
+
+    # Providing custom pricing succeeds
+    cfg = ExperimentBudgetConfig(
+        model_name="unlisted-expensive-model",
+        custom_pricing_per_1m=(5.00, 15.00),
+    )
+    tracker = CostTracker(cfg)
+    assert tracker._pricing == (5.00, 15.00)
+
+
+def test_cost_tracker_retry_and_failed_request_accounting():
+    """Verify retries and failed requests increment total requests and failed counts."""
+    cfg = ExperimentBudgetConfig(max_model_requests=10, max_spend_usd=1.0)
+    tracker = CostTracker(cfg)
+    from agentxray.providers.base import UsageMetadata
+
+    # Request with 2 retries
+    tracker.record_usage(UsageMetadata(prompt_tokens=20, completion_tokens=10, total_tokens=30), retries=2)
+    assert tracker.total_requests == 3
+    assert tracker.retries == 2
+    assert tracker.successful_requests == 1
+
+    # Failed request with 1 retry
+    tracker.record_failed_request(retries=1)
+    assert tracker.total_requests == 5
+    assert tracker.retries == 3
+    assert tracker.failed_requests == 2
+
+
+def test_model_backed_target_halts_immediately_on_budget_exhaustion():
+    """Verify that when the request limit is hit, target.execute raises CostBudgetExceededError."""
+    from agentxray.agent_harness.agent import ControlledAgent
+    from agentxray.agent_harness.evaluator import ToolCallingTaskEvaluator
+    from agentxray.agent_harness.target import ModelBackedAgentTarget
+
+    budget_cfg = ExperimentBudgetConfig(max_model_requests=2, max_spend_usd=1.0)
+    tracker = CostTracker(budget_cfg)
+    agent = ControlledAgent(
+        provider=FakeProvider(),
+        mock_env=MockToolEnvironment(),
+        cost_tracker=tracker,
+    )
+    target = ModelBackedAgentTarget(agent=agent, evaluator=ToolCallingTaskEvaluator(), user_prompt="test")
+
+    input_case = InputCase(elements=("elem_a",))
+
+    # Trial 1: succeeds (1 request)
+    res1 = target.execute(input_case)
+    assert tracker.total_requests == 1
+
+    # Trial 2: must raise CostBudgetExceededError (and BudgetExhaustedError)
+    from agentxray.runner import BudgetExhaustedError
+    with pytest.raises(BudgetExhaustedError):
+        target.execute(input_case)
+
+
+def test_null_case_undefined_precision_and_recall():
+    """Verify null case returns None for precision and recall when correctly identified."""
+    from benchmarks.model_pilot.ground_truth import ModelPilotGroundTruthSpec, evaluate_model_pilot_ground_truth
+    from agentxray.models import CandidateEvaluation, StochasticDiscoveredCondition
+
+    spec = ModelPilotGroundTruthSpec(
+        task_id="null_test",
+        name="Null Test",
+        description="Clean null case",
+        trigger_elements=(),
+        is_null_case=True,
+    )
+
+    clean_condition = StochasticDiscoveredCondition(
+        subset_elements=(),
+        status=SearchStatus.NO_TRIGGER_FOUND,
+        is_failure=False,
+        minimality_status=StochasticMinimalityStatus.NOT_APPLICABLE,
+        candidate_evaluation=CandidateEvaluation(
+            candidate_elements=(),
+            trials=5,
+            failures=0,
+            failure_rate=0.0,
+            confidence_interval=(0.0, 0.43),
+        ),
+        target_calls_used=5,
+        status_message="No trigger found",
+    )
+
+    matches_gt, prec, rec, excess, missing = evaluate_model_pilot_ground_truth(spec, clean_condition)
+    assert matches_gt is True
+    assert prec is None  # Mathematically undefined
+    assert rec is None   # Mathematically undefined
+    assert excess == ()
+    assert missing == ()
+

@@ -7,9 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agentxray.providers.base import UsageMetadata
 from agentxray.providers.openai_adapter import MODEL_PRICING_PER_1M
+from agentxray.runner import BudgetExhaustedError
 
 
-class CostBudgetExceededError(Exception):
+class CostBudgetExceededError(BudgetExhaustedError):
     """Raised when request counts or estimated expenditure exceed configured limits."""
 
 
@@ -23,6 +24,9 @@ class ExperimentBudgetConfig(BaseModel):
     max_retries_per_request: int = Field(default=2, ge=0, description="Max retries for transient errors.")
     request_timeout_seconds: float = Field(default=20.0, gt=0.0, description="Per-request HTTP timeout.")
     model_name: str = Field(default="gpt-4o-mini", description="Target model identifier.")
+    custom_pricing_per_1m: tuple[float, float] | None = Field(
+        default=None, description="Optional custom (input_usd, output_usd) per 1M tokens."
+    )
 
 
 class CostTracker:
@@ -39,8 +43,39 @@ class CostTracker:
         self.total_tokens = 0
         self.estimated_spend_usd = 0.0
 
-        # Retrieve pricing for model or fallback to gpt-4o-mini standard pricing
-        self._pricing = MODEL_PRICING_PER_1M.get(config.model_name, (0.15, 0.60))
+        # Retrieve pricing for model or fallback to custom/standard pricing
+        if config.custom_pricing_per_1m is not None:
+            self._pricing = config.custom_pricing_per_1m
+        elif config.model_name in MODEL_PRICING_PER_1M:
+            self._pricing = MODEL_PRICING_PER_1M[config.model_name]
+        elif config.model_name.startswith("fake"):
+            self._pricing = (0.15, 0.60)
+        else:
+            raise ValueError(
+                f"Unknown pricing for model {config.model_name!r}. Please specify explicit "
+                f"custom_pricing_per_1m=(input_usd_per_1m, output_usd_per_1m) or choose from {list(MODEL_PRICING_PER_1M.keys())}."
+            )
+
+    def check_budget_before_request(self, est_prompt_tokens: int = 0) -> None:
+        """Verify that request count and projected spend are within limits before initiating a call."""
+        if self.total_requests >= self.config.max_model_requests:
+            raise CostBudgetExceededError(
+                f"Model request budget exhausted before request: executed {self.total_requests} requests "
+                f"(limit: {self.config.max_model_requests})."
+            )
+
+        if est_prompt_tokens > 0:
+            est_call_cost = (est_prompt_tokens * self._pricing[0]) / 1_000_000.0
+            if (self.estimated_spend_usd + est_call_cost) >= self.config.max_spend_usd:
+                raise CostBudgetExceededError(
+                    f"Estimated spend budget would be exceeded before request: current ${self.estimated_spend_usd:.4f} USD + "
+                    f"projected ${est_call_cost:.4f} USD >= limit ${self.config.max_spend_usd:.4f} USD."
+                )
+        elif self.estimated_spend_usd >= self.config.max_spend_usd:
+            raise CostBudgetExceededError(
+                f"Estimated spend budget exhausted before request: reached ${self.estimated_spend_usd:.4f} USD "
+                f"(limit: ${self.config.max_spend_usd:.4f} USD)."
+            )
 
     def record_usage(
         self,
@@ -55,21 +90,26 @@ class CostTracker:
         CostBudgetExceededError
             If total requests or estimated spend breach configured limits.
         """
-        self.total_requests += 1
+        # Increment request count including retried requests
+        self.total_requests += (1 + retries)
         self.retries += retries
 
         if success:
             self.successful_requests += 1
         else:
-            self.failed_requests += 1
+            self.failed_requests += (1 + retries)
 
-        self.prompt_tokens += usage.prompt_tokens
-        self.completion_tokens += usage.completion_tokens
-        self.total_tokens += usage.total_tokens
+        # Fallback for omitted/zero token reporting so unknown usage is not treated as zero cost
+        p_tok = max(10, usage.prompt_tokens) if (usage.prompt_tokens == 0 and usage.completion_tokens == 0) else usage.prompt_tokens
+        c_tok = max(5, usage.completion_tokens) if (usage.prompt_tokens == 0 and usage.completion_tokens == 0) else usage.completion_tokens
+
+        self.prompt_tokens += p_tok
+        self.completion_tokens += c_tok
+        self.total_tokens += (p_tok + c_tok)
 
         # Accumulate spend
         call_cost = (
-            usage.prompt_tokens * self._pricing[0] + usage.completion_tokens * self._pricing[1]
+            p_tok * self._pricing[0] + c_tok * self._pricing[1]
         ) / 1_000_000.0
         self.estimated_spend_usd = round(self.estimated_spend_usd + call_cost, 7)
 
@@ -85,6 +125,17 @@ class CostTracker:
             raise CostBudgetExceededError(
                 f"Estimated spend budget exhausted: reached ${self.estimated_spend_usd:.4f} USD "
                 f"(limit: ${self.config.max_spend_usd:.4f} USD)."
+            )
+
+    def record_failed_request(self, retries: int = 0) -> None:
+        """Record a request attempt that failed before receiving usage telemetry."""
+        self.total_requests += (1 + retries)
+        self.retries += retries
+        self.failed_requests += (1 + retries)
+        if self.total_requests >= self.config.max_model_requests:
+            raise CostBudgetExceededError(
+                f"Model request budget exhausted: executed {self.total_requests} requests "
+                f"(limit: {self.config.max_model_requests})."
             )
 
     def estimate_preflight_cost(

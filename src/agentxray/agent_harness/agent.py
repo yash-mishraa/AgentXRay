@@ -83,8 +83,20 @@ class ControlledAgent:
         error_msg: str | None = None
         finish_reason = "stop"
 
+        from agentxray.agent_harness.cost_tracker import CostBudgetExceededError
+
         while turns < self.max_turns:
             turns += 1
+
+            # Pre-flight budget check before initiating request
+            est_prompt = sum(len(m.content) for m in messages) // 4 + 20
+            try:
+                self.cost_tracker.check_budget_before_request(est_prompt_tokens=est_prompt)
+            except CostBudgetExceededError as budget_exc:
+                error_msg = str(budget_exc)
+                finish_reason = "budget_exhausted"
+                break
+
             t0 = time.perf_counter()
             try:
                 response: ModelResponse = self.provider.generate(
@@ -95,6 +107,10 @@ class ControlledAgent:
             except Exception as exc:
                 error_msg = f"Provider failure at turn {turns}: {exc}"
                 finish_reason = "error"
+                try:
+                    self.cost_tracker.record_failed_request()
+                except CostBudgetExceededError:
+                    pass
                 break
 
             turn_latency = (time.perf_counter() - t0) * 1000.0
@@ -104,8 +120,12 @@ class ControlledAgent:
 
             # Record in cost tracker (which will raise CostBudgetExceededError if budget breached)
             try:
-                self.cost_tracker.record_usage(response.usage, success=True)
-            except Exception as budget_exc:
+                self.cost_tracker.record_usage(
+                    response.usage,
+                    success=True,
+                    retries=response.usage.retries,
+                )
+            except CostBudgetExceededError as budget_exc:
                 error_msg = str(budget_exc)
                 finish_reason = "budget_exhausted"
                 break

@@ -50,6 +50,7 @@ class UsageMetadata(BaseModel):
     completion_tokens: int = Field(default=0, ge=0)
     total_tokens: int = Field(default=0, ge=0)
     estimated_cost_usd: float = Field(default=0.0, ge=0.0)
+    retries: int = Field(default=0, ge=0, description="Retry count made for request.")
 
 
 class ModelResponse(BaseModel):

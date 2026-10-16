@@ -83,6 +83,11 @@ class ModelBackedAgentTarget:
         )
         self._last_trace = trace
 
+        # Immediately halt on hard budget breach
+        if trace.finish_reason == "budget_exhausted":
+            from agentxray.agent_harness.cost_tracker import CostBudgetExceededError
+            raise CostBudgetExceededError(trace.error_message or "Model request or spend budget exhausted.")
+
         is_success, msg = self.evaluator.evaluate(trace)
 
         outcome = TargetOutcome.SUCCESS if is_success else TargetOutcome.FAILURE

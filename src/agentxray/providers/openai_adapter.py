@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -22,6 +23,9 @@ from agentxray.providers.base import (
     UsageMetadata,
 )
 
+# Regex pattern matching OpenAI secret key prefixes
+_SK_PATTERN = re.compile(r"sk-[A-Za-z0-9_-]{8,}")
+
 # Standard pricing registry (USD per 1M tokens) as of late 2024 / 2026
 MODEL_PRICING_PER_1M: dict[str, tuple[float, float]] = {
     "gpt-4o-mini": (0.15, 0.60),
@@ -30,11 +34,13 @@ MODEL_PRICING_PER_1M: dict[str, tuple[float, float]] = {
 }
 
 
-def _redact_secrets(text: str, secret: str | None) -> str:
+def _redact_secrets(text: str, secret: str | None = None) -> str:
     """Ensure sensitive tokens never appear in exceptions or error logs."""
-    if not secret or len(secret) < 4:
-        return text
-    return text.replace(secret, f"sk-...{secret[-4:]}")
+    redacted = text
+    if secret and len(secret) >= 4:
+        redacted = redacted.replace(secret, f"sk-...{secret[-4:]}")
+    # Regex sweep for any OpenAI-formatted keys
+    return _SK_PATTERN.sub(lambda m: f"sk-...{m.group(0)[-4:]}", redacted)
 
 
 class OpenAIProvider(ModelProvider):
@@ -146,7 +152,7 @@ class OpenAIProvider(ModelProvider):
                     latency_ms = (time.perf_counter() - t0) * 1000.0
                     raw_body = resp.read().decode("utf-8")
                     data = json.loads(raw_body)
-                    return self._parse_response(data, latency_ms)
+                    return self._parse_response(data, latency_ms, retries=attempts - 1, messages=messages)
             except urllib.error.HTTPError as http_err:
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 err_body = ""
@@ -186,7 +192,13 @@ class OpenAIProvider(ModelProvider):
             raise last_error
         raise ProviderError("Request terminated without response.")
 
-    def _parse_response(self, data: dict[str, Any], latency_ms: float) -> ModelResponse:
+    def _parse_response(
+        self,
+        data: dict[str, Any],
+        latency_ms: float,
+        retries: int = 0,
+        messages: Sequence[Message] = (),
+    ) -> ModelResponse:
         """Parse raw OpenAI response dict into normalized ModelResponse."""
         choices = data.get("choices", [])
         if not choices:
@@ -219,10 +231,16 @@ class OpenAIProvider(ModelProvider):
         usage_data = data.get("usage", {})
         p_tokens = usage_data.get("prompt_tokens", 0)
         c_tokens = usage_data.get("completion_tokens", 0)
+
+        # Fallback conservative estimate if usage telemetry is omitted
+        if p_tokens == 0 and c_tokens == 0:
+            p_tokens = max(10, sum(len(m.content) for m in messages) // 4 + 20)
+            c_tokens = max(5, len(content) // 4 + 5)
+
         t_tokens = usage_data.get("total_tokens", p_tokens + c_tokens)
 
-        # Estimate cost
-        pricing = MODEL_PRICING_PER_1M.get(self._model_name, (0.15, 0.60))
+        # Conservative pricing fallback if model is unlisted
+        pricing = MODEL_PRICING_PER_1M.get(self._model_name, (2.50, 10.00))
         est_cost = (p_tokens * pricing[0] + c_tokens * pricing[1]) / 1_000_000.0
 
         return ModelResponse(
@@ -233,6 +251,7 @@ class OpenAIProvider(ModelProvider):
                 completion_tokens=c_tokens,
                 total_tokens=t_tokens,
                 estimated_cost_usd=round(est_cost, 7),
+                retries=retries,
             ),
             finish_reason=finish_reason,
             model_identifier=self._model_name,

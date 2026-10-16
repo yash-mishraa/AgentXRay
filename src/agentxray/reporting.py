@@ -335,12 +335,15 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
         init_str = ", ".join(f"`{e}`" for e in eval_item.initial_elements)
         cond = eval_item.minimizer_condition
 
+        prec_str = f"{eval_item.precision * 100:.1f}%" if eval_item.precision is not None else "N/A (Null Case / Control)"
+        rec_str = f"{eval_item.recall * 100:.1f}%" if eval_item.recall is not None else "N/A (Null Case / Control)"
+
         lines.extend([
             f"### Pilot Task: {eval_item.task_name}",
             f"- **Description**: {eval_item.description}",
             f"- **Initial Candidate Elements ({len(eval_item.initial_elements)})**: {init_str}",
             f"- **Planted Ground Truth**: {gt_str}",
-            f"- **Minimizer Precision**: `{eval_item.precision * 100:.1f}%` | **Recall**: `{eval_item.recall * 100:.1f}%`",
+            f"- **Minimizer Precision**: `{prec_str}` | **Recall**: `{rec_str}`",
             f"- **Minimality Classification**: `{cond.minimality_status.value}`",
             f"- **Final Candidate Failure Rate**: `{cond.candidate_evaluation.failure_rate:.2f}` (95% Wilson CI: `[{cond.candidate_evaluation.confidence_interval[0]:.2f}, {cond.candidate_evaluation.confidence_interval[1]:.2f}]`, $k={cond.candidate_evaluation.failures}/{cond.candidate_evaluation.trials}$)",
             f"- **Status Narrative**: {cond.status_message}",
