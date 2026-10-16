@@ -38,6 +38,20 @@ class TestArchitecturalIsolation:
         assert "GroundTruthSpec" not in baselines_source
         assert "evaluate_ground_truth" not in baselines_source
 
+    def test_stochastic_minimizer_does_not_import_ground_truth(self) -> None:
+        import agentxray.stochastic_minimizer
+        source = inspect.getsource(agentxray.stochastic_minimizer)
+        assert "ground_truth" not in source
+        assert "StochasticGroundTruthSpec" not in source
+        assert "evaluate_stochastic_ground_truth" not in source
+
+    def test_stochastic_baselines_does_not_import_ground_truth(self) -> None:
+        import agentxray.stochastic_baselines
+        source = inspect.getsource(agentxray.stochastic_baselines)
+        assert "benchmarks.synthetic" not in source
+        assert "StochasticGroundTruthSpec" not in source
+        assert "evaluate_stochastic_ground_truth" not in source
+
     def test_target_exposes_no_public_rule_attributes(self) -> None:
         def sample_rule(elements: set[str]) -> tuple[bool, str, str | None]:
             return (False, "ok", None)
@@ -54,3 +68,23 @@ class TestArchitecturalIsolation:
         assert "rule_fn" not in public_methods
         assert "ground_truth" not in public_methods
         assert "trigger" not in public_methods
+
+    def test_stochastic_target_exposes_no_public_rule_attributes(self) -> None:
+        from benchmarks.synthetic.stochastic_target import StochasticSyntheticTarget
+
+        def sample_prob_rule(elements: set[str]) -> float:
+            return 0.50
+
+        target = StochasticSyntheticTarget(rule_fn=sample_prob_rule, name="ProbIsolationTarget")
+        public_methods = [m for m in dir(target) if not m.startswith("_")]
+
+        assert "execute" in public_methods
+        assert "call_count" in public_methods
+        assert "reset" in public_methods
+        assert "name" in public_methods
+
+        # Ensure no rule or PRNG inspectability
+        assert "rule_fn" not in public_methods
+        assert "ground_truth" not in public_methods
+        assert "trigger" not in public_methods
+        assert "rng" not in public_methods

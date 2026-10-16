@@ -4,10 +4,10 @@
 
 ---
 
-> [!WARNING]
-> **Research Status — Phase 1A (October 2026)**
-> **Novelty and scientific defensibility have not yet been formally established.**
-> AgentXRay is an exploratory research project. Novelty, generalizability, and real-world efficacy remain working hypotheses requiring empirical verification. No claims of superior performance or established novelty are made. Synthetic testbed success must not be interpreted as evidence of real-world LLM agent reverse-engineering capability.
+> [!NOTE]
+> **Research Status — Phase 1B (October 2026)**
+> **Stochastic synthetic experimentation and statistical reliability framework implemented.**
+> AgentXRay provides both deterministic (Phase 1A) and probabilistic binomial (Phase 1B) synthetic experimentation modes with rigorous uncertainty bounds (Wilson score intervals, Newcombe difference intervals, BH-FDR adjustments, and power estimations). Synthetic testbed success must not be interpreted as evidence of real-world LLM agent reverse-engineering capability.
 
 ---
 
@@ -89,15 +89,38 @@ flowchart LR
     P3 --> P4["Phase 4: Optional Service & Visualization"]
 ```
 
-* **Phase 1A (Current)**: Research document corrections and minimal deterministic vertical slice (typed schemas, synthetic target, 1-minimal delta debugger, greedy and random baselines, local reports).
-* **Phase 1B**: Synthetic benchmark suite with planted deterministic/conjunctive ground truth; baseline comparisons; statistical power estimation.
+* **Phase 1A (Completed)**: Research document corrections and minimal deterministic vertical slice (typed schemas, synthetic target, 1-minimal delta debugger, greedy and random baselines, local reports).
+* **Phase 1B (Completed)**: Probabilistic synthetic benchmark suite (single-factor, conjunctive, distractor-heavy, null, non-monotonic, weak-signal); statistical layer (Wilson score CIs, Newcombe difference CIs, Benjamini-Hochberg FDR, Cohen's h power estimation); stochastic baselines; four-tier minimality classification.
 * **Phase 2**: Controlled-testbed adapters (OpenAI, Anthropic) with local mock environments; evaluation on actual model-backed agents with human-verified root causes.
 * **Phase 3**: Multi-surface delta debugging (prompts + tool schemas in controlled-testbed mode).
 * **Phase 4**: Optional service layer and visualization interface, strictly contingent on research utility.
 
 ---
 
-## 6. Responsible Research and Ethical Constraints
+## 6. Quickstart & CLI Execution
+
+AgentXRay runs locally with zero external network or database requirements:
+
+```bash
+# 1. Install dependencies and local package in editable mode
+uv pip install -e .
+
+# 2. Run the deterministic synthetic benchmark suite (Phase 1A)
+agentxray --mode deterministic
+
+# 3. Run the stochastic synthetic benchmark suite with uncertainty estimation (Phase 1B)
+agentxray --mode stochastic --max-trials 300 --trials-per-candidate 20
+
+# 4. Run all benchmark suites
+agentxray --mode all
+
+# 5. Execute full test suite
+pytest
+```
+
+---
+
+## 7. Responsible Research and Ethical Constraints
 
 1. **Authorization Required**: Probing may only be conducted against systems owned by the operator or for which explicit testing permission has been granted.
 2. **No Intrusive Extraction**: AgentXRay does not perform jailbreaks, adversarial prompt injection attacks, or proprietary extraction against third-party endpoints.
@@ -106,6 +129,6 @@ flowchart LR
 
 ---
 
-## 7. License
+## 8. License
 
 Apache 2.0.

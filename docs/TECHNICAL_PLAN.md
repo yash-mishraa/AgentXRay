@@ -51,7 +51,7 @@ AgentXRay is architected around a strict separation between its **Core Experimen
 +---------------------------------------------------------------------------------------+
 ```
 
-### 1.1. Core Components (Phase 1A Vertical Slice)
+### 1.1. Core Components (Phase 1A Deterministic & Phase 1B Stochastic)
 
 1. **`models.py` (Validation & Boundary Types)**:
    * `ExperimentConfig`: Validates trial budget, timeout, seed, and target mode.
@@ -59,26 +59,33 @@ AgentXRay is architected around a strict separation between its **Core Experimen
    * `TargetResult`: Observable binary failure outcome, output message, and optional error telemetry.
    * `ProbeTrial`: Immutable record of a single execution containing trial ID, parent trial ID, intervention applied, input variation, and result.
    * `DiscoveredCondition`: Isolated subset, verification status (1-minimal vs incomplete), and target call count.
-   * `ExperimentReport`: Comprehensive structured summary of all trials, comparisons, and evaluator metrics.
-2. **`runner.py` (Controlled Intervention Runner)**:
+   * `CandidateEvaluation`: Multi-trial evaluation of a candidate subset with empirical failure rate and Wilson score confidence interval.
+   * `StochasticDiscoveredCondition`: Isolated condition, Wilson CIs, single-element removal evaluations, and four-tier 1-minimality classification.
+   * `StochasticBaselineComparison`: Benchmark outcome for stochastic greedy ablation and seeded random search.
+   * `StochasticEvaluationResult` & `StochasticExperimentReport`: Comprehensive structured summary of all trials, comparisons, power estimates, and evaluator metrics.
+2. **`statistics.py` (Statistical Evaluation Layer)**:
+   * Wilson score intervals for single binomial proportions.
+   * Newcombe hybrid score intervals for differences between two independent proportions.
+   * Two-sample pooled z-tests with two-sided and one-sided p-values.
+   * Benjamini-Hochberg False Discovery Rate (FDR) adjustment for multiple removal tests.
+   * Statistical power estimation based on Cohen's arcsine transformation.
+   * Zero third-party dependencies: implemented purely via standard library `math` and `statistics.NormalDist`.
+3. **`runner.py` (Controlled Intervention Runner)**:
    * Manages trial budgets (max calls and wall-clock timeout).
    * Executes interventions deterministically.
    * Records every trial with unique IDs and causal parentage.
-3. **`minimizer.py` (1-Minimal Delta Debugger)**:
-   * Adapts Zeller's delta-debugging algorithm for discrete input representations.
-   * Systematically subdivides and tests candidate subsets.
-   * Runs an explicit **1-minimality verification check** ($\forall e \in c, c \setminus \{e\}$ does not fail) before claiming 1-minimality.
-   * Explicitly avoids claiming global minimality.
-   * Handles non-monotonic outcomes conservatively.
-4. **`baselines.py` (Direct Algorithmic Baselines)**:
-   * *Greedy Single-Element Ablation*: Sequentially removes one element at a time; stops when failure is lost.
+4. **`minimizer.py` & `stochastic_minimizer.py` (1-Minimal Delta Debuggers)**:
+   * Deterministic ddmin: adapts Zeller's algorithm with hierarchical partitioning and explicit 1-minimality verification.
+   * Stochastic ddmin: executes multi-trial candidate subset evaluations, tests single-element removals against failure threshold, applies Benjamini-Hochberg FDR correction, and classifies minimality into `statistically_supported`, `observed_only`, `inconclusive`, or `not_minimal`.
+5. **`baselines.py` & `stochastic_baselines.py` (Direct Algorithmic Baselines)**:
+   * *Greedy Single-Element Ablation*: Sequentially removes one element at a time; verifies minimality on remaining set.
    * *Seeded Random Candidate Search*: Samples random candidate subsets under the exact same trial budget.
-5. **`benchmarks/synthetic/target.py` (Deterministic Black-Box Target)**:
-   * Exposes only a standard `execute(input_case) -> TargetResult` method.
-   * Plants single-factor, conjunctive multi-factor, distractor-heavy, and null failure rules.
-   * **Ground truth is strictly isolated**: The probing algorithm has zero access to ground-truth rules, rule metadata, or internal evaluation code.
-6. **`reporting.py` (Report Generation)**:
-   * Emits machine-readable JSON and human-readable Markdown reports generated strictly from executed experiment data.
+6. **`benchmarks/synthetic/` (Target & Ground-Truth Harness)**:
+   * Deterministic target and 4 tasks (`target.py`, `tasks.py`, `ground_truth.py`).
+   * Stochastic target and 6 scenarios (`stochastic_target.py`, `stochastic_tasks.py`, `stochastic_ground_truth.py`): single-factor, conjunctive, distractor-heavy, null, non-monotonic, and weak-signal.
+   * **Ground truth is strictly isolated**: The probing algorithms have zero access to ground-truth rules, rule metadata, or internal evaluation code.
+7. **`reporting.py` (Report Generation)**:
+   * Emits machine-readable JSON and human-readable Markdown reports for both deterministic and stochastic benchmarks.
 
 ---
 
@@ -120,25 +127,37 @@ AgentXRay/
 ├── src/
 │   └── agentxray/
 │       ├── __init__.py              # Package export
-│       ├── models.py                # Validated Pydantic models (inputs, trials, reports)
+│       ├── models.py                # Validated Pydantic models (inputs, trials, stochastic reports)
+│       ├── statistics.py            # Wilson score, Newcombe CIs, FDR correction, power estimation
 │       ├── runner.py                # Intervention runner with budget and timeout enforcement
-│       ├── minimizer.py             # 1-minimal delta debugging algorithm
-│       ├── baselines.py             # Greedy ablation & seeded random search baselines
-│       ├── reporting.py             # JSON and Markdown report generators
-│       └── __main__.py              # CLI entry point (`python -m agentxray`)
+│       ├── minimizer.py             # Deterministic 1-minimal delta debugging algorithm
+│       ├── stochastic_minimizer.py  # Probabilistic multi-trial delta debugging with FDR control
+│       ├── baselines.py             # Deterministic greedy ablation & seeded random search
+│       ├── stochastic_baselines.py  # Stochastic greedy ablation & seeded random search
+│       ├── reporting.py             # Deterministic & stochastic JSON and Markdown report generators
+│       └── __main__.py              # CLI entry point (`agentxray` / `python -m agentxray`)
 ├── benchmarks/
 │   └── synthetic/
 │       ├── __init__.py
-│       ├── target.py                # Synthetic black-box target with planted rules
-│       ├── ground_truth.py          # Ground-truth specifications (isolated from engine)
-│       └── tasks.py                 # Standard benchmark task definitions (A, B, C, D)
+│       ├── target.py                # Deterministic synthetic black-box target
+│       ├── ground_truth.py          # Deterministic ground-truth specifications (isolated)
+│       ├── tasks.py                 # Deterministic benchmark tasks
+│       ├── stochastic_target.py     # Probabilistic black-box target with isolated PRNG
+│       ├── stochastic_ground_truth.py # Stochastic ground-truth specifications (isolated)
+│       └── stochastic_tasks.py      # 6 stochastic benchmark tasks (single, conj, dist, null, non-mono, weak)
 ├── tests/
 │   ├── __init__.py
 │   ├── test_models.py               # Pydantic schema validation tests
+│   ├── test_statistics.py           # Wilson, Newcombe, BH, power estimation tests
 │   ├── test_runner.py               # Intervention runner & budget tests
-│   ├── test_minimizer.py            # Delta debugging & 1-minimality tests
-│   ├── test_baselines.py            # Baseline fairness and behavior tests
-│   └── test_reporting.py            # JSON/Markdown generation tests
+│   ├── test_minimizer.py            # Deterministic delta debugging tests
+│   ├── test_stochastic_minimizer.py # Stochastic delta debugging & minimality tests
+│   ├── test_baselines.py            # Deterministic baseline tests
+│   ├── test_stochastic_baselines.py # Stochastic baseline tests
+│   ├── test_stochastic_target.py    # Probabilistic target tests
+│   ├── test_isolation.py            # Ground-truth isolation tests
+│   ├── test_reporting.py            # Deterministic reporting tests
+│   └── test_stochastic_reporting.py # Stochastic reporting tests
 └── docs/
     ├── PRIOR_ART_REVIEW.md
     ├── RESEARCH_PROPOSAL.md
@@ -156,10 +175,12 @@ gantt
     dateFormat  YYYY-MM-DD
     section Phase 1A: Deterministic Core
     Research Document Corrections   :done, 2026-10-16, 2026-10-16
-    Deterministic Vertical Slice    :active, 2026-10-16, 2026-10-18
-    section Phase 1B: Synthetic Suite
-    Expanded Synthetic Benchmark     :2026-10-19, 2026-10-26
-    SQLite Persistence & SQLite CLI  :2026-10-27, 2026-11-02
+    Deterministic Vertical Slice    :done, 2026-10-16, 2026-10-16
+    section Phase 1B: Stochastic Core
+    Probabilistic Synthetic Target  :done, 2026-10-16, 2026-10-16
+    Statistical Evaluation Layer     :done, 2026-10-16, 2026-10-16
+    Stochastic Delta Debugging      :done, 2026-10-16, 2026-10-16
+    Stochastic Baselines & Reports  :done, 2026-10-16, 2026-10-16
     section Phase 2: Controlled Adapters
     Controlled-Testbed Adapters      :2026-11-03, 2026-11-17
     Human-Annotated LLM Benchmark    :2026-11-18, 2026-12-01

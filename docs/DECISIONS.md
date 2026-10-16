@@ -17,6 +17,8 @@
 | **ADR-005** | Tier 1 Synthetic Ground-Truth Decoupled from Real-World Claims | **Accepted** | Algorithmic verification without conflating synthetic with LLM capability |
 | **ADR-006** | Hermetic Mock Tool Interception by Default | **Accepted** | Guarantees safety and isolation during automated probing |
 | **ADR-007** | Target 1-Minimality in Delta Debugging (Explicitly Not Global) | **Accepted** | Algorithmic tractability and precision without false global claims |
+| **ADR-008** | Wilson Score & Newcombe Hybrid Score for Binomial Proportions | **Accepted** | Rigorous uncertainty intervals without boundary degeneracy or SciPy dependency |
+| **ADR-009** | Four-Tier Epistemic Classification for Stochastic 1-Minimality | **Accepted** | Distinguishes statistically verified vs observed-only minimal failure triggers |
 
 ---
 
@@ -106,3 +108,30 @@
 * **Consequences**:
   * *Positive*: Polynomial sample complexity ($O(N^2)$ worst case) and guaranteed local minimality.
   * *Negative*: The discovered subset may not be the globally smallest subset if multiple distinct failure triggers exist.
+
+---
+
+### ADR-008: Wilson Score & Newcombe Hybrid Score Methods for Binomial Proportions
+
+* **Context**: In stochastic agent probing, target outcomes are binomial (success vs. failure). The asymptotic Wald confidence interval ($\hat{p} \pm z \sqrt{\hat{p}(1-\hat{p})/n}$) suffers from catastrophic boundary collapse when $\hat{p} \in \{0, 1\}$, producing zero-width intervals that misrepresent uncertainty.
+* **Decision**: Adopt the **Wilson score interval** for single binomial proportions and the **Newcombe hybrid score interval** for differences between independent proportions ($\hat{p}_1 - \hat{p}_2$). Standard library `statistics.NormalDist` is used for standard normal quantile evaluations (`inv_cdf` and `cdf`) and `math.erfc` for two-sided p-values.
+* **Alternatives Considered**:
+  * *Standard Wald interval*: Rejected due to zero-variance breakdown at extreme rates.
+  * *SciPy / Statsmodels dependency*: Rejected to maintain a lean, zero-dependency experimentation engine.
+* **Consequences**:
+  * *Positive*: Asymptotically correct coverage, no zero-width intervals at boundaries, and strict interval bounds ($[0, 1]$ and $[-1, 1]$).
+  * *Negative*: Requires iterative formulation instead of simple closed-form Wald equations (handled cleanly by standard library functions).
+
+---
+
+### ADR-009: Four-Tier Epistemic Classification for Stochastic 1-Minimality
+
+* **Context**: In stochastic systems with background failure rates ($P_{\text{base}} > 0$), observed drops in sample proportion upon element ablation may stem from random sampling noise rather than true causal necessity.
+* **Decision**: Delta debugging in stochastic environments classifies 1-minimality into four distinct epistemic tiers:
+  1. `statistically_supported`: Every single-element removal demonstrates a statistically significant drop in failure rate (Benjamini-Hochberg FDR-adjusted $q < \alpha$).
+  2. `observed_only`: The empirical failure rate dropped upon every single-element removal ($\hat{p}_S > \hat{p}_{S \setminus \{e\}}$), but one or more tests did not reach statistical significance due to sample size.
+  3. `inconclusive`: Search budget was exhausted during verification or candidate could not be fully tested.
+  4. `not_minimal`: Removal of at least one element does not decrease the observed failure rate or still satisfies the failure threshold.
+* **Consequences**:
+  * *Positive*: Prevents false causal claims in low-power or high-noise environments while acknowledging empirical reductions.
+  * *Negative*: Requires multiple ablation evaluations per candidate, increasing target invocation counts.

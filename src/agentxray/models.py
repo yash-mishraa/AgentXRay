@@ -213,3 +213,103 @@ class ExperimentReport(BaseModel):
         ),
         description="Explicit scientific and engineering limitations.",
     )
+
+
+class StochasticMinimalityStatus(str, Enum):
+    """Classification of 1-minimality in a stochastic environment."""
+
+    STATISTICALLY_SUPPORTED = "statistically_supported"
+    OBSERVED_ONLY = "observed_only"
+    INCONCLUSIVE = "inconclusive"
+    NOT_MINIMAL = "not_minimal"
+
+
+class CandidateEvaluation(BaseModel):
+    """Evaluation of a specific candidate subset over multiple stochastic trials."""
+
+    model_config = ConfigDict(frozen=True)
+
+    candidate_elements: tuple[str, ...] = Field(..., description="Candidate subset elements evaluated.")
+    trials: int = Field(..., ge=0, description="Total stochastic trials executed.")
+    failures: int = Field(..., ge=0, description="Number of observed failure outcomes.")
+    failure_rate: float = Field(..., ge=0.0, le=1.0, description="Estimated failure probability k/n.")
+    confidence_interval: tuple[float, float] = Field(..., description="Wilson score confidence interval.")
+
+
+class StochasticDiscoveredCondition(BaseModel):
+    """Outcome of stochastic minimal trigger discovery."""
+
+    model_config = ConfigDict(frozen=True)
+
+    subset_elements: tuple[str, ...] = Field(default=(), description="Isolated input elements.")
+    status: SearchStatus = Field(..., description="Overall search status.")
+    is_failure: bool = Field(..., description="Whether candidate met predefined failure threshold.")
+    minimality_status: StochasticMinimalityStatus = Field(..., description="Classification of minimality.")
+    candidate_evaluation: CandidateEvaluation = Field(..., description="Statistical evaluation of final candidate.")
+    removal_evaluations: dict[str, CandidateEvaluation] = Field(
+        default_factory=dict, description="Evaluations of single-element removals."
+    )
+    target_calls_used: int = Field(..., ge=0, description="Total target calls consumed.")
+    status_message: str = Field(default="", description="Detailed narrative.")
+
+
+class StochasticBaselineComparison(BaseModel):
+    """Comparative outcome from a stochastic baseline search."""
+
+    model_config = ConfigDict(frozen=True)
+
+    baseline_name: str = Field(..., description="Name of the baseline.")
+    discovered_elements: tuple[str, ...] = Field(default=(), description="Elements isolated by baseline.")
+    failure_reproduced: bool = Field(..., description="Whether discovered set met failure threshold.")
+    minimality_status: StochasticMinimalityStatus = Field(..., description="Stochastic minimality classification.")
+    target_calls: int = Field(..., ge=0, description="Target evaluations consumed.")
+    candidate_evaluation: CandidateEvaluation = Field(..., description="Statistical evaluation of isolated candidate.")
+    irrelevant_elements_remaining: int = Field(..., ge=0, description="Count of non-causal distractor elements retained.")
+    matches_ground_truth: bool = Field(..., description="Exact match with planted trigger.")
+    budget_exhausted: bool = Field(default=False, description="Whether search budget was exhausted.")
+
+
+class StochasticEvaluationResult(BaseModel):
+    """Comprehensive evaluation of stochastic minimizer and baselines on a single task."""
+
+    model_config = ConfigDict(frozen=True)
+
+    task_name: str = Field(..., description="Name of the task.")
+    description: str = Field(..., description="Task explanation.")
+    initial_elements: tuple[str, ...] = Field(..., description="Initial input elements.")
+    ground_truth_trigger: tuple[str, ...] = Field(..., description="Planted causal failure condition.")
+    base_probability: float = Field(..., ge=0.0, le=1.0, description="Background failure probability.")
+    trigger_probability: float = Field(..., ge=0.0, le=1.0, description="True failure probability when triggered.")
+    minimizer_condition: StochasticDiscoveredCondition = Field(..., description="Minimizer result.")
+    baseline_comparisons: tuple[StochasticBaselineComparison, ...] = Field(
+        default=(), description="Baseline results."
+    )
+    matches_ground_truth: bool = Field(..., description="Whether minimizer output matches ground truth.")
+    precision: float = Field(..., ge=0.0, le=1.0, description="Precision.")
+    recall: float = Field(..., ge=0.0, le=1.0, description="Recall.")
+    excess_elements: tuple[str, ...] = Field(default=(), description="Distractor elements falsely retained.")
+    missing_elements: tuple[str, ...] = Field(default=(), description="True causal elements omitted.")
+
+
+class StochasticExperimentReport(BaseModel):
+    """Complete report combining all stochastic task evaluations, power metrics, and aggregate comparisons."""
+
+    model_config = ConfigDict(frozen=True)
+
+    experiment_name: str = Field(..., description="Experiment name.")
+    config: ExperimentConfig = Field(..., description="Experiment config.")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Completion timestamp.")
+    trials_per_candidate: int = Field(..., ge=1, description="Number of trials executed per candidate subset.")
+    total_target_calls: int = Field(..., ge=0, description="Sum of all target calls.")
+    evaluations: tuple[StochasticEvaluationResult, ...] = Field(..., description="Per-task evaluation records.")
+    aggregate_metrics: dict[str, Any] = Field(default_factory=dict, description="Aggregate recovery, precision, FDR.")
+    summary: str = Field(..., description="Executive narrative summary.")
+    limitations: tuple[str, ...] = Field(
+        default=(
+            "Stochastic synthetic targets evaluate configurable binomial probabilities; they do not model complex semantic or non-monotonic prompt drift in real-world LLMs.",
+            "Observed 1-minimality distinguishes cases where removal empirically drops failure from statistically supported cases where confidence bounds confirm the drop.",
+            "No external LLM APIs were called; all results were generated locally in the isolated stochastic testbed.",
+        ),
+        description="Explicit scientific and engineering limitations.",
+    )
+

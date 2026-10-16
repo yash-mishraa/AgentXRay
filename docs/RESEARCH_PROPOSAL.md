@@ -110,14 +110,26 @@ To maintain scientific integrity, AgentXRay strictly separates **synthetic algor
 +-----------------------------------------------------------------------------------------+
 ```
 
-### 4.1. Tier 1: Synthetic Deterministic Target Suite
-Used for Phase 1 verification. Planted ground-truth rules:
-1. **Single-Factor Rule**: Fails if and only if element $E_A$ is present.
-2. **Conjunctive Multi-Factor Rule**: Fails if and only if elements $E_A$ AND $E_B$ are both present.
-3. **Distractor Case**: Target input contains causal elements alongside multiple irrelevant distractor elements; the algorithm must strip all distractors without losing the failure.
-4. **No-Trigger Null Case**: Target never fails; algorithm must report that no trigger exists within the search space without asserting false causal claims.
+### 4.1. Tier 1: Synthetic Benchmark Target Suites
 
-*Ground-Truth Isolation*: Ground-truth metadata is strictly separated from the probing engine. The engine operates purely via the target's public `execute(input)` method. Evaluation metrics are computed post-hoc by comparing the algorithm's output against the ground-truth specification.
+Used for Phase 1 algorithmic verification. Ground-truth rules are strictly isolated from the probing engine:
+
+1. **Tier 1A: Deterministic Target Suite**:
+   * *Single-Factor Rule*: Fails if and only if element $E_A$ is present.
+   * *Conjunctive Multi-Factor Rule*: Fails if and only if elements $E_A$ AND $E_B$ are both present.
+   * *Distractor Case*: Target input contains causal elements alongside multiple irrelevant distractor elements; the algorithm must strip all distractors without losing the failure.
+   * *No-Trigger Null Case*: Target never fails; algorithm must report that no trigger exists within the search space without asserting false causal claims.
+
+2. **Tier 1B: Stochastic Probabilistic Target Suite**:
+   * Evaluates algorithm reliability when outcomes are governed by binomial probability distributions $P(\text{failure} \mid \text{input elements})$.
+   * *Probabilistic Single-Factor*: $P(\text{fail} \mid \text{trigger}) = 0.85$, $P(\text{base}) = 0.05$.
+   * *Probabilistic Conjunctive*: $P(\text{fail} \mid E_A \land E_B) = 0.85$, $P(\text{base}) = 0.05$.
+   * *Probabilistic Distractor-Heavy*: 1 causal factor with $P = 0.85$, 4 irrelevant distractors.
+   * *Probabilistic Null Case*: Unconditional background failure probability $P = 0.05$ across all configurations.
+   * *Probabilistic Non-Monotonic Case*: $P(\text{fail} \mid A) = 0.85$, $P(\text{fail} \mid A \land B) = 0.10$ (suppression), $P(\text{fail} \mid A \land B \land C) = 0.85$ (restoration).
+   * *Probabilistic Weak-Signal Case*: $P(\text{fail} \mid \text{trigger}) = 0.35$ vs. $P(\text{base}) = 0.10$. Tests power boundaries and sample size adequacy.
+
+*Ground-Truth Isolation*: Ground-truth metadata is strictly separated from the probing engine. The engine operates purely via the target's public `execute(input)` method. Evaluation metrics (precision, recall, power, FDR) are computed post-hoc by comparing the algorithm's output against the ground-truth specification.
 
 ### 4.2. Tier 2: Addressing Real-World Benchmark Limitations
 * **Why SWE-bench, GAIA, and ToolBench Do Not Provide Causal Ground Truth**:  
@@ -141,8 +153,19 @@ A finding is classified as an established causal effect only when:
 * **Multiple Testing Correction**: When multiple interventions are tested, p-values are adjusted using the Benjamini-Hochberg procedure ($\text{FDR} \le 0.05$).
 
 ### 5.2. 1-Minimality vs. Global Minimality
-* The algorithm verifies **1-minimality**: for isolated subset $S$, $\forall e \in S$, $S \setminus \{e\}$ passes.
+* The algorithm verifies **1-minimality**: for isolated subset $S$, $\forall e \in S$, $S \setminus \{e\}$ passes (or drops below failure threshold).
 * The algorithm **must not claim global minimality** ($|S| \le |S'| \ \forall S' \subseteq \text{Input}$ that fail) unless the complete power set of size $< |S|$ has been verified.
+
+### 5.3. Statistical Probing and Stochastic Minimality Epistemics
+To avoid false causal claims in probabilistic settings, AgentXRay employs:
+* **Wilson Score Interval**: Computes asymmetric confidence bounds for binomial proportions $\hat{p} = k/n$, resolving Wald boundary degeneracy at $k=0$ and $k=n$.
+* **Newcombe Hybrid Score Interval**: Calculates exact uncertainty intervals for differences in proportions ($\hat{p}_1 - \hat{p}_2$).
+* **Two-Sample Hypothesis Testing**: Evaluates whether candidate subsets produce statistically elevated failure rates relative to baselines or ablated controls via pooled z-tests.
+* **Four-Tier Epistemic Minimality Classification**:
+  1. `statistically_supported`: Every element ablation demonstrates a statistically significant drop in failure rate (BH-adjusted $q < \alpha$).
+  2. `observed_only`: Empirical proportions dropped upon every removal ($\hat{p}_S > \hat{p}_{S \setminus \{e\}}$), but statistical significance was not reached due to sample size.
+  3. `inconclusive`: Search budget was exhausted during verification or trials were insufficient.
+  4. `not_minimal`: Removal of at least one element does not decrease failure rate or still satisfies the failure threshold.
 
 ---
 

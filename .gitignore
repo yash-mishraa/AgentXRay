@@ -40,3 +40,6 @@ htmlcov/
 # Output Reports
 report.json
 report.md
+stochastic_report.json
+stochastic_report.md
+reports/
