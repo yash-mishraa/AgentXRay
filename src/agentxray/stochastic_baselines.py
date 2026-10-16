@@ -23,20 +23,24 @@ def _classify_stochastic_minimality(
     candidate: tuple[str, ...],
     cand_eval: CandidateEvaluation,
     removal_evals: dict[str, CandidateEvaluation],
+    failure_threshold: float = 0.30,
     alpha: float = 0.05,
     confidence: float = 0.95,
+    alternative: str = "two-sided",
 ) -> StochasticMinimalityStatus:
     """Helper to classify stochastic minimality for baseline results."""
     if not candidate:
-        return StochasticMinimalityStatus.NOT_MINIMAL
-    if len(candidate) == 1:
-        return StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
+        return StochasticMinimalityStatus.NOT_APPLICABLE
 
     missing = set(candidate) - set(removal_evals.keys())
     if missing:
         return StochasticMinimalityStatus.INCONCLUSIVE
 
-    p_values_one_sided: list[float] = []
+    # Check if removing any element still met the failure threshold
+    if any(rem.failure_rate >= failure_threshold for rem in removal_evals.values()):
+        return StochasticMinimalityStatus.NOT_MINIMAL
+
+    p_values: list[float] = []
     observed_drops: list[bool] = []
 
     for elem in candidate:
@@ -48,11 +52,12 @@ def _classify_stochastic_minimality(
             n2=rem_eval.trials,
             alpha=alpha,
             confidence=confidence,
+            alternative=alternative,
         )
-        p_values_one_sided.append(comp.p_value_one_sided)
+        p_values.append(comp.p_value if alternative == "two-sided" else comp.p_value_one_sided)
         observed_drops.append(cand_eval.failure_rate > rem_eval.failure_rate)
 
-    adjusted = adjust_p_values_bh(p_values_one_sided)
+    adjusted = adjust_p_values_bh(p_values)
     if all(q < alpha for q in adjusted):
         return StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
     if all(observed_drops):
@@ -67,6 +72,7 @@ def run_stochastic_greedy_ablation(
     failure_threshold: float = 0.30,
     alpha: float = 0.05,
     confidence: float = 0.95,
+    alternative: str = "two-sided",
     true_trigger: tuple[str, ...] = (),
     alternative_valid_triggers: tuple[tuple[str, ...], ...] = (),
 ) -> StochasticBaselineComparison:
@@ -112,7 +118,7 @@ def run_stochastic_greedy_ablation(
             baseline_name="stochastic_greedy_ablation",
             discovered_elements=(),
             failure_reproduced=False,
-            minimality_status=StochasticMinimalityStatus.NOT_MINIMAL,
+            minimality_status=StochasticMinimalityStatus.NOT_APPLICABLE,
             target_calls=runner.trial_count,
             candidate_evaluation=base_eval,
             irrelevant_elements_remaining=0,
@@ -122,7 +128,6 @@ def run_stochastic_greedy_ablation(
 
     current_elements = list(initial_input.elements)
     current_eval = base_eval
-    budget_exhausted = False
 
     try:
         # Step 2: Sequential removal pass
@@ -141,36 +146,39 @@ def run_stochastic_greedy_ablation(
             )
 
             if step_eval.failure_rate >= failure_threshold:
-                # Element at index i was unnecessary; remove it
                 current_elements.pop(i)
                 current_eval = step_eval
             else:
-                # Element at index i was necessary to maintain failure threshold
                 i += 1
 
         discovered = tuple(current_elements)
 
         # Step 3: Minimality evaluation of discovered subset
         removal_evals: dict[str, CandidateEvaluation] = {}
-        if len(discovered) > 1:
-            for elem in discovered:
+        for elem in discovered:
+            if len(discovered) > 1:
                 without_elem = tuple(e for e in discovered if e != elem)
                 sub_case = initial_input.subset(without_elem)
-                rem_eval = evaluate_candidate_stochastically(
-                    runner=runner,
-                    input_case=sub_case,
-                    trials=trials_per_candidate,
-                    intervention_type="stochastic_greedy_minimality_check",
-                    confidence=confidence,
-                )
-                removal_evals[elem] = rem_eval
+            else:
+                sub_case = initial_input.without(elem)
+
+            rem_eval = evaluate_candidate_stochastically(
+                runner=runner,
+                input_case=sub_case,
+                trials=trials_per_candidate,
+                intervention_type="stochastic_greedy_minimality_check",
+                confidence=confidence,
+            )
+            removal_evals[elem] = rem_eval
 
         minimality_status = _classify_stochastic_minimality(
             candidate=discovered,
             cand_eval=current_eval,
             removal_evals=removal_evals,
+            failure_threshold=failure_threshold,
             alpha=alpha,
             confidence=confidence,
+            alternative=alternative,
         )
 
         discovered_set = set(discovered)
@@ -212,6 +220,7 @@ def run_stochastic_random_search(
     failure_threshold: float = 0.30,
     alpha: float = 0.05,
     confidence: float = 0.95,
+    alternative: str = "two-sided",
     true_trigger: tuple[str, ...] = (),
     alternative_valid_triggers: tuple[tuple[str, ...], ...] = (),
     seed: int = 42,
@@ -258,7 +267,7 @@ def run_stochastic_random_search(
             baseline_name="stochastic_seeded_random",
             discovered_elements=(),
             failure_reproduced=False,
-            minimality_status=StochasticMinimalityStatus.NOT_MINIMAL,
+            minimality_status=StochasticMinimalityStatus.NOT_APPLICABLE,
             target_calls=runner.trial_count,
             candidate_evaluation=base_eval,
             irrelevant_elements_remaining=0,
@@ -300,32 +309,35 @@ def run_stochastic_random_search(
     minimality_status = StochasticMinimalityStatus.INCONCLUSIVE
 
     if not budget_exhausted:
-        if len(best_candidate) == 1:
-            minimality_status = StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
-        else:
-            try:
-                for elem in best_candidate:
+        try:
+            for elem in best_candidate:
+                if len(best_candidate) > 1:
                     without_elem = tuple(e for e in best_candidate if e != elem)
                     sub_case = initial_input.subset(without_elem)
-                    rem_eval = evaluate_candidate_stochastically(
-                        runner=runner,
-                        input_case=sub_case,
-                        trials=trials_per_candidate,
-                        intervention_type="stochastic_random_minimality_check",
-                        confidence=confidence,
-                    )
-                    removal_evals[elem] = rem_eval
+                else:
+                    sub_case = initial_input.without(elem)
 
-                minimality_status = _classify_stochastic_minimality(
-                    candidate=best_candidate,
-                    cand_eval=best_eval,
-                    removal_evals=removal_evals,
-                    alpha=alpha,
+                rem_eval = evaluate_candidate_stochastically(
+                    runner=runner,
+                    input_case=sub_case,
+                    trials=trials_per_candidate,
+                    intervention_type="stochastic_random_minimality_check",
                     confidence=confidence,
                 )
-            except (BudgetExhaustedError, TimeoutExceededError):
-                budget_exhausted = True
-                minimality_status = StochasticMinimalityStatus.INCONCLUSIVE
+                removal_evals[elem] = rem_eval
+
+            minimality_status = _classify_stochastic_minimality(
+                candidate=best_candidate,
+                cand_eval=best_eval,
+                removal_evals=removal_evals,
+                failure_threshold=failure_threshold,
+                alpha=alpha,
+                confidence=confidence,
+                alternative=alternative,
+            )
+        except (BudgetExhaustedError, TimeoutExceededError):
+            budget_exhausted = True
+            minimality_status = StochasticMinimalityStatus.INCONCLUSIVE
 
     best_set = set(best_candidate)
     matches_gt = (best_set == true_set) or any(best_set == alt for alt in alt_sets)

@@ -122,3 +122,44 @@ def test_estimate_two_proportion_power_properties():
     power_n10 = estimate_two_proportion_power(p1=0.10, p2=0.40, n_per_group=10)
     power_n100 = estimate_two_proportion_power(p1=0.10, p2=0.40, n_per_group=100)
     assert power_n100 > power_n10
+
+    # One-sided power should be greater than two-sided power for p1 > p2
+    power_one_sided = estimate_two_proportion_power(p1=0.35, p2=0.10, n_per_group=20, alternative="greater")
+    power_two_sided = estimate_two_proportion_power(p1=0.35, p2=0.10, n_per_group=20, alternative="two-sided")
+    assert power_one_sided > power_two_sided
+
+
+def test_fisher_exact_test_known_tables():
+    """Verify exact hypergeometric p-values against standard reference tables."""
+    from agentxray.statistics import fisher_exact_test
+
+    # Classical Lady Tasting Tea problem: 4 successes in 4 trials vs 0 in 4 trials
+    # P(X >= 4) = 1 / binom(8, 4) = 1 / 70 ≈ 0.01429
+    p_greater = fisher_exact_test(4, 4, 0, 4, alternative="greater")
+    assert math.isclose(p_greater, 1.0 / 70.0, abs_tol=1e-4)
+
+    # Two-sided p-value includes symmetric tail (0 successes in group 1): 2 / 70 ≈ 0.02857
+    p_two = fisher_exact_test(4, 4, 0, 4, alternative="two-sided")
+    assert math.isclose(p_two, 2.0 / 70.0, abs_tol=1e-4)
+
+    # Identical proportions (null): 5/10 vs 5/10
+    assert fisher_exact_test(5, 10, 5, 10, alternative="two-sided") == 1.0
+
+    # Extreme boundaries: zero failures
+    assert fisher_exact_test(0, 10, 0, 10, alternative="two-sided") == 1.0
+    assert fisher_exact_test(10, 10, 10, 10, alternative="two-sided") == 1.0
+
+
+def test_compare_proportions_prespecified_alternative():
+    """Verify compare_proportions adheres to prespecified alternative hypothesis."""
+    # Weak signal at n=20: 7/20 (0.35) vs 2/20 (0.10)
+    # Two-sided test: p ≈ 0.0583 >= 0.05 -> not significant
+    res_two = compare_proportions(k1=7, n1=20, k2=2, n2=20, alpha=0.05, alternative="two-sided")
+    assert res_two.p_value >= 0.05
+    assert res_two.statistically_significant is False
+
+    # One-sided test (greater): p ≈ 0.0292 < 0.05 -> significant
+    res_greater = compare_proportions(k1=7, n1=20, k2=2, n2=20, alpha=0.05, alternative="greater")
+    assert res_greater.p_value_one_sided < 0.05
+    assert res_greater.statistically_significant is True
+    assert res_greater.fisher_exact_p_value is not None

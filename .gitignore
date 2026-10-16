@@ -42,4 +42,6 @@ report.json
 report.md
 stochastic_report.json
 stochastic_report.md
+audit_report.json
+audit_report.md
 reports/

@@ -135,6 +135,7 @@ AgentXRay/
 │       ├── baselines.py             # Deterministic greedy ablation & seeded random search
 │       ├── stochastic_baselines.py  # Stochastic greedy ablation & seeded random search
 │       ├── reporting.py             # Deterministic & stochastic JSON and Markdown report generators
+│       ├── audit.py                 # Multi-seed audit runner and comparative uncertainty reporter
 │       └── __main__.py              # CLI entry point (`agentxray` / `python -m agentxray`)
 ├── benchmarks/
 │   └── synthetic/
@@ -148,7 +149,7 @@ AgentXRay/
 ├── tests/
 │   ├── __init__.py
 │   ├── test_models.py               # Pydantic schema validation tests
-│   ├── test_statistics.py           # Wilson, Newcombe, BH, power estimation tests
+│   ├── test_statistics.py           # Wilson, Newcombe, BH, Fisher, power estimation tests
 │   ├── test_runner.py               # Intervention runner & budget tests
 │   ├── test_minimizer.py            # Deterministic delta debugging tests
 │   ├── test_stochastic_minimizer.py # Stochastic delta debugging & minimality tests
@@ -157,7 +158,8 @@ AgentXRay/
 │   ├── test_stochastic_target.py    # Probabilistic target tests
 │   ├── test_isolation.py            # Ground-truth isolation tests
 │   ├── test_reporting.py            # Deterministic reporting tests
-│   └── test_stochastic_reporting.py # Stochastic reporting tests
+│   ├── test_stochastic_reporting.py # Stochastic reporting tests
+│   └── test_audit.py                # Multi-seed audit and reporting tests
 └── docs/
     ├── PRIOR_ART_REVIEW.md
     ├── RESEARCH_PROPOSAL.md

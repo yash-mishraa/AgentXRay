@@ -88,3 +88,43 @@ def test_stochastic_random_search_reproducible_and_capped():
     assert comp2.target_calls <= 100
     assert comp1.discovered_elements == comp2.discovered_elements
     assert comp1.target_calls == comp2.target_calls
+
+
+def test_stochastic_baselines_null_case():
+    """Verify stochastic baselines correctly report NOT_APPLICABLE and no failure on null case."""
+    from benchmarks.synthetic.stochastic_tasks import create_stochastic_null_task
+
+    target, initial_input, gt = create_stochastic_null_task(target_seed=42)
+    config = ExperimentConfig(experiment_name="test_baselines_null", max_trials=100)
+
+    # Greedy Ablation on Null Case
+    target.reset(new_seed=42)
+    runner_g = InterventionRunner(config=config, target_fn=target.execute)
+    comp_g = run_stochastic_greedy_ablation(
+        initial_input=initial_input,
+        runner=runner_g,
+        trials_per_candidate=20,
+        failure_threshold=0.30,
+        true_trigger=gt.trigger_elements,
+    )
+    assert comp_g.failure_reproduced is False
+    assert comp_g.discovered_elements == ()
+    assert comp_g.minimality_status == StochasticMinimalityStatus.NOT_APPLICABLE
+    assert comp_g.matches_ground_truth is True
+
+    # Random Search on Null Case
+    target.reset(new_seed=42)
+    runner_r = InterventionRunner(config=config, target_fn=target.execute)
+    comp_r = run_stochastic_random_search(
+        initial_input=initial_input,
+        runner=runner_r,
+        trials_per_candidate=20,
+        failure_threshold=0.30,
+        true_trigger=gt.trigger_elements,
+        seed=42,
+    )
+    assert comp_r.failure_reproduced is False
+    assert comp_r.discovered_elements == ()
+    assert comp_r.minimality_status == StochasticMinimalityStatus.NOT_APPLICABLE
+    assert comp_r.matches_ground_truth is True
+

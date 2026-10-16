@@ -100,6 +100,7 @@ def test_stochastic_minimizer_null_case():
     assert result.status == SearchStatus.NO_TRIGGER_FOUND
     assert result.is_failure is False
     assert result.subset_elements == ()
+    assert result.minimality_status == StochasticMinimalityStatus.NOT_APPLICABLE
 
 
 def test_stochastic_minimizer_non_monotonic():
@@ -122,8 +123,12 @@ def test_stochastic_minimizer_non_monotonic():
 
 
 def test_stochastic_minimizer_weak_signal():
-    """Verify stochastic minimizer detects modest effect size in weak-signal scenario."""
-    target, initial_input, gt = create_stochastic_weak_signal_task(target_seed=42)
+    """Verify stochastic minimizer detects modest effect size in weak-signal scenario.
+
+    With n=20 per condition on seed 44, the effect is observed (7/20 vs 3/20) but two-sided p >= 0.05,
+    so minimality status is accurately classified as OBSERVED_ONLY, not statistically supported.
+    """
+    target, initial_input, gt = create_stochastic_weak_signal_task(target_seed=44)
     config = ExperimentConfig(experiment_name="test_stoch_weak", max_trials=300)
     runner = InterventionRunner(config=config, target_fn=target.execute)
 
@@ -137,6 +142,25 @@ def test_stochastic_minimizer_weak_signal():
     assert result.status == SearchStatus.COMPLETE
     assert result.is_failure is True
     assert set(result.subset_elements) == {"weak_trigger_prompt"}
+    assert result.minimality_status == StochasticMinimalityStatus.OBSERVED_ONLY
+
+
+def test_stochastic_minimizer_weak_signal_adequate_sample_size():
+    """Verify that with adequate sample size (n=100), weak signal reaches statistical support."""
+    target, initial_input, gt = create_stochastic_weak_signal_task(target_seed=42)
+    config = ExperimentConfig(experiment_name="test_stoch_weak_powered", max_trials=500)
+    runner = InterventionRunner(config=config, target_fn=target.execute)
+
+    minimizer = StochasticDeltaDebugMinimizer(
+        runner=runner,
+        trials_per_candidate=100,
+        failure_threshold=0.25,
+    )
+    result = minimizer.minimize(initial_input)
+
+    assert result.status == SearchStatus.COMPLETE
+    assert set(result.subset_elements) == {"weak_trigger_prompt"}
+    assert result.minimality_status == StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
 
 
 def test_stochastic_minimizer_budget_exhaustion():

@@ -222,6 +222,7 @@ class StochasticMinimalityStatus(str, Enum):
     OBSERVED_ONLY = "observed_only"
     INCONCLUSIVE = "inconclusive"
     NOT_MINIMAL = "not_minimal"
+    NOT_APPLICABLE = "not_applicable"
 
 
 class CandidateEvaluation(BaseModel):
@@ -308,6 +309,8 @@ class StochasticExperimentReport(BaseModel):
         default=(
             "Stochastic synthetic targets evaluate configurable binomial probabilities; they do not model complex semantic or non-monotonic prompt drift in real-world LLMs.",
             "Observed 1-minimality distinguishes cases where removal empirically drops failure from statistically supported cases where confidence bounds confirm the drop.",
+            "Theoretical power is an asymptotic pre-experimental calculation (Cohen's arcsine approximation) for sample size planning; it does not measure empirical post-hoc power.",
+            "Benjamini-Hochberg FDR control applies to the family of candidate ablation tests; it does not account for adaptive candidate selection along the prior delta-debugging search path.",
             "No external LLM APIs were called; all results were generated locally in the isolated stochastic testbed.",
         ),
         description="Explicit scientific and engineering limitations.",

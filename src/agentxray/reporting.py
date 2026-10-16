@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from agentxray.models import ExperimentReport, StochasticExperimentReport
-from agentxray.statistics import estimate_two_proportion_power
+from agentxray.statistics import compare_proportions, estimate_two_proportion_power
 
 
 def format_json_report(report: ExperimentReport) -> str:
@@ -141,7 +141,11 @@ def format_stochastic_markdown_report(report: StochasticExperimentReport) -> str
     for eval_item in report.evaluations:
         cond = eval_item.minimizer_condition
         cond_str = ", ".join(f"`{e}`" for e in cond.subset_elements) if cond.subset_elements else "*(none)*"
-        cand_ci = f"{cond.candidate_evaluation.failure_rate:.2f} [{cond.candidate_evaluation.confidence_interval[0]:.2f}, {cond.candidate_evaluation.confidence_interval[1]:.2f}]"
+        cand_ci = (
+            f"{cond.candidate_evaluation.failure_rate:.2f} [{cond.candidate_evaluation.confidence_interval[0]:.2f}, {cond.candidate_evaluation.confidence_interval[1]:.2f}]"
+            if cond.subset_elements
+            else f"N/A (base: {cond.candidate_evaluation.failure_rate:.2f})"
+        )
         lines.append(
             f"| **{eval_item.task_name}** | **Delta Debugging** | {cond_str} | "
             f"{cand_ci} | `{cond.minimality_status.value}` | {cond.target_calls_used} | "
@@ -149,7 +153,11 @@ def format_stochastic_markdown_report(report: StochasticExperimentReport) -> str
         )
         for base in eval_item.baseline_comparisons:
             base_str = ", ".join(f"`{e}`" for e in base.discovered_elements) if base.discovered_elements else "*(none)*"
-            base_ci = f"{base.candidate_evaluation.failure_rate:.2f} [{base.candidate_evaluation.confidence_interval[0]:.2f}, {base.candidate_evaluation.confidence_interval[1]:.2f}]"
+            base_ci = (
+                f"{base.candidate_evaluation.failure_rate:.2f} [{base.candidate_evaluation.confidence_interval[0]:.2f}, {base.candidate_evaluation.confidence_interval[1]:.2f}]"
+                if base.discovered_elements
+                else f"N/A (base: {base.candidate_evaluation.failure_rate:.2f})"
+            )
             lines.append(
                 f"| | {base.baseline_name} | {base_str} | "
                 f"{base_ci} | `{base.minimality_status.value}` | {base.target_calls} | "
@@ -169,12 +177,13 @@ def format_stochastic_markdown_report(report: StochasticExperimentReport) -> str
         init_str = ", ".join(f"`{e}`" for e in eval_item.initial_elements)
         cond = eval_item.minimizer_condition
 
-        # Theoretical statistical power
+        # Theoretical statistical power (approximate design calculation)
         power = estimate_two_proportion_power(
             p1=eval_item.trigger_probability,
             p2=eval_item.base_probability,
             n_per_group=report.trials_per_candidate,
             alpha=0.05,
+            alternative="two-sided",
         )
 
         lines.extend([
@@ -183,7 +192,7 @@ def format_stochastic_markdown_report(report: StochasticExperimentReport) -> str
             f"- **Initial Elements ({len(eval_item.initial_elements)})**: {init_str}",
             f"- **Planted Ground Truth**: {gt_str}",
             f"- **Ground Truth Probabilities**: Base $P={eval_item.base_probability:.2f}$, Triggered $P={eval_item.trigger_probability:.2f}$ (Delta: ${eval_item.trigger_probability - eval_item.base_probability:.2f}$)",
-            f"- **Statistical Power (at n={report.trials_per_candidate}, alpha=0.05)**: `{power * 100:.1f}%`",
+            f"- **Statistical Power (at n={report.trials_per_candidate}, alpha=0.05)**: `{power * 100:.1f}%` *(Cohen's arcsine theoretical design calculation, not empirical power)*",
             f"- **Minimizer Precision**: `{eval_item.precision * 100:.1f}%`",
             f"- **Minimizer Recall**: `{eval_item.recall * 100:.1f}%`",
             f"- **Minimality Classification**: `{cond.minimality_status.value}`",
@@ -192,11 +201,20 @@ def format_stochastic_markdown_report(report: StochasticExperimentReport) -> str
         ])
 
         if cond.removal_evaluations:
-            lines.append("- **Single-Element Removal Uncertainty Checks**:")
+            lines.append("- **Single-Element Removal Uncertainty Checks & Risk Differences**:")
             for elem, rem_eval in cond.removal_evaluations.items():
+                comp = compare_proportions(
+                    k1=cond.candidate_evaluation.failures,
+                    n1=cond.candidate_evaluation.trials,
+                    k2=rem_eval.failures,
+                    n2=rem_eval.trials,
+                    alpha=0.05,
+                )
                 lines.append(
                     f"  - Without `{elem}`: failure rate `{rem_eval.failure_rate:.2f}` "
-                    f"(95% CI: `[{rem_eval.confidence_interval[0]:.2f}, {rem_eval.confidence_interval[1]:.2f}]`, $k={rem_eval.failures}/{rem_eval.trials}$)"
+                    f"(95% Wilson CI: `[{rem_eval.confidence_interval[0]:.2f}, {rem_eval.confidence_interval[1]:.2f}]`, $k={rem_eval.failures}/{rem_eval.trials}$); "
+                    f"Risk Difference $\\Delta={comp.difference:+.2f}$ (95% Newcombe Hybrid CI: `[{comp.difference_ci[0]:.2f}, {comp.difference_ci[1]:.2f}]`, "
+                    f"$z={comp.z_statistic:.2f}$, two-sided $p={comp.p_value:.4f}$, Fisher exact $p={comp.fisher_exact_p_value:.4f}$)"
                 )
         lines.append("")
 

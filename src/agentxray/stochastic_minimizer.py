@@ -3,10 +3,10 @@
 Extends delta debugging to probabilistic black-box targets, supporting:
 - Multi-trial candidate subset evaluation.
 - Wilson score confidence intervals for binomial failure proportions.
-- Statistical hypothesis testing for single-element removals.
+- Statistical hypothesis testing for single-element removals against ablated controls.
 - Benjamini-Hochberg FDR correction.
 - Explicit classification into STATISTICALLY_SUPPORTED, OBSERVED_ONLY,
-  INCONCLUSIVE, or NOT_MINIMAL.
+  INCONCLUSIVE, NOT_MINIMAL, or NOT_APPLICABLE.
 """
 
 from __future__ import annotations
@@ -102,12 +102,14 @@ class StochasticDeltaDebugMinimizer:
         failure_threshold: float = 0.30,
         alpha: float = 0.05,
         confidence: float = 0.95,
+        alternative: str = "two-sided",
     ) -> None:
         self.runner = runner
         self.trials_per_candidate = trials_per_candidate
         self.failure_threshold = failure_threshold
         self.alpha = alpha
         self.confidence = confidence
+        self.alternative = alternative
 
     def minimize(self, initial_input: InputCase) -> StochasticDiscoveredCondition:
         """Execute stochastic delta-debugging minimization on initial_input.
@@ -153,12 +155,12 @@ class StochasticDeltaDebugMinimizer:
                 subset_elements=(),
                 status=SearchStatus.NO_TRIGGER_FOUND,
                 is_failure=False,
-                minimality_status=StochasticMinimalityStatus.NOT_MINIMAL,
+                minimality_status=StochasticMinimalityStatus.NOT_APPLICABLE,
                 candidate_evaluation=base_eval,
                 target_calls_used=self.runner.trial_count,
                 status_message=(
                     f"Initial input failure rate {base_eval.failure_rate:.2f} did not meet "
-                    f"threshold {self.failure_threshold:.2f}; no trigger to minimize."
+                    f"threshold {self.failure_threshold:.2f}; no failure trigger detected."
                 ),
             )
 
@@ -223,19 +225,26 @@ class StochasticDeltaDebugMinimizer:
 
             # Step 3: Explicit 1-minimality verification and refinement
             # Continuously check if removing any single element still meets the failure threshold.
+            # For |current_candidate| > 1: ablate element within candidate: S \ {e}
+            # For |current_candidate| == 1: ablate element from initial_input: initial_input \ {e}
             verified_minimal = False
             removal_evals: dict[str, CandidateEvaluation] = {}
 
             while not verified_minimal:
-                if len(current_candidate) <= 1:
+                unnecessary_element_found = False
+
+                if len(current_candidate) == 0:
                     verified_minimal = True
                     break
 
-                unnecessary_element_found = False
-
                 for elem in current_candidate:
-                    candidate_without_elem = tuple(e for e in current_candidate if e != elem)
-                    sub_case = initial_input.subset(candidate_without_elem)
+                    if len(current_candidate) > 1:
+                        candidate_without_elem = tuple(e for e in current_candidate if e != elem)
+                        sub_case = initial_input.subset(candidate_without_elem)
+                    else:
+                        # Single-element candidate: evaluate input without this element as the ablation control
+                        sub_case = initial_input.without(elem)
+
                     eval_without = evaluate_candidate_stochastically(
                         runner=self.runner,
                         input_case=sub_case,
@@ -246,12 +255,13 @@ class StochasticDeltaDebugMinimizer:
                     removal_evals[elem] = eval_without
 
                     if eval_without.failure_rate >= self.failure_threshold:
-                        # Non-monotonic or further reducible: dropping elem still triggers failure!
-                        current_candidate = candidate_without_elem
-                        current_eval = eval_without
-                        unnecessary_element_found = True
-                        removal_evals.clear()
-                        break
+                        if len(current_candidate) > 1:
+                            # Non-monotonic or further reducible: dropping elem still triggers failure!
+                            current_candidate = candidate_without_elem
+                            current_eval = eval_without
+                            unnecessary_element_found = True
+                            removal_evals.clear()
+                            break
 
                 if not unnecessary_element_found:
                     verified_minimal = True
@@ -296,17 +306,9 @@ class StochasticDeltaDebugMinimizer:
         """Classify 1-minimality of current_candidate against removal evaluations."""
         if not current_candidate:
             return (
-                StochasticMinimalityStatus.NOT_MINIMAL,
+                StochasticMinimalityStatus.NOT_APPLICABLE,
                 "Candidate set is empty; cannot establish minimality.",
             )
-
-        if len(current_candidate) == 1:
-            msg = (
-                f"Single-element candidate '{current_candidate[0]}' is inherently 1-minimal "
-                f"with failure rate {current_eval.failure_rate:.2f} "
-                f"(95% CI: [{current_eval.confidence_interval[0]:.2f}, {current_eval.confidence_interval[1]:.2f}])."
-            )
-            return (StochasticMinimalityStatus.STATISTICALLY_SUPPORTED, msg)
 
         # If any element was not evaluated in removal_evals, it's inconclusive
         missing_checks = set(current_candidate) - set(removal_evals.keys())
@@ -316,11 +318,24 @@ class StochasticDeltaDebugMinimizer:
                 f"Missing removal evaluations for elements: {missing_checks}",
             )
 
+        # Check if removing any element still met the failure threshold
+        still_failing = [
+            elem for elem, rem in removal_evals.items()
+            if rem.failure_rate >= self.failure_threshold
+        ]
+        if still_failing:
+            msg = (
+                f"Candidate is not 1-minimal: removal of {still_failing} still produces failure rate "
+                f">= threshold {self.failure_threshold:.2f}."
+            )
+            return (StochasticMinimalityStatus.NOT_MINIMAL, msg)
+
         p1_k = current_eval.failures
         p1_n = current_eval.trials
 
-        p_values_one_sided: list[float] = []
+        p_values: list[float] = []
         observed_drops: list[bool] = []
+        diff_summaries: list[str] = []
 
         for elem in current_candidate:
             rem_eval = removal_evals[elem]
@@ -331,28 +346,31 @@ class StochasticDeltaDebugMinimizer:
                 n2=rem_eval.trials,
                 alpha=self.alpha,
                 confidence=self.confidence,
+                alternative=self.alternative,
             )
-            p_values_one_sided.append(comp.p_value_one_sided)
-            # Check if empirical proportion dropped upon removal
+            p_values.append(comp.p_value if self.alternative == "two-sided" else comp.p_value_one_sided)
             observed_drops.append(current_eval.failure_rate > rem_eval.failure_rate)
+            diff_summaries.append(
+                f"without '{elem}': diff={comp.difference:+.2f} 95% CI [{comp.difference_ci[0]:.2f}, {comp.difference_ci[1]:.2f}], p={comp.p_value:.4f}"
+            )
 
         # Benjamini-Hochberg FDR correction across all removal tests
-        adjusted_p_values = adjust_p_values_bh(p_values_one_sided)
+        adjusted_p_values = adjust_p_values_bh(p_values)
         all_statistically_significant = all(q < self.alpha for q in adjusted_p_values)
         all_observed_drops = all(observed_drops)
 
         if all_statistically_significant:
             msg = (
                 f"1-Minimality statistically supported across all {len(current_candidate)} element removals "
-                f"(all BH-adjusted q-values < {self.alpha})."
+                f"(all BH-adjusted q-values < {self.alpha}; comparisons: {'; '.join(diff_summaries)})."
             )
             return (StochasticMinimalityStatus.STATISTICALLY_SUPPORTED, msg)
 
         if all_observed_drops:
             msg = (
                 f"Observed 1-minimality: failure rate dropped upon every element removal, "
-                f"but one or more tests did not reach statistical significance at alpha={self.alpha} "
-                f"(q-values: {[round(q, 4) for q in adjusted_p_values]})."
+                f"but one or more tests did not achieve statistical significance at alpha={self.alpha} "
+                f"(adjusted q-values: {[round(q, 4) for q in adjusted_p_values]}; comparisons: {'; '.join(diff_summaries)})."
             )
             return (StochasticMinimalityStatus.OBSERVED_ONLY, msg)
 

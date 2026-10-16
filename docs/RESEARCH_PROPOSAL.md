@@ -160,12 +160,15 @@ A finding is classified as an established causal effect only when:
 To avoid false causal claims in probabilistic settings, AgentXRay employs:
 * **Wilson Score Interval**: Computes asymmetric confidence bounds for binomial proportions $\hat{p} = k/n$, resolving Wald boundary degeneracy at $k=0$ and $k=n$.
 * **Newcombe Hybrid Score Interval**: Calculates exact uncertainty intervals for differences in proportions ($\hat{p}_1 - \hat{p}_2$).
-* **Two-Sample Hypothesis Testing**: Evaluates whether candidate subsets produce statistically elevated failure rates relative to baselines or ablated controls via pooled z-tests.
-* **Four-Tier Epistemic Minimality Classification**:
-  1. `statistically_supported`: Every element ablation demonstrates a statistically significant drop in failure rate (BH-adjusted $q < \alpha$).
+* **Two-Sample Hypothesis Testing**: Evaluates whether candidate subsets produce statistically elevated failure rates relative to baselines or ablated controls via two-sample pooled z-tests and finite-sample Fisher's exact tests (via standard library integer combinatorics). Tests support prespecified one-sided and two-sided alternatives.
+* **Five-Tier Epistemic Minimality Classification**:
+  1. `statistically_supported`: Every element ablation demonstrates a statistically significant drop in failure rate (BH-adjusted $q < \alpha$). For $|S|=1$, candidate is compared against ablated initial input ($c_{\text{initial}} \setminus \{e\}$).
   2. `observed_only`: Empirical proportions dropped upon every removal ($\hat{p}_S > \hat{p}_{S \setminus \{e\}}$), but statistical significance was not reached due to sample size.
-  3. `inconclusive`: Search budget was exhausted during verification or trials were insufficient.
-  4. `not_minimal`: Removal of at least one element does not decrease failure rate or still satisfies the failure threshold.
+  3. `not_minimal`: Removal of at least one element does not decrease failure rate or still satisfies the failure threshold.
+  4. `inconclusive`: Search budget was exhausted during verification or trials were insufficient.
+  5. `not_applicable`: Initial input failure rate fell below operational threshold $\tau$ (e.g. null case); no candidate trigger is isolated.
+* **Pre-Experimental Power vs. Empirical Power**: Theoretical power estimates via Cohen's arcsine transformation provide an approximate design guide for sample size planning; they must never be presented as empirical power on observed datasets.
+* **Adaptive Selection Bias (Winner's Curse)**: Benjamini-Hochberg FDR adjustments control false discovery rates over the family of final candidate ablation checks ($S \setminus \{e\}$), but do not provide an unconditional family-wise error guarantee across the entire adaptive search path.
 
 ---
 

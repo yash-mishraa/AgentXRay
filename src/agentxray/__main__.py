@@ -16,6 +16,11 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from agentxray.audit import (
+    format_audit_markdown_report,
+    run_multiseed_audit,
+    write_audit_reports,
+)
 from agentxray.baselines import run_greedy_ablation, run_seeded_random_search
 from agentxray.minimizer import DeltaDebugMinimizer
 from agentxray.models import (
@@ -277,9 +282,15 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["deterministic", "stochastic", "all"],
+        choices=["deterministic", "stochastic", "audit", "all"],
         default="deterministic",
         help="Benchmark execution mode (default: deterministic).",
+    )
+    parser.add_argument(
+        "--audit-seeds",
+        type=str,
+        default="42,43,44,45,46",
+        help="Comma-separated random seeds for multi-seed stochastic audit (default: 42,43,44,45,46).",
     )
     parser.add_argument(
         "--max-trials",
@@ -372,6 +383,27 @@ def main() -> None:
             output_dir=args.output_dir,
         )
         print(format_stochastic_markdown_report(stoch_report))
+
+    if args.mode in ("audit", "all"):
+        seeds = [int(s.strip()) for s in args.audit_seeds.split(",") if s.strip()]
+        audit_max_trials = args.max_trials if args.max_trials is not None else 300
+        print(f"\n[Running Multi-Seed Stochastic Audit (seeds={seeds}, max_trials={audit_max_trials}, trials_per_candidate={args.trials_per_candidate})]")
+        audit_report = run_multiseed_audit(
+            seeds=seeds,
+            max_trials=audit_max_trials,
+            trials_per_candidate=args.trials_per_candidate,
+            failure_threshold=args.failure_threshold,
+            alpha=args.alpha,
+            confidence=args.confidence,
+            timeout_seconds=args.timeout,
+        )
+        out_path = Path(args.output_dir)
+        write_audit_reports(
+            audit_report,
+            json_path=out_path / "audit_report.json",
+            md_path=out_path / "audit_report.md",
+        )
+        print(format_audit_markdown_report(audit_report))
 
     print("\n" + "=" * 75)
     print(" Execution finished successfully.")

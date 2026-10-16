@@ -3,11 +3,13 @@
 Provides rigorous, dependency-free statistical methods for binary outcomes:
 - Wilson score confidence intervals for single binomial proportions.
 - Newcombe hybrid score confidence intervals for differences of proportions.
-- Two-sample proportion comparison tests with effect sizes and p-values.
+- Fisher's exact test for exact finite-sample hypergeometric inference.
+- Two-sample proportion comparison tests with pooled z-statistics and p-values.
 - Benjamini-Hochberg False Discovery Rate (FDR) adjustment for multiple testing.
 - Statistical power estimation for two independent binomial proportions.
 
-All methods are implemented using Python's standard library `math` and `statistics`.
+All methods are implemented purely using Python's standard library `math` and `statistics`.
+Zero external scientific dependencies (NumPy, SciPy) required.
 """
 
 from __future__ import annotations
@@ -27,21 +29,23 @@ class ProportionComparisonResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     k1: int = Field(..., ge=0, description="Observed successes in group 1 (e.g. candidate condition).")
-    n1: int = Field(..., ge=0, description="Total trials in group 1.")
+    n1: int = Field(..., ge=1, description="Total trials in group 1.")
     p1: float = Field(..., ge=0.0, le=1.0, description="Sample proportion k1/n1.")
     p1_ci: tuple[float, float] = Field(..., description="Wilson score confidence interval for p1.")
 
     k2: int = Field(..., ge=0, description="Observed successes in group 2 (e.g. baseline or ablation).")
-    n2: int = Field(..., ge=0, description="Total trials in group 2.")
+    n2: int = Field(..., ge=1, description="Total trials in group 2.")
     p2: float = Field(..., ge=0.0, le=1.0, description="Sample proportion k2/n2.")
     p2_ci: tuple[float, float] = Field(..., description="Wilson score confidence interval for p2.")
 
     difference: float = Field(..., ge=-1.0, le=1.0, description="Risk difference p1 - p2.")
-    difference_ci: tuple[float, float] = Field(..., description="Newcombe score confidence interval for p1 - p2.")
-    z_statistic: float = Field(..., description="Z-statistic from two-sample pooled z-test.")
-    p_value: float = Field(..., ge=0.0, le=1.0, description="Two-sided p-value testing H0: p1 == p2.")
-    p_value_one_sided: float = Field(..., ge=0.0, le=1.0, description="One-sided p-value testing H1: p1 > p2.")
-    statistically_significant: bool = Field(..., description="Whether p_value < alpha.")
+    difference_ci: tuple[float, float] = Field(..., description="Newcombe hybrid score confidence interval for p1 - p2.")
+    z_statistic: float = Field(..., description="Z-statistic from two-sample pooled score test.")
+    p_value: float = Field(..., ge=0.0, le=1.0, description="Two-sided asymptotic p-value testing H0: p1 == p2.")
+    p_value_one_sided: float = Field(..., ge=0.0, le=1.0, description="One-sided asymptotic p-value testing H1: p1 > p2.")
+    fisher_exact_p_value: float = Field(..., ge=0.0, le=1.0, description="Exact finite-sample p-value from Fisher's exact test.")
+    alternative: str = Field(default="two-sided", description="Prespecified alternative hypothesis: 'two-sided', 'greater', or 'less'.")
+    statistically_significant: bool = Field(..., description="Whether test statistic rejects H0 at alpha under the prespecified alternative.")
 
 
 def wilson_score_interval(
@@ -101,12 +105,14 @@ def proportion_difference_interval(
 ) -> tuple[float, float]:
     """Calculate the Newcombe hybrid score interval for the difference of two proportions (p1 - p2).
 
+    Uses Newcombe's Method 10 (without continuity correction) combining independent Wilson intervals.
+
     Parameters
     ----------
     k1, n1 : int
-        Successes and trials for group 1.
+        Successes and trials for group 1 (0 <= k1 <= n1, n1 > 0).
     k2, n2 : int
-        Successes and trials for group 2.
+        Successes and trials for group 2 (0 <= k2 <= n2, n2 > 0).
     confidence : float
         Confidence level, default 0.95.
 
@@ -116,7 +122,13 @@ def proportion_difference_interval(
         (lower_bound, upper_bound) for the risk difference p1 - p2, bounded in [-1.0, 1.0].
     """
     if n1 <= 0 or n2 <= 0:
-        return (-1.0, 1.0)
+        raise ValueError(f"Sample sizes must be positive integers, got n1={n1}, n2={n2}")
+    if k1 < 0 or k1 > n1:
+        raise ValueError(f"k1 must be in [0, n1], got k1={k1}, n1={n1}")
+    if k2 < 0 or k2 > n2:
+        raise ValueError(f"k2 must be in [0, n2], got k2={k2}, n2={n2}")
+    if not (0.0 < confidence < 1.0):
+        raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 
     p1_hat = k1 / n1
     p2_hat = k2 / n2
@@ -131,6 +143,67 @@ def proportion_difference_interval(
     return (round(max(-1.0, lower), 4), round(min(1.0, upper), 4))
 
 
+def fisher_exact_test(
+    k1: int,
+    n1: int,
+    k2: int,
+    n2: int,
+    alternative: str = "two-sided",
+) -> float:
+    """Perform Fisher's exact test for a 2x2 contingency table using exact hypergeometric distribution.
+
+    Implemented using Python's standard library `math.comb`. Zero external dependencies.
+
+    Contingency table:
+                Group 1       Group 2       Total
+    Success:      k1            k2            K = k1 + k2
+    Failure:    n1 - k1       n2 - k2       N - K
+    Total:        n1            n2            N = n1 + n2
+
+    Parameters
+    ----------
+    k1, n1 : int
+        Successes and trials for group 1.
+    k2, n2 : int
+        Successes and trials for group 2.
+    alternative : str
+        'two-sided', 'greater' (H1: p1 > p2), or 'less' (H1: p1 < p2).
+
+    Returns
+    -------
+    float
+        Exact p-value in [0.0, 1.0].
+    """
+    if n1 <= 0 or n2 <= 0:
+        raise ValueError(f"Sample sizes must be positive, got n1={n1}, n2={n2}")
+    if k1 < 0 or k1 > n1 or k2 < 0 or k2 > n2:
+        raise ValueError(f"Success counts invalid: k1={k1}/n1={n1}, k2={k2}/n2={n2}")
+    if alternative not in ("two-sided", "greater", "less"):
+        raise ValueError(f"alternative must be 'two-sided', 'greater', or 'less', got {alternative!r}")
+
+    K = k1 + k2
+    N = n1 + n2
+    min_x = max(0, K - n2)
+    max_x = min(n1, K)
+
+    denom = math.comb(N, K)
+    probs = {
+        x: math.comb(n1, x) * math.comb(n2, K - x) / denom
+        for x in range(min_x, max_x + 1)
+    }
+    obs_prob = probs[k1]
+
+    if alternative == "greater":
+        p_val = sum(p for x, p in probs.items() if x >= k1)
+    elif alternative == "less":
+        p_val = sum(p for x, p in probs.items() if x <= k1)
+    else:  # two-sided
+        # Standard two-sided Fisher: sum probabilities of tables as or less probable than observed
+        p_val = sum(p for p in probs.values() if p <= obs_prob * (1.0 + 1e-9))
+
+    return round(min(1.0, max(0.0, p_val)), 5)
+
+
 def compare_proportions(
     k1: int,
     n1: int,
@@ -138,29 +211,44 @@ def compare_proportions(
     n2: int,
     alpha: float = 0.05,
     confidence: float = 0.95,
+    alternative: str = "two-sided",
 ) -> ProportionComparisonResult:
     """Perform a two-sample proportion comparison between group 1 and group 2.
 
-    Uses a pooled two-sample z-test and Newcombe hybrid score interval.
+    Computes:
+    - Sample proportions and Wilson score intervals.
+    - Risk difference p1 - p2 and Newcombe hybrid score interval.
+    - Two-sample pooled z-statistic and asymptotic p-values (two-sided and one-sided).
+    - Exact finite-sample p-value via Fisher's exact test.
 
     Parameters
     ----------
     k1, n1 : int
-        Failures and trials for group 1 (candidate).
+        Failures and trials for group 1 (candidate condition).
     k2, n2 : int
         Failures and trials for group 2 (control/baseline/reduced).
     alpha : float
-        Significance threshold for hypothesis testing.
+        Significance threshold for hypothesis testing (e.g. 0.05).
     confidence : float
-        Confidence level for uncertainty intervals.
+        Confidence level for uncertainty intervals (e.g. 0.95).
+    alternative : str
+        Prespecified alternative: 'two-sided' (p1 != p2), 'greater' (p1 > p2), or 'less' (p1 < p2).
 
     Returns
     -------
     ProportionComparisonResult
-        Full statistical comparison metrics.
+        Full statistical metrics and significance decision.
     """
     if n1 <= 0 or n2 <= 0:
         raise ValueError(f"Sample sizes must be positive, got n1={n1}, n2={n2}")
+    if k1 < 0 or k1 > n1 or k2 < 0 or k2 > n2:
+        raise ValueError(f"Success counts invalid: k1={k1}/n1={n1}, k2={k2}/n2={n2}")
+    if not (0.0 < alpha < 1.0):
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if not (0.0 < confidence < 1.0):
+        raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+    if alternative not in ("two-sided", "greater", "less"):
+        raise ValueError(f"alternative must be 'two-sided', 'greater', or 'less', got {alternative!r}")
 
     p1_hat = k1 / n1
     p2_hat = k2 / n2
@@ -183,6 +271,16 @@ def compare_proportions(
         p_val_two = math.erfc(abs(z_stat) / math.sqrt(2.0))
         p_val_one = 1.0 - _STANDARD_NORMAL.cdf(z_stat)
 
+    fisher_p = fisher_exact_test(k1, n1, k2, n2, alternative=alternative)
+
+    # Significance decision aligned with prespecified alternative hypothesis
+    if alternative == "two-sided":
+        sig = (p_val_two < alpha)
+    elif alternative == "greater":
+        sig = (p_val_one < alpha and diff > 0.0)
+    else:  # less
+        sig = ((1.0 - p_val_one) < alpha and diff < 0.0)
+
     return ProportionComparisonResult(
         k1=k1,
         n1=n1,
@@ -197,36 +295,47 @@ def compare_proportions(
         z_statistic=round(z_stat, 4),
         p_value=round(p_val_two, 5),
         p_value_one_sided=round(p_val_one, 5),
-        statistically_significant=(p_val_two < alpha),
+        fisher_exact_p_value=fisher_p,
+        alternative=alternative,
+        statistically_significant=sig,
     )
 
 
 def adjust_p_values_bh(p_values: Sequence[float]) -> list[float]:
     """Adjust a sequence of p-values using the Benjamini-Hochberg (BH) FDR procedure.
 
+    Controls the False Discovery Rate across a family of m hypothesis tests.
+
     Parameters
     ----------
     p_values : Sequence[float]
-        Raw p-values to adjust.
+        Raw p-values to adjust. Values outside [0.0, 1.0] are clamped to [0.0, 1.0].
 
     Returns
     -------
     list[float]
-        FDR-adjusted p-values (q-values) in original index order.
+        FDR-adjusted p-values (q-values) mapped back to original input order.
     """
     m = len(p_values)
     if m == 0:
         return []
+
+    for i, p in enumerate(p_values):
+        if math.isnan(p):
+            raise ValueError(f"p-value at index {i} cannot be NaN")
+
+    clamped = [min(1.0, max(0.0, p)) for p in p_values]
+
     if m == 1:
-        return [min(1.0, max(0.0, p_values[0]))]
+        return [round(clamped[0], 5)]
 
     # Pair each p-value with its original index
-    indexed = sorted(enumerate(p_values), key=lambda x: x[1])
+    indexed = sorted(enumerate(clamped), key=lambda x: x[1])
 
-    # Compute step-up adjustments from largest to smallest
     adjusted_indexed: list[tuple[int, float]] = [None] * m  # type: ignore
     cum_min = 1.0
 
+    # Step-up adjustment from largest to smallest rank
     for rank in range(m, 0, -1):
         orig_idx, p = indexed[rank - 1]
         adjusted_val = min(1.0, p * m / rank)
@@ -246,19 +355,26 @@ def estimate_two_proportion_power(
     p2: float,
     n_per_group: int,
     alpha: float = 0.05,
+    alternative: str = "two-sided",
 ) -> float:
     """Estimate theoretical statistical power for detecting a difference between two proportions.
 
-    Uses Cohen's arcsine transformation for two independent binomial samples of size n.
+    Uses Cohen's arcsine transformation for two independent binomial samples of equal size n.
+
+    IMPORTANT: This is an asymptotic, approximate power calculation intended strictly
+    for pre-experimental study design and sample size planning. It does NOT represent
+    observed empirical power on a specific executed dataset.
 
     Parameters
     ----------
     p1, p2 : float
-        True outcome probabilities in group 1 and group 2 (in [0, 1]).
+        Hypothesized true outcome probabilities in group 1 and group 2 (in [0, 1]).
     n_per_group : int
         Number of trials per group (n >= 1).
     alpha : float
-        Two-sided significance level (e.g. 0.05).
+        Significance level (e.g. 0.05).
+    alternative : str
+        'two-sided' (default) or 'greater'.
 
     Returns
     -------
@@ -268,7 +384,11 @@ def estimate_two_proportion_power(
     if n_per_group <= 0:
         return 0.0
     if not (0.0 <= p1 <= 1.0 and 0.0 <= p2 <= 1.0):
-        raise ValueError("Probabilities must be in [0, 1]")
+        raise ValueError(f"Probabilities must be in [0, 1], got p1={p1}, p2={p2}")
+    if not (0.0 < alpha < 1.0):
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if alternative not in ("two-sided", "greater"):
+        raise ValueError(f"alternative must be 'two-sided' or 'greater', got {alternative!r}")
 
     # Cohen's h effect size: 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
     phi1 = 2.0 * math.asin(math.sqrt(p1))
@@ -278,11 +398,15 @@ def estimate_two_proportion_power(
     if h == 0.0:
         return alpha
 
-    # Variance of difference of arcsine transformed proportions is 1/n1 + 1/n2 = 2/n
     se = math.sqrt(2.0 / n_per_group)
-    z_crit = _STANDARD_NORMAL.inv_cdf(1.0 - alpha / 2.0)
 
-    # Non-centrality parameter lambda = h / se
-    lam = h / se
-    power = _STANDARD_NORMAL.cdf(lam - z_crit) + _STANDARD_NORMAL.cdf(-lam - z_crit)
+    if alternative == "two-sided":
+        z_crit = _STANDARD_NORMAL.inv_cdf(1.0 - alpha / 2.0)
+        lam = h / se
+        power = _STANDARD_NORMAL.cdf(lam - z_crit) + _STANDARD_NORMAL.cdf(-lam - z_crit)
+    else:  # greater (one-sided)
+        z_crit = _STANDARD_NORMAL.inv_cdf(1.0 - alpha)
+        lam = h / se
+        power = _STANDARD_NORMAL.cdf(lam - z_crit)
+
     return round(min(1.0, max(0.0, power)), 4)

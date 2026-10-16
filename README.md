@@ -5,9 +5,9 @@
 ---
 
 > [!NOTE]
-> **Research Status — Phase 1B (October 2026)**
-> **Stochastic synthetic experimentation and statistical reliability framework implemented.**
-> AgentXRay provides both deterministic (Phase 1A) and probabilistic binomial (Phase 1B) synthetic experimentation modes with rigorous uncertainty bounds (Wilson score intervals, Newcombe difference intervals, BH-FDR adjustments, and power estimations). Synthetic testbed success must not be interpreted as evidence of real-world LLM agent reverse-engineering capability.
+> **Research Status — Phase 1B Audit & Statistical Validation (October 2026)**
+> **Stochastic synthetic experimentation and rigorous statistical reliability framework validated.**
+> AgentXRay provides deterministic (Phase 1A), probabilistic binomial (Phase 1B), and multi-seed audit experimentation modes with rigorous uncertainty bounds: Wilson score intervals, Newcombe difference intervals, exact Fisher's tests via integer combinatorics, BH-FDR adjustments, and five-tier epistemic minimality classification (`statistically_supported`, `observed_only`, `not_minimal`, `inconclusive`, `not_applicable`). Synthetic testbed success must not be interpreted as evidence of real-world LLM agent reverse-engineering capability.
 
 ---
 
@@ -111,10 +111,13 @@ agentxray --mode deterministic
 # 3. Run the stochastic synthetic benchmark suite with uncertainty estimation (Phase 1B)
 agentxray --mode stochastic --max-trials 300 --trials-per-candidate 20
 
-# 4. Run all benchmark suites
+# 4. Run the multi-seed stochastic audit across prespecified seeds
+agentxray --mode audit --audit-seeds 42,43,44,45,46
+
+# 5. Run all benchmark suites
 agentxray --mode all
 
-# 5. Execute full test suite
+# 6. Execute full test suite
 pytest
 ```
 

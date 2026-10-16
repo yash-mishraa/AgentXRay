@@ -111,27 +111,43 @@
 
 ---
 
-### ADR-008: Wilson Score & Newcombe Hybrid Score Methods for Binomial Proportions
+### ADR-008: Wilson Score, Newcombe Hybrid Score & Exact Fisher Tests for Proportions
 
-* **Context**: In stochastic agent probing, target outcomes are binomial (success vs. failure). The asymptotic Wald confidence interval ($\hat{p} \pm z \sqrt{\hat{p}(1-\hat{p})/n}$) suffers from catastrophic boundary collapse when $\hat{p} \in \{0, 1\}$, producing zero-width intervals that misrepresent uncertainty.
-* **Decision**: Adopt the **Wilson score interval** for single binomial proportions and the **Newcombe hybrid score interval** for differences between independent proportions ($\hat{p}_1 - \hat{p}_2$). Standard library `statistics.NormalDist` is used for standard normal quantile evaluations (`inv_cdf` and `cdf`) and `math.erfc` for two-sided p-values.
+* **Context**: In stochastic agent probing, target outcomes are binomial (success vs. failure). The asymptotic Wald confidence interval ($\hat{p} \pm z \sqrt{\hat{p}(1-\hat{p})/n}$) suffers from catastrophic boundary collapse when $\hat{p} \in \{0, 1\}$, producing zero-width intervals that misrepresent uncertainty. Furthermore, asymptotic z-tests degrade on small sample sizes ($n \le 20$) or near boundary rates.
+* **Decision**: Adopt the **Wilson score interval** for single binomial proportions, the **Newcombe hybrid score interval** for differences between independent proportions ($\hat{p}_1 - \hat{p}_2$), and **Fisher's exact test** via standard library `math.comb` for finite-sample hypergeometric inference. Standard library `statistics.NormalDist` is used for quantile evaluations (`inv_cdf` and `cdf`) and `math.erfc` for two-sided p-values. Hypothesis testing supports prespecified `alternative="two-sided"`, `alternative="greater"`, and `alternative="less"`.
 * **Alternatives Considered**:
   * *Standard Wald interval*: Rejected due to zero-variance breakdown at extreme rates.
   * *SciPy / Statsmodels dependency*: Rejected to maintain a lean, zero-dependency experimentation engine.
 * **Consequences**:
-  * *Positive*: Asymptotically correct coverage, no zero-width intervals at boundaries, and strict interval bounds ($[0, 1]$ and $[-1, 1]$).
+  * *Positive*: Exact finite-sample hypergeometric p-values, correct asymptotic coverage, no zero-width intervals at boundaries, and strict interval bounds ($[0, 1]$ and $[-1, 1]$).
   * *Negative*: Requires iterative formulation instead of simple closed-form Wald equations (handled cleanly by standard library functions).
 
 ---
 
-### ADR-009: Four-Tier Epistemic Classification for Stochastic 1-Minimality
+### ADR-009: Five-Tier Epistemic Classification for Stochastic 1-Minimality
 
-* **Context**: In stochastic systems with background failure rates ($P_{\text{base}} > 0$), observed drops in sample proportion upon element ablation may stem from random sampling noise rather than true causal necessity.
-* **Decision**: Delta debugging in stochastic environments classifies 1-minimality into four distinct epistemic tiers:
-  1. `statistically_supported`: Every single-element removal demonstrates a statistically significant drop in failure rate (Benjamini-Hochberg FDR-adjusted $q < \alpha$).
+* **Context**: In stochastic systems with background failure rates ($P_{\text{base}} > 0$), observed drops in sample proportion upon element ablation may stem from random sampling noise rather than true causal necessity. Furthermore, null-case scenarios (where no trigger exists and initial input failure rate falls below threshold $\tau$) must not be falsely categorized as non-minimal triggers.
+* **Decision**: Delta debugging in stochastic environments classifies 1-minimality into five distinct epistemic tiers:
+  1. `statistically_supported`: Every single-element removal demonstrates a statistically significant drop in failure rate (Benjamini-Hochberg FDR-adjusted $q < \alpha$). For single-element candidates ($|S|=1$), the ablation control is explicitly evaluated against the initial input without that element ($c_{\text{initial}} \setminus \{e\}$).
   2. `observed_only`: The empirical failure rate dropped upon every single-element removal ($\hat{p}_S > \hat{p}_{S \setminus \{e\}}$), but one or more tests did not reach statistical significance due to sample size.
-  3. `inconclusive`: Search budget was exhausted during verification or candidate could not be fully tested.
-  4. `not_minimal`: Removal of at least one element does not decrease the observed failure rate or still satisfies the failure threshold.
+  3. `not_minimal`: Removal of at least one element does not decrease the observed failure rate or still satisfies the failure threshold.
+  4. `inconclusive`: Search budget was exhausted during verification or candidate could not be fully tested.
+  5. `not_applicable`: No candidate was evaluated because the initial input failure rate fell below the operational failure threshold $\tau$ (e.g. null case).
 * **Consequences**:
-  * *Positive*: Prevents false causal claims in low-power or high-noise environments while acknowledging empirical reductions.
+  * *Positive*: Prevents false causal claims in low-power or high-noise environments while acknowledging empirical reductions; accurately distinguishes null cases from non-minimal triggers.
   * *Negative*: Requires multiple ablation evaluations per candidate, increasing target invocation counts.
+
+---
+
+### ADR-010: Multi-Seed Stochastic Audit and Honest Epistemic Disclaimers
+
+* **Context**: Single-seed stochastic runs suffer from sample-to-sample variance, which can produce lucky draws or winner's curse artifacts that misrepresent algorithm reliability. Pre-experimental Cohen's arcsine power calculations may also be mistaken for empirical dataset power.
+* **Decision**: Implement a multi-seed stochastic audit mode (`--mode audit --audit-seeds 42,43,44,45,46`) evaluating all benchmark scenarios across Delta Debugging, Greedy Ablation, and Seeded Random Search under identical budgets. Every report must publish:
+  1. Empirical match rates with Wilson 95% score confidence intervals.
+  2. Null-case false positive trigger identification rates with 95% Wilson CIs.
+  3. Explicit disclaimers clarifying that Cohen's arcsine calculations represent asymptotic theoretical study design power, not observed empirical power.
+  4. Explicit disclaimers noting that Benjamini-Hochberg FDR adjustments control false discoveries across candidate removal checks, but do not eliminate adaptive search path selection bias (winner's curse).
+* **Consequences**:
+  * *Positive*: Total epistemic honesty, reproducible multi-seed verification, transparent trade-offs between algorithms.
+  * *Negative*: Multi-seed execution requires $M \times$ more target calls than single-seed runs.
+
