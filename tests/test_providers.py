@@ -207,3 +207,46 @@ def test_openai_provider_quota_exhausted_fail_fast():
         assert mock_urlopen.call_count == 1
 
 
+def test_openai_provider_respects_max_retries():
+    """Verify OpenAIProvider strictly bounds retry attempts to max_retries parameter."""
+    import io
+    import urllib.error
+    from unittest.mock import patch
+
+    provider = OpenAIProvider(api_key="sk-testmockkey", max_retries=5)
+
+    err_json = b'{"error": {"message": "Rate limit reached.", "type": "tokens", "code": "rate_limit_exceeded"}}'
+    http_error = urllib.error.HTTPError(
+        url="https://api.openai.com/v1/chat/completions",
+        code=429,
+        msg="Too Many Requests",
+        hdrs={},
+        fp=io.BytesIO(err_json),
+    )
+
+    with patch("urllib.request.urlopen", side_effect=http_error) as mock_urlopen, patch("time.sleep"):
+        # With max_retries=0, exactly 1 attempt is made
+        with pytest.raises(ProviderRateLimitError) as exc_info:
+            provider.generate([Message(role="user", content="hello")], max_retries=0)
+        assert mock_urlopen.call_count == 1
+        assert exc_info.value.retries == 0
+
+    with patch("urllib.request.urlopen", side_effect=http_error) as mock_urlopen, patch("time.sleep"):
+        # With max_retries=1, exactly 2 attempts are made (1 initial + 1 retry)
+        with pytest.raises(ProviderRateLimitError) as exc_info:
+            provider.generate([Message(role="user", content="hello")], max_retries=1)
+        assert mock_urlopen.call_count == 2
+        assert exc_info.value.retries == 1
+
+
+def test_provider_error_attributes():
+    """Verify ProviderError and its subclasses carry retries count."""
+    err = ProviderError("test error", retries=3)
+    assert err.retries == 3
+    assert str(err) == "test error"
+
+    rl_err = ProviderRateLimitError("rate limited", retries=2)
+    assert rl_err.retries == 2
+
+
+

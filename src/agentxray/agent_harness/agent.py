@@ -97,18 +97,31 @@ class ControlledAgent:
                 finish_reason = "budget_exhausted"
                 break
 
+            # Bound allowed retries by remaining request headroom to prevent budget breach
+            remaining_requests = self.cost_tracker.config.max_model_requests - self.cost_tracker.total_requests
+            allowed_retries = max(0, remaining_requests - 1)
+
             t0 = time.perf_counter()
             try:
-                response: ModelResponse = self.provider.generate(
-                    messages=messages,
-                    tools=tools,
-                    temperature=0.0,
-                )
+                try:
+                    response: ModelResponse = self.provider.generate(
+                        messages=messages,
+                        tools=tools,
+                        temperature=0.0,
+                        max_retries=allowed_retries,
+                    )
+                except TypeError:
+                    response = self.provider.generate(
+                        messages=messages,
+                        tools=tools,
+                        temperature=0.0,
+                    )
             except Exception as exc:
                 error_msg = f"Provider failure at turn {turns}: {exc}"
                 finish_reason = "error"
+                retries = getattr(exc, "retries", 0)
                 try:
-                    self.cost_tracker.record_failed_request()
+                    self.cost_tracker.record_failed_request(retries=retries)
                 except CostBudgetExceededError:
                     pass
                 break

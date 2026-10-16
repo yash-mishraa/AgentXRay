@@ -69,6 +69,10 @@ class ModelResponse(BaseModel):
 class ProviderError(Exception):
     """Base exception for provider communication or parsing failures."""
 
+    def __init__(self, message: str, retries: int = 0) -> None:
+        super().__init__(message)
+        self.retries = retries
+
 
 class ProviderRateLimitError(ProviderError):
     """Raised when the provider rejects a request due to rate limits."""
@@ -102,6 +106,7 @@ class ModelProvider(ABC):
         tools: Sequence[ToolDefinition] = (),
         temperature: float = 0.0,
         max_tokens: int = 512,
+        max_retries: int | None = None,
     ) -> ModelResponse:
         """Generate a response from the model.
 

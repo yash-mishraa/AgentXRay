@@ -103,6 +103,7 @@ class OpenAIProvider(ModelProvider):
         tools: Sequence[ToolDefinition] = (),
         temperature: float = 0.0,
         max_tokens: int = 512,
+        max_retries: int | None = None,
     ) -> ModelResponse:
         self.validate_configuration()
 
@@ -163,10 +164,11 @@ class OpenAIProvider(ModelProvider):
 
         req = urllib.request.Request(url, data=payload_bytes, headers=headers, method="POST")
 
+        effective_max_retries = self._max_retries if max_retries is None else max(0, min(self._max_retries, max_retries))
         attempts = 0
         last_error: Exception | None = None
 
-        while attempts <= self._max_retries:
+        while attempts <= effective_max_retries:
             attempts += 1
             t0 = time.perf_counter()
             try:
@@ -189,34 +191,36 @@ class OpenAIProvider(ModelProvider):
                 )
 
                 if http_err.code in (401, 403):
-                    raise ProviderAuthError(f"Authentication failed: {redacted_msg}") from http_err
+                    raise ProviderAuthError(f"Authentication failed: {redacted_msg}", retries=attempts - 1) from http_err
                 elif http_err.code == 429:
                     if "insufficient_quota" in err_body or "credit_balance_exhausted" in err_body:
                         raise ProviderAuthError(
-                            f"OpenAI account credit balance exhausted (insufficient quota): {redacted_msg}"
+                            f"OpenAI account credit balance exhausted (insufficient quota): {redacted_msg}",
+                            retries=attempts - 1,
                         ) from http_err
-                    last_error = ProviderRateLimitError(f"Rate limit exceeded: {redacted_msg}")
+                    last_error = ProviderRateLimitError(f"Rate limit exceeded: {redacted_msg}", retries=attempts - 1)
                     # Brief backoff if retrying
-                    if attempts <= self._max_retries:
+                    if attempts <= effective_max_retries:
                         time.sleep(2.0 * attempts)
                         continue
                     raise last_error from http_err
                 else:
-                    raise ProviderError(f"Provider request failed: {redacted_msg}") from http_err
+                    raise ProviderError(f"Provider request failed: {redacted_msg}", retries=attempts - 1) from http_err
             except (urllib.error.URLError, TimeoutError) as net_err:
                 last_error = ProviderTimeoutError(
-                    _redact_secrets(f"Network/timeout error: {net_err}", self._api_key)
+                    _redact_secrets(f"Network/timeout error: {net_err}", self._api_key),
+                    retries=attempts - 1,
                 )
-                if attempts <= self._max_retries:
+                if attempts <= effective_max_retries:
                     time.sleep(1.0 * attempts)
                     continue
                 raise last_error from net_err
             except json.JSONDecodeError as json_err:
-                raise ProviderError(f"Failed to decode provider response: {json_err}") from json_err
+                raise ProviderError(f"Failed to decode provider response: {json_err}", retries=attempts - 1) from json_err
 
         if last_error:
             raise last_error
-        raise ProviderError("Request terminated without response.")
+        raise ProviderError("Request terminated without response.", retries=max(0, attempts - 1))
 
     def _parse_response(
         self,

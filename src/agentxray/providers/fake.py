@@ -54,6 +54,7 @@ class FakeProvider(ModelProvider):
         tools: Sequence[ToolDefinition] = (),
         temperature: float = 0.0,
         max_tokens: int = 512,
+        max_retries: int | None = None,
     ) -> ModelResponse:
         self.request_count += 1
 

@@ -612,5 +612,53 @@ def test_target_aborts_on_provider_infrastructure_error():
         target.execute(InputCase(case_id="c1", elements=("el1",)))
 
 
+def test_dry_run_makes_zero_network_calls():
+    """Verify dry_run_model_pilot makes strictly zero network transport calls even when configured for live openai."""
+    from unittest.mock import patch
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        result = dry_run_model_pilot(
+            provider_type="openai",
+            live=True,
+            task_filter="conflicting_prompt",
+            max_model_requests=100,
+            max_spend_usd=1.00,
+        )
+        assert mock_urlopen.call_count == 0
+        assert result["network_transport_contacted"] is False
+
+
+def test_agent_retries_bounded_by_budget_headroom():
+    """Verify ControlledAgent bounds provider retries by remaining request headroom so limit is never breached."""
+    from unittest.mock import MagicMock
+    from agentxray.agent_harness.agent import ControlledAgent
+    from agentxray.agent_harness.cost_tracker import CostTracker, ExperimentBudgetConfig
+    from agentxray.providers.base import ModelProvider, ModelResponse, UsageMetadata
+
+    mock_provider = MagicMock(spec=ModelProvider)
+    mock_provider.model_name = "gpt-4o-mini"
+    mock_provider.generate.return_value = ModelResponse(
+        content="success",
+        tool_calls=(),
+        usage=UsageMetadata(prompt_tokens=10, completion_tokens=5, total_tokens=15, retries=0),
+        finish_reason="stop",
+        model_identifier="gpt-4o-mini",
+    )
+
+    tracker = CostTracker(ExperimentBudgetConfig(max_model_requests=2, max_spend_usd=1.00, model_name="gpt-4o-mini"))
+    # Consume 1 request so only 1 request remains in budget
+    tracker.record_failed_request(retries=0)
+    assert tracker.total_requests == 1
+
+    agent = ControlledAgent(provider=mock_provider, mock_env=None, cost_tracker=tracker, max_turns=1)
+    trace = agent.run_session(system_prompt="sys", user_prompt="user")
+
+    # generate must have been called with max_retries=0 (since headroom was 2 - 1 = 1, so 0 retries allowed)
+    mock_provider.generate.assert_called_once()
+    assert mock_provider.generate.call_args.kwargs["max_retries"] == 0
+    assert trace.finish_reason == "budget_exhausted"
+    assert tracker.total_requests == 2  # exactly at limit, not exceeded
+
+
+
 
 

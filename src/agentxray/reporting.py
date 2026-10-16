@@ -304,19 +304,25 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
     bs = report.budget_summary
     req_used = bs.get("total_requests", 0)
     req_max = bs.get("max_requests", "N/A")
-    lines.append(f"| **Model Requests** | {req_used} | {req_max} | `{'OK' if req_used <= req_max else 'EXCEEDED'}` |")
+    lines.append(f"| **Attempted Requests (Total)** | {req_used} | {req_max} | `{'OK' if req_used <= req_max else 'EXCEEDED'}` |")
+
+    succ_req = bs.get("successful_requests", 0)
+    failed_req = bs.get("failed_requests", 0)
+    retries = bs.get("retries", 0)
+    lines.append(f"| **Successful Responses** | {succ_req} | N/A | Logged |")
+    lines.append(f"| **Failed Request Invocations** | {failed_req} | N/A | Logged |")
+    lines.append(f"| **Retried Invocations** | {retries} | N/A | Logged |")
 
     spend_used = bs.get("estimated_spend_usd", 0.0)
     spend_max = bs.get("max_spend_usd", 0.0)
-    lines.append(f"| **Estimated Spend (USD)** | `${spend_used:.4f}` | `${spend_max:.4f}` | `{'OK' if spend_used <= spend_max else 'EXCEEDED'}` |")
+    lines.append(f"| **Estimated Billable Spend (USD)** | `${spend_used:.4f}` | `${spend_max:.4f}` | `{'OK' if spend_used <= spend_max else 'EXCEEDED'}` |")
 
     p_tok = bs.get("prompt_tokens", 0)
     c_tok = bs.get("completion_tokens", 0)
     t_tok = bs.get("total_tokens", p_tok + c_tok)
-    lines.append(f"| **Prompt Tokens** | {p_tok:,} | N/A | Logged |")
-    lines.append(f"| **Completion Tokens** | {c_tok:,} | N/A | Logged |")
-    lines.append(f"| **Total Tokens** | {t_tok:,} | N/A | Logged |")
-    lines.append(f"| **Retries** | {bs.get('retries', 0)} | N/A | Logged |")
+    lines.append(f"| **Billable Prompt Tokens** | {p_tok:,} | N/A | Logged |")
+    lines.append(f"| **Billable Completion Tokens** | {c_tok:,} | N/A | Logged |")
+    lines.append(f"| **Total Billable Tokens** | {t_tok:,} | N/A | Logged |")
 
     lines.extend([
         "",
