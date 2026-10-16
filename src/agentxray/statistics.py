@@ -410,3 +410,135 @@ def estimate_two_proportion_power(
         power = _STANDARD_NORMAL.cdf(lam - z_crit)
 
     return round(min(1.0, max(0.0, power)), 4)
+
+
+class PairedDifferenceSummary(BaseModel):
+    """Summary of paired difference analysis between two algorithm configurations."""
+
+    model_config = ConfigDict(frozen=True)
+
+    n_pairs: int = Field(..., ge=1, description="Number of paired evaluations.")
+    mean_difference: float = Field(..., description="Mean of paired differences (x - y).")
+    std_difference: float = Field(..., ge=0.0, description="Standard deviation of differences.")
+    median_difference: float = Field(..., description="Median of paired differences.")
+    wilcoxon_w: float = Field(..., description="Wilcoxon signed-rank W+ statistic.")
+    wilcoxon_p_value: float = Field(..., ge=0.0, le=1.0, description="Two-sided Wilcoxon p-value.")
+    paired_t_statistic: float = Field(..., description="Paired t-statistic.")
+    paired_t_p_value: float = Field(..., ge=0.0, le=1.0, description="Two-sided paired t-test p-value.")
+
+
+def wilcoxon_signed_rank_test(
+    x: Sequence[float],
+    y: Sequence[float],
+) -> tuple[float, float]:
+    """Perform Wilcoxon signed-rank test for paired continuous/discrete observations.
+
+    Parameters
+    ----------
+    x, y : Sequence[float]
+        Paired numeric samples of identical length.
+
+    Returns
+    -------
+    tuple[float, float]
+        (W_statistic, two_sided_p_value)
+    """
+    if len(x) != len(y):
+        raise ValueError(f"Sample lengths must match: len(x)={len(x)}, len(y)={len(y)}")
+    if len(x) == 0:
+        raise ValueError("Samples cannot be empty")
+
+    diffs = [xi - yi for xi, yi in zip(x, y)]
+    nonzero_diffs = [d for d in diffs if d != 0.0]
+    n_r = len(nonzero_diffs)
+
+    if n_r == 0:
+        return (0.0, 1.0)
+
+    # Sort absolute differences
+    abs_diffs = sorted((abs(d), d > 0) for d in nonzero_diffs)
+
+    # Assign average ranks for ties
+    ranks: list[tuple[float, bool]] = []
+    i = 0
+    tie_lengths: list[int] = []
+    while i < n_r:
+        j = i
+        while j < n_r and math.isclose(abs_diffs[j][0], abs_diffs[i][0], rel_tol=1e-9, abs_tol=1e-9):
+            j += 1
+        tie_len = j - i
+        tie_lengths.append(tie_len)
+        avg_rank = (i + 1 + j) / 2.0
+        for k in range(i, j):
+            ranks.append((avg_rank, abs_diffs[k][1]))
+        i = j
+
+    w_plus = sum(r for r, is_pos in ranks if is_pos)
+
+    # Expected value and variance under null hypothesis
+    mean_w = n_r * (n_r + 1.0) / 4.0
+    tie_correction = sum(t ** 3 - t for t in tie_lengths) / 48.0
+    var_w = (n_r * (n_r + 1.0) * (2.0 * n_r + 1.0) / 24.0) - tie_correction
+
+    if var_w <= 0.0:
+        return (w_plus, 1.0)
+
+    # Continuity correction
+    diff_from_mean = w_plus - mean_w
+    if diff_from_mean > 0:
+        z = (diff_from_mean - 0.5) / math.sqrt(var_w)
+    elif diff_from_mean < 0:
+        z = (diff_from_mean + 0.5) / math.sqrt(var_w)
+    else:
+        z = 0.0
+
+    p_value = math.erfc(abs(z) / math.sqrt(2.0))
+    return (round(w_plus, 4), round(min(1.0, max(0.0, p_value)), 5))
+
+
+def compare_paired_differences(
+    x: Sequence[float],
+    y: Sequence[float],
+) -> PairedDifferenceSummary:
+    """Compute comprehensive paired difference statistics between samples x and y."""
+    if len(x) != len(y) or len(x) == 0:
+        raise ValueError(f"Inputs must be non-empty and equal length, got {len(x)} and {len(y)}")
+
+    n = len(x)
+    diffs = [float(xi - yi) for xi, yi in zip(x, y)]
+    mean_d = sum(diffs) / n
+
+    if n > 1:
+        variance_d = sum((d - mean_d) ** 2 for d in diffs) / (n - 1)
+        std_d = math.sqrt(variance_d)
+    else:
+        std_d = 0.0
+
+    sorted_d = sorted(diffs)
+    if n % 2 == 1:
+        med_d = sorted_d[n // 2]
+    else:
+        med_d = (sorted_d[n // 2 - 1] + sorted_d[n // 2]) / 2.0
+
+    # Paired t-statistic
+    se_mean = (std_d / math.sqrt(n)) if n > 0 else 0.0
+    if se_mean > 0.0:
+        t_stat = mean_d / se_mean
+        t_p_val = math.erfc(abs(t_stat) / math.sqrt(2.0))
+    else:
+        t_stat = 0.0
+        t_p_val = 1.0 if mean_d == 0.0 else 0.0
+
+    w_stat, w_p_val = wilcoxon_signed_rank_test(x, y)
+
+    return PairedDifferenceSummary(
+        n_pairs=n,
+        mean_difference=round(mean_d, 4),
+        std_difference=round(std_d, 4),
+        median_difference=round(med_d, 4),
+        wilcoxon_w=w_stat,
+        wilcoxon_p_value=w_p_val,
+        paired_t_statistic=round(t_stat, 4),
+        paired_t_p_value=round(t_p_val, 5),
+    )
+

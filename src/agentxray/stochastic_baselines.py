@@ -101,6 +101,9 @@ def run_stochastic_greedy_ablation(
             failure_reproduced=False,
             minimality_status=StochasticMinimalityStatus.INCONCLUSIVE,
             target_calls=runner.trial_count,
+            search_target_calls=runner.trial_count,
+            verification_target_calls=0,
+            subsets_examined=len({t.input_case.elements for t in runner.trials}),
             candidate_evaluation=CandidateEvaluation(
                 candidate_elements=initial_input.elements,
                 trials=0,
@@ -120,6 +123,9 @@ def run_stochastic_greedy_ablation(
             failure_reproduced=False,
             minimality_status=StochasticMinimalityStatus.NOT_APPLICABLE,
             target_calls=runner.trial_count,
+            search_target_calls=runner.trial_count,
+            verification_target_calls=0,
+            subsets_examined=len({t.input_case.elements for t in runner.trials}),
             candidate_evaluation=base_eval,
             irrelevant_elements_remaining=0,
             matches_ground_truth=(len(true_set) == 0),
@@ -184,12 +190,19 @@ def run_stochastic_greedy_ablation(
         discovered_set = set(discovered)
         matches_gt = (discovered_set == true_set) or any(discovered_set == alt for alt in alt_sets)
 
+        search_calls = sum(1 for t in runner.trials if t.intervention_type != "stochastic_greedy_minimality_check")
+        verif_calls = sum(1 for t in runner.trials if t.intervention_type == "stochastic_greedy_minimality_check")
+        subsets_cnt = len({t.input_case.elements for t in runner.trials})
+
         return StochasticBaselineComparison(
             baseline_name="stochastic_greedy_ablation",
             discovered_elements=discovered,
             failure_reproduced=True,
             minimality_status=minimality_status,
             target_calls=runner.trial_count,
+            search_target_calls=search_calls,
+            verification_target_calls=verif_calls,
+            subsets_examined=subsets_cnt,
             candidate_evaluation=current_eval,
             irrelevant_elements_remaining=len(discovered_set - true_set),
             matches_ground_truth=matches_gt,
@@ -200,12 +213,18 @@ def run_stochastic_greedy_ablation(
         discovered = tuple(current_elements)
         discovered_set = set(discovered)
         matches_gt = (discovered_set == true_set) or any(discovered_set == alt for alt in alt_sets)
+        search_calls = sum(1 for t in runner.trials if t.intervention_type != "stochastic_greedy_minimality_check")
+        verif_calls = sum(1 for t in runner.trials if t.intervention_type == "stochastic_greedy_minimality_check")
+        subsets_cnt = len({t.input_case.elements for t in runner.trials})
         return StochasticBaselineComparison(
             baseline_name="stochastic_greedy_ablation",
             discovered_elements=discovered,
             failure_reproduced=True,
             minimality_status=StochasticMinimalityStatus.INCONCLUSIVE,
             target_calls=runner.trial_count,
+            search_target_calls=search_calls,
+            verification_target_calls=verif_calls,
+            subsets_examined=subsets_cnt,
             candidate_evaluation=current_eval,
             irrelevant_elements_remaining=len(discovered_set - true_set),
             matches_ground_truth=matches_gt,
@@ -224,6 +243,7 @@ def run_stochastic_random_search(
     true_trigger: tuple[str, ...] = (),
     alternative_valid_triggers: tuple[tuple[str, ...], ...] = (),
     seed: int = 42,
+    max_samples: int | None = None,
 ) -> StochasticBaselineComparison:
     """Stochastic seeded random candidate search baseline.
 
@@ -250,6 +270,9 @@ def run_stochastic_random_search(
             failure_reproduced=False,
             minimality_status=StochasticMinimalityStatus.INCONCLUSIVE,
             target_calls=runner.trial_count,
+            search_target_calls=runner.trial_count,
+            verification_target_calls=0,
+            subsets_examined=len({t.input_case.elements for t in runner.trials}),
             candidate_evaluation=CandidateEvaluation(
                 candidate_elements=initial_input.elements,
                 trials=0,
@@ -269,6 +292,9 @@ def run_stochastic_random_search(
             failure_reproduced=False,
             minimality_status=StochasticMinimalityStatus.NOT_APPLICABLE,
             target_calls=runner.trial_count,
+            search_target_calls=runner.trial_count,
+            verification_target_calls=0,
+            subsets_examined=len({t.input_case.elements for t in runner.trials}),
             candidate_evaluation=base_eval,
             irrelevant_elements_remaining=0,
             matches_ground_truth=(len(true_set) == 0),
@@ -279,11 +305,22 @@ def run_stochastic_random_search(
     best_candidate: tuple[str, ...] = tuple(all_elements)
     best_eval = base_eval
     budget_exhausted = False
+    samples_tested = 0
 
     try:
         while not runner.is_budget_exhausted() and not runner.is_timed_out():
             if len(all_elements) <= 1:
                 break
+            if len(best_candidate) <= 1:
+                break
+            if max_samples is not None and samples_tested >= max_samples:
+                break
+
+            remaining_budget = runner.config.max_trials - runner.trial_count
+            needed_for_verification = len(best_candidate) * trials_per_candidate
+            if remaining_budget <= needed_for_verification:
+                break
+
             k = rng.randint(1, len(all_elements) - 1)
             sample = tuple(sorted(rng.sample(all_elements, k)))
 
@@ -295,6 +332,7 @@ def run_stochastic_random_search(
                 intervention_type="stochastic_random_sample",
                 confidence=confidence,
             )
+            samples_tested += 1
 
             if cand_eval.failure_rate >= failure_threshold:
                 if len(sample) < len(best_candidate):
@@ -342,12 +380,19 @@ def run_stochastic_random_search(
     best_set = set(best_candidate)
     matches_gt = (best_set == true_set) or any(best_set == alt for alt in alt_sets)
 
+    search_calls = sum(1 for t in runner.trials if t.intervention_type != "stochastic_random_minimality_check")
+    verif_calls = sum(1 for t in runner.trials if t.intervention_type == "stochastic_random_minimality_check")
+    subsets_cnt = len({t.input_case.elements for t in runner.trials})
+
     return StochasticBaselineComparison(
         baseline_name="stochastic_seeded_random",
         discovered_elements=best_candidate,
         failure_reproduced=True,
         minimality_status=minimality_status,
         target_calls=runner.trial_count,
+        search_target_calls=search_calls,
+        verification_target_calls=verif_calls,
+        subsets_examined=subsets_cnt,
         candidate_evaluation=best_eval,
         irrelevant_elements_remaining=len(best_set - true_set),
         matches_ground_truth=matches_gt,

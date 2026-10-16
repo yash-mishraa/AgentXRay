@@ -251,6 +251,9 @@ class StochasticDiscoveredCondition(BaseModel):
         default_factory=dict, description="Evaluations of single-element removals."
     )
     target_calls_used: int = Field(..., ge=0, description="Total target calls consumed.")
+    search_target_calls: int = Field(default=0, ge=0, description="Target calls spent in search phase.")
+    verification_target_calls: int = Field(default=0, ge=0, description="Target calls spent in verification phase.")
+    subsets_examined: int = Field(default=0, ge=0, description="Count of distinct candidate subsets evaluated.")
     status_message: str = Field(default="", description="Detailed narrative.")
 
 
@@ -264,6 +267,9 @@ class StochasticBaselineComparison(BaseModel):
     failure_reproduced: bool = Field(..., description="Whether discovered set met failure threshold.")
     minimality_status: StochasticMinimalityStatus = Field(..., description="Stochastic minimality classification.")
     target_calls: int = Field(..., ge=0, description="Target evaluations consumed.")
+    search_target_calls: int = Field(default=0, ge=0, description="Target calls spent in search phase.")
+    verification_target_calls: int = Field(default=0, ge=0, description="Target calls spent in verification phase.")
+    subsets_examined: int = Field(default=0, ge=0, description="Count of distinct candidate subsets evaluated.")
     candidate_evaluation: CandidateEvaluation = Field(..., description="Statistical evaluation of isolated candidate.")
     irrelevant_elements_remaining: int = Field(..., ge=0, description="Count of non-causal distractor elements retained.")
     matches_ground_truth: bool = Field(..., description="Exact match with planted trigger.")

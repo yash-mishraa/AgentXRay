@@ -147,6 +147,9 @@ class StochasticDeltaDebugMinimizer:
                     confidence_interval=(0.0, 1.0),
                 ),
                 target_calls_used=self.runner.trial_count,
+                search_target_calls=self.runner.trial_count,
+                verification_target_calls=0,
+                subsets_examined=len({t.input_case.elements for t in self.runner.trials}),
                 status_message=f"Search halted during baseline evaluation: {exc}",
             )
 
@@ -158,6 +161,9 @@ class StochasticDeltaDebugMinimizer:
                 minimality_status=StochasticMinimalityStatus.NOT_APPLICABLE,
                 candidate_evaluation=base_eval,
                 target_calls_used=self.runner.trial_count,
+                search_target_calls=self.runner.trial_count,
+                verification_target_calls=0,
+                subsets_examined=len({t.input_case.elements for t in self.runner.trials}),
                 status_message=(
                     f"Initial input failure rate {base_eval.failure_rate:.2f} did not meet "
                     f"threshold {self.failure_threshold:.2f}; no failure trigger detected."
@@ -274,6 +280,10 @@ class StochasticDeltaDebugMinimizer:
                 removal_evals=removal_evals,
             )
 
+            search_calls = sum(1 for t in self.runner.trials if t.intervention_type != "stochastic_minimality_check")
+            verif_calls = sum(1 for t in self.runner.trials if t.intervention_type == "stochastic_minimality_check")
+            subsets_cnt = len({t.input_case.elements for t in self.runner.trials})
+
             return StochasticDiscoveredCondition(
                 subset_elements=current_candidate,
                 status=SearchStatus.COMPLETE,
@@ -282,10 +292,16 @@ class StochasticDeltaDebugMinimizer:
                 candidate_evaluation=current_eval,
                 removal_evaluations=removal_evals,
                 target_calls_used=self.runner.trial_count,
+                search_target_calls=search_calls,
+                verification_target_calls=verif_calls,
+                subsets_examined=subsets_cnt,
                 status_message=status_msg,
             )
 
         except (BudgetExhaustedError, TimeoutExceededError) as exc:
+            search_calls = sum(1 for t in self.runner.trials if t.intervention_type != "stochastic_minimality_check")
+            verif_calls = sum(1 for t in self.runner.trials if t.intervention_type == "stochastic_minimality_check")
+            subsets_cnt = len({t.input_case.elements for t in self.runner.trials})
             return StochasticDiscoveredCondition(
                 subset_elements=current_candidate,
                 status=SearchStatus.BUDGET_EXHAUSTED if isinstance(exc, BudgetExhaustedError) else SearchStatus.TIMEOUT,
@@ -294,6 +310,9 @@ class StochasticDeltaDebugMinimizer:
                 candidate_evaluation=current_eval,
                 removal_evaluations=removal_evals if "removal_evals" in locals() else {},
                 target_calls_used=self.runner.trial_count,
+                search_target_calls=search_calls,
+                verification_target_calls=verif_calls,
+                subsets_examined=subsets_cnt,
                 status_message=f"Search interrupted before verification: {exc}",
             )
 
