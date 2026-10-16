@@ -17,6 +17,7 @@ from agentxray.models import (
 )
 from agentxray.providers.base import ModelProvider
 from agentxray.providers.fake import FakeProvider
+from agentxray.providers.ollama_adapter import OllamaProvider
 from agentxray.providers.openai_adapter import OpenAIProvider
 from agentxray.reporting import write_model_pilot_reports
 from agentxray.runner import InterventionRunner
@@ -105,11 +106,11 @@ def dry_run_model_pilot(
         est_completion_tokens_per_turn=50,
     )
 
-    can_execute_live = (provider_type == "openai" and live and api_key_set)
+    can_execute_live = (provider_type == "openai" and live and api_key_set) or (provider_type == "ollama")
 
     # Validate spend limit
-    spend_cap_valid = (max_spend_usd <= 1.00) if live else True
-    status = "VALID" if ((provider_type == "fake" or can_execute_live) and spend_cap_valid) else (
+    spend_cap_valid = (max_spend_usd <= 1.00) if (live and provider_type == "openai") else True
+    status = "VALID" if ((provider_type in ("fake", "ollama") or can_execute_live) and spend_cap_valid) else (
         "INVALID_SPEND_CAP_EXCEEDS_PILOT_LIMIT" if not spend_cap_valid else "REQUIRES_AUTH_OR_OPT_IN"
     )
 
@@ -198,12 +199,17 @@ def run_model_pilot_benchmark(
         provider = OpenAIProvider(model_name=resolved_model, timeout_seconds=timeout_seconds)
         provider.validate_configuration()
         tier = ExecutionTier.LIVE_MODEL
+    elif provider_type == "ollama":
+        resolved_model = model_name or "llama3.2:3b"
+        provider = OllamaProvider(model_name=resolved_model, timeout_seconds=timeout_seconds)
+        provider.validate_configuration()
+        tier = ExecutionTier.LOCAL_MODEL
     elif provider_type == "fake":
         resolved_model = model_name or "fake-model-pilot"
         provider = FakeProvider(model_name=resolved_model)
         tier = ExecutionTier.FAKE_PROVIDER
     else:
-        raise ValueError(f"Unknown provider_type: {provider_type!r}. Supported: 'fake', 'openai'.")
+        raise ValueError(f"Unknown provider_type: {provider_type!r}. Supported: 'fake', 'openai', 'ollama'.")
 
     # 2. Configure Cost Tracker and Budgets
     budget_cfg = ExperimentBudgetConfig(

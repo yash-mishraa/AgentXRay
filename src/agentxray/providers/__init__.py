@@ -13,6 +13,7 @@ from agentxray.providers.base import (
     UsageMetadata,
 )
 from agentxray.providers.fake import FakeProvider
+from agentxray.providers.ollama_adapter import OllamaProvider
 from agentxray.providers.openai_adapter import OpenAIProvider
 
 __all__ = [
@@ -27,5 +28,7 @@ __all__ = [
     "ToolDefinition",
     "UsageMetadata",
     "FakeProvider",
+    "OllamaProvider",
     "OpenAIProvider",
 ]
+

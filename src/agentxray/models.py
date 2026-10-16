@@ -298,6 +298,7 @@ class ExecutionTier(str, Enum):
     SYNTHETIC = "synthetic"
     FAKE_PROVIDER = "fake_provider"
     LIVE_MODEL = "live_model"
+    LOCAL_MODEL = "local_model"
 
 
 class StochasticExperimentReport(BaseModel):
@@ -307,7 +308,7 @@ class StochasticExperimentReport(BaseModel):
 
     experiment_name: str = Field(..., description="Experiment name.")
     execution_tier: ExecutionTier = Field(
-        default=ExecutionTier.SYNTHETIC, description="Tier: synthetic, fake_provider, or live_model."
+        default=ExecutionTier.SYNTHETIC, description="Tier: synthetic, fake_provider, live_model, or local_model."
     )
     config: ExperimentConfig = Field(..., description="Experiment config.")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Completion timestamp.")
@@ -355,7 +356,7 @@ class ModelPilotExperimentReport(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     experiment_name: str = Field(..., description="Experiment identifier.")
-    execution_tier: ExecutionTier = Field(..., description="Tier: fake_provider or live_model.")
+    execution_tier: ExecutionTier = Field(..., description="Tier: fake_provider, live_model, or local_model.")
     provider_name: str = Field(..., description="Model provider used (e.g. fake, openai).")
     model_name: str = Field(..., description="Model identifier (e.g. fake-model-pilot, gpt-4o-mini).")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Completion timestamp.")

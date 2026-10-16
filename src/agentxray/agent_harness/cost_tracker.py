@@ -50,6 +50,14 @@ class CostTracker:
             self._pricing = MODEL_PRICING_PER_1M[config.model_name]
         elif config.model_name.startswith("fake"):
             self._pricing = (0.15, 0.60)
+        elif any(
+            config.model_name.lower().startswith(p)
+            for p in ("llama", "qwen", "mistral", "phi", "gemma", "ollama", "local", "deepseek", "vicuna")
+        ) or any(
+            tag in config.model_name.lower()
+            for tag in (":3b", ":8b", ":7b", ":1.5b", ":14b", ":70b", ":latest")
+        ):
+            self._pricing = (0.0, 0.0)
         else:
             raise ValueError(
                 f"Unknown pricing for model {config.model_name!r}. Please specify explicit "

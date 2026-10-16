@@ -294,9 +294,9 @@ def main() -> None:
     parser.add_argument(
         "--provider",
         type=str,
-        choices=["fake", "openai"],
+        choices=["fake", "openai", "ollama"],
         default="fake",
-        help="Model provider for model-backed pilot experiments (default: fake).",
+        help="Model provider for model-backed pilot experiments: fake, openai, or ollama (default: fake).",
     )
     parser.add_argument(
         "--model",
@@ -466,7 +466,14 @@ def main() -> None:
 
         pilot_tpc = args.trials_per_candidate if args.trials_per_candidate is not None else 5
         pilot_max_trials = args.max_trials if args.max_trials is not None else 50
-        resolved_model = args.model or ("gpt-4o-mini" if args.provider == "openai" else "fake-model-pilot")
+        if args.model:
+            resolved_model = args.model
+        elif args.provider == "openai":
+            resolved_model = "gpt-4o-mini"
+        elif args.provider == "ollama":
+            resolved_model = "llama3.2:3b"
+        else:
+            resolved_model = "fake-model-pilot"
 
         if args.dry_run:
             print(f"\n[Executing Pre-Flight Dry Run for Model Pilot ({args.provider} / {resolved_model})]")
@@ -495,7 +502,12 @@ def main() -> None:
             print(f"  * Estimated Total Tokens: {cost['estimated_total_tokens']:,}")
             print(f"  * Estimated Cost (USD): ${cost['estimated_spend_usd']:.4f} (Spend limit: ${cost['max_allowed_spend_usd']:.4f})")
             print(f"- Authorization Status: **{dry_info['status']}**")
-            if not dry_info["can_execute_live"] and args.provider == "openai":
+            if args.provider == "ollama":
+                print("\n> [!NOTE]")
+                print(f"> Local Ollama inference target: `{resolved_model}` at `http://127.0.0.1:11434`.")
+                print("> Commercial API spend: $0.0000 USD (runs entirely on local hardware).")
+                print(f"> Prerequisite: Ensure the local Ollama daemon is running with model pulled (`ollama run {resolved_model}`).")
+            elif not dry_info["can_execute_live"] and args.provider == "openai":
                 print("\n> [!CAUTION]")
                 print("> Live OpenAI API calls require 'OPENAI_API_KEY' set in environment AND the '--live' CLI flag.")
                 print(f"> Planned maximum spend: ${cost['estimated_spend_usd']:.4f} USD (Hard cap: ${args.max_spend:.2f} USD).")
