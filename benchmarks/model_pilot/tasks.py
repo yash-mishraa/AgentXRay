@@ -174,6 +174,61 @@ def create_model_pilot_distractor_task(
     return target, initial_input, ground_truth
 
 
+def create_model_pilot_calibrated_currency_task(
+    provider: ModelProvider | None = None,
+    cost_tracker: CostTracker | None = None,
+) -> tuple[ModelBackedAgentTarget, InputCase, ModelPilotGroundTruthSpec]:
+    """Pilot Task 4 (Phase 1G.2 Calibrated Neural Benchmark): Currency syntax formatting constraint.
+
+    When 'strict_currency_formatting' is present, the agent formats numbers within tool arguments
+    with currency symbols (e.g. '$150' or '$250'), causing the AST-safe calculator to reject the expression
+    with a syntax error. When ablated, clean arithmetic arguments ('150 + 250') are emitted, producing 400
+    and satisfying the observable criteria.
+    """
+    prov = provider or FakeProvider(model_name="fake-model-pilot")
+    tracker = cost_tracker or CostTracker(
+        ExperimentBudgetConfig(max_model_requests=120, max_spend_usd=1.00, model_name=prov.model_name)
+    )
+    env = MockToolEnvironment()
+    agent = ControlledAgent(provider=prov, mock_env=env, cost_tracker=tracker, max_turns=3)
+
+    evaluator = ToolCallingTaskEvaluator(
+        required_tool="calculator",
+        expected_substring="400",
+    )
+
+    target = ModelBackedAgentTarget(
+        agent=agent,
+        evaluator=evaluator,
+        base_system_prompt="You are an automated accounting assistant. Always use the calculator tool for calculations.",
+        user_prompt="Calculate total reimbursement for expenses of 150 and 250.",
+        tools=[CALCULATOR_TOOL_DEF],
+        name="ModelPilotCalibratedCurrencyTarget",
+    )
+
+    planted_trigger = 'strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. "$150" or "$250")'
+
+    initial_input = InputCase(
+        case_id="pilot_calibrated_currency",
+        elements=(
+            planted_trigger,
+            "concise_summary: provide clear one-line reimbursement statement",
+            "compliance_tag: include audit reference code REF-2026",
+            "audit_memo: append verification timestamp to final answer",
+        ),
+        description="Task with 3 distractors and 1 currency formatting constraint causing tool syntax rejection",
+    )
+
+    ground_truth = ModelPilotGroundTruthSpec(
+        task_id="pilot_calibrated_currency",
+        name="Model Pilot Calibrated Currency Syntax",
+        description="Fails when currency formatting constraint causes calculator syntax error; succeeds when ablated.",
+        trigger_elements=(planted_trigger,),
+    )
+
+    return target, initial_input, ground_truth
+
+
 def get_model_pilot_tasks(
     provider: ModelProvider | None = None,
     cost_tracker: CostTracker | None = None,
@@ -188,7 +243,7 @@ def get_model_pilot_tasks(
     cost_tracker : CostTracker | None
         Centralized request and spend tracker.
     task_filter : str | None
-        'all' (default), 'conflicting_prompt', 'distractor_override', or 'baseline'.
+        'all' (default), 'conflicting_prompt', 'distractor_override', 'baseline', or 'calibrated_currency'.
 
     Returns
     -------
@@ -209,10 +264,12 @@ def get_model_pilot_tasks(
         return [create_model_pilot_conflicting_prompt_task(provider=provider, cost_tracker=cost_tracker)]
     elif filter_key in ("distractor_override", "pilot_distractor_override", "distractor"):
         return [create_model_pilot_distractor_task(provider=provider, cost_tracker=cost_tracker)]
+    elif filter_key in ("calibrated", "calibrated_currency", "currency", "currency_injection", "pilot_calibrated_currency"):
+        return [create_model_pilot_calibrated_currency_task(provider=provider, cost_tracker=cost_tracker)]
     else:
         raise ValueError(
             f"Unknown task_filter: {task_filter!r}. "
-            "Supported options: 'all', 'conflicting_prompt', 'distractor_override', 'baseline'."
+            "Supported options: 'all', 'conflicting_prompt', 'distractor_override', 'baseline', 'calibrated_currency'."
         )
 
 

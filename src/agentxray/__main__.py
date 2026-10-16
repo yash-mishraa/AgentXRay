@@ -320,7 +320,7 @@ def main() -> None:
         "--task",
         type=str,
         default="all",
-        help="Pilot task to run: 'all' (default), 'conflicting_prompt', 'distractor_override', 'baseline'.",
+        help="Pilot task to run: 'all' (default), 'calibrated_currency', 'conflicting_prompt', 'distractor_override', 'baseline'.",
     )
     parser.add_argument(
         "--max-spend",
@@ -475,6 +475,10 @@ def main() -> None:
         else:
             resolved_model = "fake-model-pilot"
 
+        effective_max_requests = (
+            min(args.max_model_requests, 120) if args.provider == "ollama" else args.max_model_requests
+        )
+
         if args.dry_run:
             print(f"\n[Executing Pre-Flight Dry Run for Model Pilot ({args.provider} / {resolved_model})]")
             dry_info = dry_run_model_pilot(
@@ -484,7 +488,7 @@ def main() -> None:
                 task_filter=args.task,
                 trials_per_candidate=pilot_tpc,
                 max_trials=pilot_max_trials,
-                max_model_requests=args.max_model_requests,
+                max_model_requests=effective_max_requests,
                 max_spend_usd=args.max_spend,
             )
             print("\nPre-Flight Configuration & Cost Validation:")
@@ -506,6 +510,7 @@ def main() -> None:
                 print("\n> [!NOTE]")
                 print(f"> Local Ollama inference target: `{resolved_model}` at `http://127.0.0.1:11434`.")
                 print("> Commercial API spend: $0.0000 USD (runs entirely on local hardware).")
+                print(f"> Hard Cap Enforced: {effective_max_requests} model requests maximum.")
                 print(f"> Prerequisite: Ensure the local Ollama daemon is running with model pulled (`ollama run {resolved_model}`).")
             elif not dry_info["can_execute_live"] and args.provider == "openai":
                 print("\n> [!CAUTION]")
@@ -522,7 +527,7 @@ def main() -> None:
                     task_filter=args.task,
                     max_trials=pilot_max_trials,
                     trials_per_candidate=pilot_tpc,
-                    max_model_requests=args.max_model_requests,
+                    max_model_requests=effective_max_requests,
                     max_spend_usd=args.max_spend,
                     failure_threshold=args.failure_threshold,
                     alpha=args.alpha,

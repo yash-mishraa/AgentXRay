@@ -82,6 +82,12 @@ def dry_run_model_pilot(
             "initial_elements_count": 4,
             "type": "Distractor + misleading schema intervention",
         },
+        {
+            "task_id": "pilot_calibrated_currency",
+            "name": "Model Pilot Calibrated Currency Syntax",
+            "initial_elements_count": 4,
+            "type": "Calibrated neural tool syntax intervention",
+        },
     ]
 
     filter_key = (task_filter or "all").strip().lower()
@@ -91,8 +97,10 @@ def dry_run_model_pilot(
         tasks_info = [all_tasks_meta[1]]
     elif filter_key in ("distractor_override", "pilot_distractor_override", "distractor"):
         tasks_info = [all_tasks_meta[2]]
+    elif filter_key in ("calibrated", "calibrated_currency", "currency", "currency_injection", "pilot_calibrated_currency"):
+        tasks_info = [all_tasks_meta[3]]
     else:
-        tasks_info = all_tasks_meta
+        tasks_info = all_tasks_meta[:3]
 
     # Pre-flight cost estimation based on selected tasks and multi-algorithm benchmark suite
     # (Stochastic Delta Debugging + Greedy Ablation + Seeded Random Search)
@@ -210,6 +218,12 @@ def run_model_pilot_benchmark(
         tier = ExecutionTier.FAKE_PROVIDER
     else:
         raise ValueError(f"Unknown provider_type: {provider_type!r}. Supported: 'fake', 'openai', 'ollama'.")
+
+    if tier == ExecutionTier.LOCAL_MODEL and max_model_requests > 120:
+        raise ValueError(
+            f"Safety safeguard violation: max_model_requests is {max_model_requests}, "
+            "but Phase 1G.2 local model pilots strictly mandate max_model_requests <= 120."
+        )
 
     # 2. Configure Cost Tracker and Budgets
     budget_cfg = ExperimentBudgetConfig(

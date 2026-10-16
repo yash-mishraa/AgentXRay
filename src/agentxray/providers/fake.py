@@ -121,13 +121,16 @@ class FakeProvider(ModelProvider):
 
         # Check if calculator tool is available and calculation requested
         has_calc = any(t.name == "calculator" for t in tools)
-        if has_calc and ("calculate" in full_text or "sum" in full_text or "math" in full_text or "+" in full_text):
-            # Extract expression if possible or default to standard test expression
-            expr = "150 + 250"
-            if "200 + 300" in full_text:
+        if has_calc and ("calculate" in full_text or "sum" in full_text or "math" in full_text or "+" in full_text or "reimbursement" in full_text):
+            # Check for currency formatting directive causing tool syntax failure
+            if "currency_formatting" in full_text or "currency symbols" in full_text:
+                expr = "$150 + $250"
+            elif "200 + 300" in full_text:
                 expr = "200 + 300"
             elif "42 * 10" in full_text:
                 expr = "42 * 10"
+            else:
+                expr = "150 + 250"
 
             tool_calls = (
                 ToolCall(
