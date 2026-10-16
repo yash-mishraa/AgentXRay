@@ -3,7 +3,7 @@
 **Date**: 2026-10-16  
 **Status**: Completed (Statistical Audit, Scaling Benchmark Suite & Empirical Validation Complete)  
 **Starting Checkpoint**: `7e251c7` on `main`  
-**Current Checkpoint**: In progress  
+**Phase 2A Checkpoint**: `aa24471` on `main`  
 **Repository Remote**: `https://github.com/yash-mishraa/AgentXRay.git`  
 **Benchmark Scope**: Purely synthetic controlled testbed (Zero paid API calls, Zero Ollama calls, Zero commercial spend: **$0.0000 USD**)  
 **Benchmark Size**: 400 paired instances across 5 candidate-space sizes ($K \in \{4, 8, 12, 16, 20\}$) and 8 target families, totaling **1,200 algorithm runs** (completed in 1.51 seconds)  
