@@ -1,0 +1,94 @@
+{
+  "protocol_version": "Phase_2B.1_v1.3",
+  "document_reference": "docs/research/phase_2b1_exploratory_protocol_v1_3.md",
+  "created_at": "2026-10-17T12:00:00Z",
+  "status": "PREREGISTERED_FROZEN",
+  "study_designation": "EXPLORATORY_FEASIBILITY_BENCHMARK",
+  "execution_tier": "LOCAL_MODEL",
+  "target_model": "llama3.2:3b",
+  "target_provider": "ollama",
+  "commercial_spend_cap_usd": 0.0,
+  "instances_count": 16,
+  "active_instances_count": 12,
+  "null_instances_count": 4,
+  "unique_base_mechanisms_count": 6,
+  "candidate_space_sizes": [4, 8],
+  "task_families": [
+    "TOOL_ARG_SYNTAX",
+    "TOOL_ROUTING_CONFLICT",
+    "TOOL_PARAM_SCHEMA",
+    "NULL_CONTROL"
+  ],
+  "budget_rules": {
+    "max_requests_per_algorithm_k4": 120,
+    "max_requests_per_algorithm_k8": 180,
+    "trials_per_candidate": 5,
+    "calibration_trials_per_subset": 5,
+    "holdout_trials_per_algorithm": 5,
+    "max_total_request_budget": 7500,
+    "empirical_high_demand_scenario": 7330,
+    "theoretical_maximum_cap": 8200
+  },
+  "stopping_rules": {
+    "active_task_qualification_min_trigger_failure_rate": 0.7,
+    "active_task_qualification_max_absent_failure_rate": 0.2,
+    "null_task_qualification_max_failure_rate": 0.1,
+    "hard_budget_breach_abort": true
+  },
+  "statistical_analysis_plan": {
+    "primary_analysis_framework": "dual_endpoint_recovery_and_resource_burden",
+    "primary_endpoints": [
+      "verified_trigger_recovery_proportion_descriptive",
+      "total_target_model_requests_per_assigned_task"
+    ],
+    "primary_test": "wilcoxon_signed_rank_paired",
+    "secondary_descriptive_conditional_test": "conditional_wilcoxon_signed_rank_resolved_only",
+    "secondary_paired_binary_test": "mcnemar_exact_mechanism_level",
+    "descriptive_curves": "empirical_cumulative_discovery_cdf",
+    "two_sided_alpha": 0.05,
+    "target_power": 0.8,
+    "stratification": "candidate_size_k",
+    "cluster_unit": "mechanism_id",
+    "handling_censored_runs": "actual_expended_requests_rcap",
+    "minimality_verification_framework": "intersection_union_test_without_heuristics",
+    "minimality_outcome_taxonomy": [
+      "SUPPORTED_1_MINIMAL",
+      "OBSERVED_1_MINIMAL",
+      "NOT_MINIMAL",
+      "INCONCLUSIVE",
+      "BUDGET_EXHAUSTED",
+      "INFRA_FAILURE"
+    ],
+    "non_inferiority_status": "DEMOTED_TO_DESCRIPTIVE_EXPLORATORY",
+    "non_inferiority_justification": "Sample size of n=6 independent mechanisms yields 95% confidence intervals exceeding +/-35%, rendering formal non-inferiority decisions mathematically uninformative. Recovery is reported descriptively via paired contingency tables and risk differences.",
+    "resource_burden_estimand_definition": "All-Assigned Tasks (Intention-to-Treat): Observed total request count R_a(i, K) stratified by candidate-space size K in {4, 8} and normalized burden R_a(i, K) / Cap(K), preserving visibility of failures and budget caps without scalar penalty fabrication."
+  },
+  "mechanism_ids": [
+    "mech_01_syntax_currency",
+    "mech_02_syntax_comma",
+    "mech_03_routing_override",
+    "mech_04_routing_prohibition",
+    "mech_05_schema_unit",
+    "mech_06_schema_cross_unit",
+    "mech_null_01_calc",
+    "mech_null_02_db"
+  ],
+  "instance_ids": [
+    "inst_01_syntax_currency_k4",
+    "inst_02_syntax_currency_k8",
+    "inst_03_syntax_comma_k4",
+    "inst_04_syntax_comma_k8",
+    "inst_05_routing_override_k4",
+    "inst_06_routing_override_k8",
+    "inst_07_routing_prohibition_k4",
+    "inst_08_routing_prohibition_k8",
+    "inst_09_schema_unit_k4",
+    "inst_10_schema_unit_k8",
+    "inst_11_schema_cross_unit_k4",
+    "inst_12_schema_cross_unit_k8",
+    "inst_13_null_calc_k4",
+    "inst_14_null_calc_k8",
+    "inst_15_null_db_k4",
+    "inst_16_null_db_k8"
+  ]
+}
