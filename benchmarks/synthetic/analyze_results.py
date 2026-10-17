@@ -104,8 +104,11 @@ def analyze_suite(results_path: Path):
         mean_rec_non_null = sum(st["recalls_non_null"]) / non_null_n if non_null_n > 0 else 0.0
         exh_rate = st["budget_exhausted"] / total
 
+        var_calls = sum((c - mean_calls) ** 2 for c in st["target_calls"]) / (total - 1) if total > 1 else 0.0
+        std_calls = math.sqrt(var_calls)
+
         print(f"\nAlgorithm: {a}")
-        print(f"  Target Calls (mean ± std): {mean_calls:.1f} (median: {med_calls:.1f})")
+        print(f"  Target Calls (mean ± std): {mean_calls:.1f} ± {std_calls:.1f} (median: {med_calls:.1f})")
         print(f"    - Search Calls (mean): {mean_search:.1f}")
         print(f"    - Verification Calls (mean): {mean_verif:.1f}")
         print(f"  Subsets Examined (mean): {mean_sub:.1f}")
@@ -174,10 +177,13 @@ def analyze_suite(results_path: Path):
     dd_vs_random = compare_paired_differences(dd_calls, random_calls)
     greedy_vs_random = compare_paired_differences(greedy_calls, random_calls)
 
+    def fmt_p(p: float) -> str:
+        return f"{p:.2e}" if p < 1e-4 else f"{p:.5f}"
+
     print("\nOverall Paired Comparison (Target Calls):")
-    print(f"  DD vs Greedy: mean diff = {dd_vs_greedy.mean_difference:+.2f} ± {dd_vs_greedy.std_difference:.2f}, median diff = {dd_vs_greedy.median_difference:+.1f}, Wilcoxon W={dd_vs_greedy.wilcoxon_w}, p={dd_vs_greedy.wilcoxon_p_value:.5f}, t={dd_vs_greedy.paired_t_statistic:.2f}, p={dd_vs_greedy.paired_t_p_value:.5f}")
-    print(f"  DD vs Random: mean diff = {dd_vs_random.mean_difference:+.2f} ± {dd_vs_random.std_difference:.2f}, median diff = {dd_vs_random.median_difference:+.1f}, Wilcoxon W={dd_vs_random.wilcoxon_w}, p={dd_vs_random.wilcoxon_p_value:.5f}, t={dd_vs_random.paired_t_statistic:.2f}, p={dd_vs_random.paired_t_p_value:.5f}")
-    print(f"  Greedy vs Random: mean diff = {greedy_vs_random.mean_difference:+.2f} ± {greedy_vs_random.std_difference:.2f}, median diff = {greedy_vs_random.median_difference:+.1f}, Wilcoxon W={greedy_vs_random.wilcoxon_w}, p={greedy_vs_random.wilcoxon_p_value:.5f}, t={greedy_vs_random.paired_t_statistic:.2f}, p={greedy_vs_random.paired_t_p_value:.5f}")
+    print(f"  DD vs Greedy: mean diff = {dd_vs_greedy.mean_difference:+.2f} ± {dd_vs_greedy.std_difference:.2f}, median diff = {dd_vs_greedy.median_difference:+.1f}, Wilcoxon W={dd_vs_greedy.wilcoxon_w}, p={fmt_p(dd_vs_greedy.wilcoxon_p_value)}, t={dd_vs_greedy.paired_t_statistic:.2f}, p={fmt_p(dd_vs_greedy.paired_t_p_value)}")
+    print(f"  DD vs Random: mean diff = {dd_vs_random.mean_difference:+.2f} ± {dd_vs_random.std_difference:.2f}, median diff = {dd_vs_random.median_difference:+.1f}, Wilcoxon W={dd_vs_random.wilcoxon_w}, p={fmt_p(dd_vs_random.wilcoxon_p_value)}, t={dd_vs_random.paired_t_statistic:.2f}, p={fmt_p(dd_vs_random.paired_t_p_value)}")
+    print(f"  Greedy vs Random: mean diff = {greedy_vs_random.mean_difference:+.2f} ± {greedy_vs_random.std_difference:.2f}, median diff = {greedy_vs_random.median_difference:+.1f}, Wilcoxon W={greedy_vs_random.wilcoxon_w}, p={fmt_p(greedy_vs_random.wilcoxon_p_value)}, t={greedy_vs_random.paired_t_statistic:.2f}, p={fmt_p(greedy_vs_random.paired_t_p_value)}")
 
     # Paired comparisons by family
     print("\nPaired Comparisons by Family (DD calls minus Greedy calls):")
@@ -193,7 +199,7 @@ def analyze_suite(results_path: Path):
 
     adjusted_p = adjust_p_values_bh(family_p_vals)
     for (fam, comp), q in zip(family_diffs, adjusted_p):
-        print(f"  {fam:24s}: mean diff={comp.mean_difference:+7.1f}, median={comp.median_difference:+6.1f}, W={comp.wilcoxon_w:6.1f}, raw p={comp.wilcoxon_p_value:.5f}, BH q={q:.5f}")
+        print(f"  {fam:24s}: mean diff={comp.mean_difference:+7.1f}, median={comp.median_difference:+6.1f}, W={comp.wilcoxon_w:6.1f}, raw p={fmt_p(comp.wilcoxon_p_value)}, BH q={fmt_p(q)}")
 
 
 def main():

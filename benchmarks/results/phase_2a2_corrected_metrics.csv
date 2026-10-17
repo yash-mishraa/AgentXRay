@@ -1,0 +1,30 @@
+category,group,algorithm,metric_name,reported_phase_2a1,audited_phase_2a2,discrepancy_note
+headline_discrepancy_resolution,all_instances,stochastic_delta_debugging,target_calls_std,111.4,121.39,Phase 2A.1 text omitted individual algorithm sample std; 111.4 was erroneous borrowing. True sample std is 121.39.
+headline_discrepancy_resolution,all_instances,stochastic_greedy_ablation,target_calls_std,45.4,73.30,Phase 2A.1 text omitted individual algorithm sample std; 45.4 was erroneous borrowing. True sample std is 73.30.
+headline_discrepancy_resolution,all_instances,stochastic_seeded_random,target_calls_std,391.8,438.37,Phase 2A.1 text borrowed paired difference std (391.8 ~ DD vs Random diff std). True sample std is 438.37.
+headline_discrepancy_resolution,paired_difference_dd_vs_greedy,dd_minus_greedy,wilcoxon_p_value,0.00017,1.78e-14,Phase 2A.1 report narrative conflated the paired t-test p-value (0.00017) with the Wilcoxon p-value. True Wilcoxon p is 1.78e-14.
+headline_discrepancy_resolution,paired_difference_dd_vs_greedy,dd_minus_greedy,paired_t_p_value,0.00017,0.000192,0.00017 was the normal Gaussian approximation (erfc(3.7649/sqrt(2))). Exact Student's t (df=399) is 0.000192.
+overall_metric,all_instances,stochastic_delta_debugging,mean_target_calls,104.1,104.12,Verified exact match.
+overall_metric,all_instances,stochastic_delta_debugging,median_target_calls,70.0,70.0,Verified exact match.
+overall_metric,all_instances,stochastic_delta_debugging,sample_std_target_calls,N/A,121.39,Audited sample standard deviation (ddof=1).
+overall_metric,all_instances,stochastic_delta_debugging,pop_std_target_calls,N/A,121.24,Audited population standard deviation (ddof=0).
+overall_metric,non_null_instances,stochastic_delta_debugging,ground_truth_recovery_rate,93.7%,93.71%,Verified exact match.
+overall_metric,non_null_instances,stochastic_delta_debugging,1_minimality_rate,82.6%,82.57%,Verified exact match.
+overall_metric,null_instances,stochastic_delta_debugging,null_detection_rate,100.0%,100.00%,Verified exact match (50/50 true negatives).
+overall_metric,all_instances,stochastic_delta_debugging,budget_exhaustion_rate,0.0%,0.00%,Verified exact match.
+overall_metric,all_instances,stochastic_greedy_ablation,mean_target_calls,125.5,125.50,Verified exact match.
+overall_metric,all_instances,stochastic_greedy_ablation,median_target_calls,140.0,140.0,Verified exact match.
+overall_metric,all_instances,stochastic_greedy_ablation,sample_std_target_calls,N/A,73.30,Audited sample standard deviation (ddof=1).
+overall_metric,all_instances,stochastic_greedy_ablation,pop_std_target_calls,N/A,73.21,Audited population standard deviation (ddof=0).
+overall_metric,non_null_instances,stochastic_greedy_ablation,ground_truth_recovery_rate,78.6%,78.57%,Verified exact match.
+overall_metric,non_null_instances,stochastic_greedy_ablation,1_minimality_rate,73.1%,73.14%,Verified exact match.
+overall_metric,null_instances,stochastic_greedy_ablation,null_detection_rate,100.0%,100.00%,Verified exact match (50/50 true negatives).
+overall_metric,all_instances,stochastic_greedy_ablation,budget_exhaustion_rate,0.0%,0.00%,Verified exact match.
+overall_metric,all_instances,stochastic_seeded_random,mean_target_calls,557.5,557.45,Verified exact match.
+overall_metric,all_instances,stochastic_seeded_random,median_target_calls,620.0,620.0,Verified exact match.
+overall_metric,all_instances,stochastic_seeded_random,sample_std_target_calls,N/A,438.37,Audited sample standard deviation (ddof=1).
+overall_metric,all_instances,stochastic_seeded_random,pop_std_target_calls,N/A,437.82,Audited population standard deviation (ddof=0).
+overall_metric,non_null_instances,stochastic_seeded_random,ground_truth_recovery_rate,47.4%,47.43%,Verified exact match.
+overall_metric,non_null_instances,stochastic_seeded_random,1_minimality_rate,41.4%,41.43%,Verified exact match.
+overall_metric,null_instances,stochastic_seeded_random,null_detection_rate,100.0%,100.00%,Verified exact match (50/50 true negatives).
+overall_metric,all_instances,stochastic_seeded_random,budget_exhaustion_rate,43.8%,43.75%,Verified exact match.

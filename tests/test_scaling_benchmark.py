@@ -339,3 +339,40 @@ def test_separation_of_null_detection_from_non_null_recovery():
     assert inst_non_null.dd_result.failure_reproduced is True
     assert len(inst_non_null.dd_result.discovered_elements) == 1
     assert inst_non_null.dd_result.matches_ground_truth is True
+
+
+def test_phase_2a2_reproduction_and_event_log_validation():
+    """Verify Phase 2A.2 reproducibility artifacts and discrepancy resolutions."""
+    import json
+    import math
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    val_file = root / "benchmarks" / "results" / "phase_2a2_event_log_validation.json"
+    stat_file = root / "benchmarks" / "results" / "phase_2a2_statistical_tests.json"
+    csv_file = root / "benchmarks" / "results" / "phase_2a2_corrected_metrics.csv"
+
+    assert val_file.exists(), f"Missing {val_file}"
+    assert stat_file.exists(), f"Missing {stat_file}"
+    assert csv_file.exists(), f"Missing {csv_file}"
+
+    with open(val_file) as f:
+        val_data = json.load(f)
+    assert val_data["all_checks_passed"] is True
+    assert val_data["total_event_records"] == 31483
+    assert val_data["total_target_trials"] == 314830
+    assert val_data["distinct_runs"] == 1200
+    for check_name, err_count in val_data["checks"].items():
+        assert err_count == 0, f"{check_name} failed with {err_count} errors"
+
+    with open(stat_file) as f:
+        stat_data = json.load(f)
+    dd_vs_gr = stat_data["paired_comparisons_overall"]["dd_vs_greedy"]
+    assert dd_vs_gr["mean_difference"] == -21.375
+    assert dd_vs_gr["paired_t_statistic"] == -3.7649
+    assert dd_vs_gr["degrees_of_freedom"] == 399
+    assert math.isclose(dd_vs_gr["paired_t_p_value_exact_student_t"], 0.00019166, abs_tol=1e-6)
+    assert dd_vs_gr["wilcoxon_w_plus"] == 15089.5
+    assert dd_vs_gr["wilcoxon_w_minus"] == 42880.5
+    assert math.isclose(dd_vs_gr["wilcoxon_p_value_exact"], 1.7814e-14, rel_tol=1e-3)
+

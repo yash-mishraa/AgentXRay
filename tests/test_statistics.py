@@ -163,3 +163,88 @@ def test_compare_proportions_prespecified_alternative():
     assert res_greater.p_value_one_sided < 0.05
     assert res_greater.statistically_significant is True
     assert res_greater.fisher_exact_p_value is not None
+
+
+def test_regularized_incomplete_beta_properties_and_boundaries():
+    """Verify regularized incomplete beta function boundaries, symmetry, and known polynomials."""
+    from agentxray.statistics import regularized_incomplete_beta
+
+    # Boundary conditions
+    assert regularized_incomplete_beta(2.0, 3.0, 0.0) == 0.0
+    assert regularized_incomplete_beta(2.0, 3.0, 1.0) == 1.0
+
+    # Input validations
+    with pytest.raises(ValueError, match="must be in"):
+        regularized_incomplete_beta(1.0, 1.0, -0.1)
+    with pytest.raises(ValueError, match="must be in"):
+        regularized_incomplete_beta(1.0, 1.0, 1.1)
+    with pytest.raises(ValueError, match="must be positive"):
+        regularized_incomplete_beta(0.0, 1.0, 0.5)
+
+    # Analytical case I_x(1, 1) = x
+    for x_val in (0.1, 0.25, 0.5, 0.75, 0.9):
+        assert math.isclose(regularized_incomplete_beta(1.0, 1.0, x_val), x_val, abs_tol=1e-12)
+
+    # Analytical case I_x(1, 2) = 2x - x^2
+    for x_val in (0.2, 0.4, 0.6, 0.8):
+        exp = 2.0 * x_val - x_val * x_val
+        assert math.isclose(regularized_incomplete_beta(1.0, 2.0, x_val), exp, abs_tol=1e-12)
+
+    # Symmetry: I_x(a, b) + I_{1-x}(b, a) == 1.0
+    a, b, x = 3.5, 5.2, 0.42
+    val1 = regularized_incomplete_beta(a, b, x)
+    val2 = regularized_incomplete_beta(b, a, 1.0 - x)
+    assert math.isclose(val1 + val2, 1.0, abs_tol=1e-12)
+
+
+def test_student_t_distribution_p_value_known_quantiles():
+    """Verify Student's t distribution p-value against standard analytical quantiles."""
+    from agentxray.statistics import student_t_distribution_p_value
+
+    # Zero statistic: p = 1.0 for two-sided, 0.5 for one-sided
+    assert student_t_distribution_p_value(0.0, df=10, alternative="two-sided") == 1.0
+    assert student_t_distribution_p_value(0.0, df=10, alternative="greater") == 0.5
+    assert student_t_distribution_p_value(0.0, df=10, alternative="less") == 0.5
+
+    # Standard critical value at df=10, alpha=0.05 (two-sided) is t = 2.22813885
+    p_10 = student_t_distribution_p_value(2.22813885, df=10, alternative="two-sided")
+    assert math.isclose(p_10, 0.05, abs_tol=1e-6)
+
+    # One-sided tests
+    p_gt = student_t_distribution_p_value(2.22813885, df=10, alternative="greater")
+    assert math.isclose(p_gt, 0.025, abs_tol=1e-6)
+    p_lt = student_t_distribution_p_value(-2.22813885, df=10, alternative="less")
+    assert math.isclose(p_lt, 0.025, abs_tol=1e-6)
+
+    # Extreme df=1 (Cauchy): t=12.7062047 gives p=0.05
+    p_cauchy = student_t_distribution_p_value(12.7062047, df=1, alternative="two-sided")
+    assert math.isclose(p_cauchy, 0.05, abs_tol=1e-6)
+
+    # Benchmark dataset df=399, t=-3.7649: exact p is 0.000192 (0.00019166...)
+    p_bm = student_t_distribution_p_value(-3.7649, df=399, alternative="two-sided")
+    assert math.isclose(p_bm, 0.00019166, abs_tol=1e-6)
+
+    # Invalid df or alternative
+    with pytest.raises(ValueError, match="Degrees of freedom must be >= 1"):
+        student_t_distribution_p_value(1.0, df=0)
+    with pytest.raises(ValueError, match="alternative must be"):
+        student_t_distribution_p_value(1.0, df=5, alternative="invalid")
+
+
+def test_compare_paired_differences_exact_student_t_and_wilcoxon_precision():
+    """Verify compare_paired_differences uses exact Student t and preserves extreme p-values."""
+    from agentxray.statistics import compare_paired_differences
+
+    # Strong asymmetric difference across 400 pairs
+    x = [10.0] * 350 + [50.0] * 50
+    y = [20.0] * 350 + [10.0] * 50
+    summary = compare_paired_differences(x, y)
+
+    assert summary.n_pairs == 400
+    assert summary.mean_difference == -3.75
+    assert summary.paired_t_statistic < 0.0
+    # Exact Student's t p-value must be positive float and less than 0.001
+    assert 0.0 < summary.paired_t_p_value < 0.001
+    # Wilcoxon p-value must be positive float and not truncated to 0.0
+    assert 0.0 < summary.wilcoxon_p_value < 0.001
+

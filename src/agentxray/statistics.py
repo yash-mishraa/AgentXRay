@@ -327,7 +327,8 @@ def adjust_p_values_bh(p_values: Sequence[float]) -> list[float]:
     clamped = [min(1.0, max(0.0, p)) for p in p_values]
 
     if m == 1:
-        return [round(clamped[0], 5)]
+        q0 = clamped[0]
+        return [round(q0, 5) if q0 >= 1e-5 else q0]
 
     # Pair each p-value with its original index
     indexed = sorted(enumerate(clamped), key=lambda x: x[1])
@@ -345,7 +346,7 @@ def adjust_p_values_bh(p_values: Sequence[float]) -> list[float]:
     # Restore original input order
     result = [0.0] * m
     for orig_idx, q in adjusted_indexed:
-        result[orig_idx] = round(q, 5)
+        result[orig_idx] = round(q, 5) if q >= 1e-5 else q
 
     return result
 
@@ -427,6 +428,133 @@ class PairedDifferenceSummary(BaseModel):
     paired_t_p_value: float = Field(..., ge=0.0, le=1.0, description="Two-sided paired t-test p-value.")
 
 
+def regularized_incomplete_beta(
+    a: float,
+    b: float,
+    x: float,
+    max_iter: int = 200,
+    tol: float = 1e-15,
+) -> float:
+    """Compute the regularized incomplete beta function I_x(a, b).
+
+    Uses Lentz's continued fraction expansion with symmetry transformation.
+    Implemented purely with Python standard library `math`.
+
+    Parameters
+    ----------
+    a, b : float
+        Positive shape parameters.
+    x : float
+        Integration upper bound in [0.0, 1.0].
+    max_iter : int
+        Maximum iterations for continued fraction convergence.
+    tol : float
+        Relative convergence tolerance.
+
+    Returns
+    -------
+    float
+        Value of I_x(a, b) in [0.0, 1.0].
+    """
+    if a <= 0.0 or b <= 0.0:
+        raise ValueError(f"Parameters a and b must be positive, got a={a}, b={b}")
+    if x < 0.0 or x > 1.0:
+        raise ValueError(f"x must be in [0, 1], got {x}")
+    if x == 0.0:
+        return 0.0
+    if x == 1.0:
+        return 1.0
+
+    # Symmetry relation for faster/stable convergence
+    if x > (a + 1.0) / (a + b + 2.0):
+        return 1.0 - regularized_incomplete_beta(b, a, 1.0 - x, max_iter, tol)
+
+    # Front factor: exp(a*ln(x) + b*ln(1-x) - ln(Beta(a, b))) / a
+    lbeta = math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
+    front = math.exp(a * math.log(x) + b * math.log(1.0 - x) - lbeta) / a
+
+    tiny = 1e-30
+    c = 1.0
+    d = 1.0 - (a + b) * x / (a + 1.0)
+    if abs(d) < tiny:
+        d = tiny
+    d = 1.0 / d
+    f = d
+
+    for m in range(1, max_iter + 1):
+        # Even step: 2m
+        num_even = m * (b - m) * x / ((a + 2.0 * m - 1.0) * (a + 2.0 * m))
+        d = 1.0 + num_even * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + num_even / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        f *= (c * d)
+
+        # Odd step: 2m + 1
+        num_odd = -(a + m) * (a + b + m) * x / ((a + 2.0 * m) * (a + 2.0 * m + 1.0))
+        d = 1.0 + num_odd * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + num_odd / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        delta = c * d
+        f *= delta
+
+        if abs(delta - 1.0) < tol:
+            break
+
+    val = front * f
+    return min(1.0, max(0.0, val))
+
+
+def student_t_distribution_p_value(
+    t_stat: float,
+    df: int,
+    alternative: str = "two-sided",
+) -> float:
+    """Calculate exact p-value for Student's t distribution.
+
+    Uses regularized incomplete beta function:
+    Two-sided p-value = I_{df / (df + t^2)}(df / 2, 1 / 2).
+
+    Parameters
+    ----------
+    t_stat : float
+        Observed t-statistic.
+    df : int
+        Degrees of freedom (must be >= 1).
+    alternative : str
+        'two-sided', 'greater' (t > 0), or 'less' (t < 0).
+
+    Returns
+    -------
+    float
+        Exact p-value in [0.0, 1.0].
+    """
+    if df < 1:
+        raise ValueError(f"Degrees of freedom must be >= 1, got {df}")
+    if alternative not in ("two-sided", "greater", "less"):
+        raise ValueError(f"alternative must be 'two-sided', 'greater', or 'less', got {alternative!r}")
+
+    if t_stat == 0.0:
+        return 1.0 if alternative == "two-sided" else 0.5
+
+    x = df / (df + t_stat * t_stat)
+    p_two_sided = regularized_incomplete_beta(df / 2.0, 0.5, x)
+
+    if alternative == "two-sided":
+        return p_two_sided
+    elif alternative == "greater":
+        return p_two_sided / 2.0 if t_stat > 0 else 1.0 - p_two_sided / 2.0
+    else:  # less
+        return p_two_sided / 2.0 if t_stat < 0 else 1.0 - p_two_sided / 2.0
+
+
 def wilcoxon_signed_rank_test(
     x: Sequence[float],
     y: Sequence[float],
@@ -493,7 +621,10 @@ def wilcoxon_signed_rank_test(
         z = 0.0
 
     p_value = math.erfc(abs(z) / math.sqrt(2.0))
-    return (round(w_plus, 4), round(min(1.0, max(0.0, p_value)), 5))
+    p_clamped = min(1.0, max(0.0, p_value))
+    # Preserve full floating point precision for extreme p-values (< 1e-4) while rounding ordinary p-values
+    p_ret = round(p_clamped, 5) if p_clamped >= 1e-4 else p_clamped
+    return (round(w_plus, 4), p_ret)
 
 
 def compare_paired_differences(
@@ -520,16 +651,18 @@ def compare_paired_differences(
     else:
         med_d = (sorted_d[n // 2 - 1] + sorted_d[n // 2]) / 2.0
 
-    # Paired t-statistic
+    # Exact paired t-test using Student's t distribution with df = n - 1
     se_mean = (std_d / math.sqrt(n)) if n > 0 else 0.0
-    if se_mean > 0.0:
+    if se_mean > 0.0 and n > 1:
         t_stat = mean_d / se_mean
-        t_p_val = math.erfc(abs(t_stat) / math.sqrt(2.0))
+        t_p_val = student_t_distribution_p_value(t_stat, df=n - 1, alternative="two-sided")
     else:
         t_stat = 0.0
         t_p_val = 1.0 if mean_d == 0.0 else 0.0
 
     w_stat, w_p_val = wilcoxon_signed_rank_test(x, y)
+
+    t_p_ret = round(t_p_val, 6) if t_p_val >= 1e-6 else t_p_val
 
     return PairedDifferenceSummary(
         n_pairs=n,
@@ -539,6 +672,6 @@ def compare_paired_differences(
         wilcoxon_w=w_stat,
         wilcoxon_p_value=w_p_val,
         paired_t_statistic=round(t_stat, 4),
-        paired_t_p_value=round(t_p_val, 5),
+        paired_t_p_value=t_p_ret,
     )
 
