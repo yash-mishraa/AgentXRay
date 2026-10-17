@@ -12,7 +12,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from agentxray.models import StochasticDiscoveredCondition
+from agentxray.models import (
+    BaselineComparison,
+    DiscoveredCondition,
+    StochasticBaselineComparison,
+    StochasticDiscoveredCondition,
+)
 
 
 @dataclass(frozen=True)
@@ -42,7 +47,12 @@ class ModelPilotGroundTruthSpec:
 
 def evaluate_model_pilot_ground_truth(
     spec: ModelPilotGroundTruthSpec,
-    discovered: StochasticDiscoveredCondition,
+    discovered: (
+        StochasticDiscoveredCondition
+        | StochasticBaselineComparison
+        | DiscoveredCondition
+        | BaselineComparison
+    ),
 ) -> tuple[bool, float, float, tuple[str, ...], tuple[str, ...]]:
     """Compare a discovered condition from model-backed probing against planted ground truth.
 
@@ -55,19 +65,29 @@ def evaluate_model_pilot_ground_truth(
         excess_elements (tuple[str, ...]): Non-causal elements falsely retained.
         missing_elements (tuple[str, ...]): True causal elements missed.
     """
-    discovered_set = set(discovered.subset_elements)
+    if hasattr(discovered, "subset_elements"):
+        discovered_elements = discovered.subset_elements
+        is_failure = discovered.is_failure
+    elif hasattr(discovered, "discovered_elements"):
+        discovered_elements = discovered.discovered_elements
+        is_failure = discovered.failure_reproduced
+    else:
+        discovered_elements = tuple(discovered)
+        is_failure = True
+
+    discovered_set = set(discovered_elements)
     true_set = spec.trigger_set
 
     # Null case handling
     if spec.is_null_case:
-        if not discovered.is_failure and not discovered_set:
+        if not is_failure and not discovered_set:
             # Correct null identification (zero false alarms).
             # Precision and recall are mathematically undefined for empty predicted & true sets (0/0).
             return (True, None, None, (), ())
         # False alarm: non-causal elements were falsely identified as a trigger
         return (False, 0.0, 0.0, tuple(sorted(discovered_set)), ())
 
-    if not discovered.is_failure or not discovered_set:
+    if not is_failure or not discovered_set:
         return (False, 0.0, 0.0, (), tuple(sorted(true_set)))
 
     # Primary trigger match

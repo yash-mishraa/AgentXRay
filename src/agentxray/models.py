@@ -168,8 +168,8 @@ class BaselineComparison(BaseModel):
     failure_reproduced: bool = Field(..., description="Whether the baseline's discovered set reproduces the failure.")
     minimality_check_passed: bool = Field(default=False, description="Whether the baseline's result passes the 1-minimality check.")
     target_calls: int = Field(..., ge=0, description="Number of target calls consumed by baseline.")
-    irrelevant_elements_remaining: int = Field(..., ge=0, description="Count of non-causal distractor elements retained.")
-    matches_ground_truth: bool = Field(..., description="Whether the isolated elements exactly match ground truth.")
+    irrelevant_elements_remaining: int = Field(default=0, ge=0, description="Count of non-causal distractor elements retained.")
+    matches_ground_truth: bool = Field(default=False, description="Whether the isolated elements exactly match ground truth.")
     budget_exhausted: bool = Field(default=False, description="Whether the baseline hit the trial budget before completing.")
 
 

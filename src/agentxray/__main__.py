@@ -92,9 +92,15 @@ def run_synthetic_benchmark(
         greedy_comp = run_greedy_ablation(
             initial_input=initial_input,
             runner=runner_greedy,
-            true_trigger=ground_truth.trigger_elements,
         )
         total_calls += runner_greedy.trial_count
+        g_matches, _, _, g_excess, _ = evaluate_ground_truth(ground_truth, greedy_comp)
+        greedy_comp = greedy_comp.model_copy(
+            update={
+                "matches_ground_truth": g_matches,
+                "irrelevant_elements_remaining": len(g_excess),
+            }
+        )
 
         # 3. Run Seeded Random Search Baseline
         target.reset_call_count()
@@ -102,10 +108,16 @@ def run_synthetic_benchmark(
         random_comp = run_seeded_random_search(
             initial_input=initial_input,
             runner=runner_random,
-            true_trigger=ground_truth.trigger_elements,
             seed=seed,
         )
         total_calls += runner_random.trial_count
+        r_matches, _, _, r_excess, _ = evaluate_ground_truth(ground_truth, random_comp)
+        random_comp = random_comp.model_copy(
+            update={
+                "matches_ground_truth": r_matches,
+                "irrelevant_elements_remaining": len(r_excess),
+            }
+        )
 
         eval_res = EvaluationResult(
             task_name=ground_truth.name,
@@ -207,6 +219,11 @@ def run_stochastic_benchmark(
             confidence=confidence,
         )
         total_calls += runner_greedy.trial_count
+        g_matches, _, _, g_excess, _ = evaluate_stochastic_ground_truth(ground_truth, greedy_comp)
+        greedy_comp = greedy_comp.model_copy(update={
+            "matches_ground_truth": g_matches,
+            "irrelevant_elements_remaining": len(g_excess),
+        })
 
         # 3. Run Stochastic Seeded Random Search Baseline
         target.reset(new_seed=target_seed)
@@ -221,6 +238,11 @@ def run_stochastic_benchmark(
             seed=seed,
         )
         total_calls += runner_random.trial_count
+        r_matches, _, _, r_excess, _ = evaluate_stochastic_ground_truth(ground_truth, random_comp)
+        random_comp = random_comp.model_copy(update={
+            "matches_ground_truth": r_matches,
+            "irrelevant_elements_remaining": len(r_excess),
+        })
 
         eval_res = StochasticEvaluationResult(
             task_name=ground_truth.name,
@@ -276,14 +298,20 @@ def run_stochastic_benchmark(
 
 
 def main() -> None:
-    """CLI entry point supporting deterministic and stochastic benchmark execution."""
+    """CLI entry point supporting deterministic, stochastic, model pilot benchmarks and offline demo."""
     parser = argparse.ArgumentParser(
         description="AgentXRay: Controlled Black-Box Probing and Behavioral Minimization Framework."
     )
     parser.add_argument(
+        "command",
+        nargs="?",
+        default=None,
+        help="Optional subcommand: 'demo' to run the offline deterministic demonstration.",
+    )
+    parser.add_argument(
         "--mode",
         type=str,
-        choices=["deterministic", "stochastic", "audit", "model", "all"],
+        choices=["deterministic", "stochastic", "audit", "model", "all", "demo"],
         default="deterministic",
         help="Benchmark execution mode (default: deterministic).",
     )
@@ -390,8 +418,33 @@ def main() -> None:
         default=".",
         help="Directory to save output reports (default: current directory).",
     )
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        default=False,
+        help="Explicitly save report files to disk in output-dir (default: False for demo).",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        default=False,
+        help="Overwrite existing report files in output-dir if present (default: False).",
+    )
 
     args = parser.parse_args()
+
+    if args.command == "demo" or args.mode == "demo":
+        from agentxray.demo import format_demo_output, run_demo, write_demo_reports
+
+        demo_res = run_demo(seed=args.seed)
+        print(format_demo_output(demo_res))
+        if args.save:
+            try:
+                write_demo_reports(demo_res, output_dir=args.output_dir, overwrite=args.overwrite)
+                print(f"\n[Demo reports saved to: {args.output_dir}]")
+            except FileExistsError as err:
+                print(f"\n[Warning: {err}]")
+        return
 
     print("=" * 75)
     print(" AgentXRay: Probing & Behavioral Minimization Execution")

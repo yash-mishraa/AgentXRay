@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from agentxray.models import StochasticDiscoveredCondition
+from agentxray.models import StochasticBaselineComparison, StochasticDiscoveredCondition
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ class StochasticGroundTruthSpec:
 
 def evaluate_stochastic_ground_truth(
     spec: StochasticGroundTruthSpec,
-    discovered: StochasticDiscoveredCondition,
+    discovered: StochasticDiscoveredCondition | StochasticBaselineComparison,
 ) -> tuple[bool, float, float, tuple[str, ...], tuple[str, ...]]:
     """Compare a stochastic discovered condition against the planted ground truth.
 
@@ -48,16 +48,26 @@ def evaluate_stochastic_ground_truth(
         excess_elements (tuple[str, ...]): Non-causal elements falsely retained.
         missing_elements (tuple[str, ...]): True causal elements missed.
     """
-    discovered_set = set(discovered.subset_elements)
+    if hasattr(discovered, "subset_elements"):
+        discovered_elements = discovered.subset_elements
+        is_failure = discovered.is_failure
+    elif hasattr(discovered, "discovered_elements"):
+        discovered_elements = discovered.discovered_elements
+        is_failure = discovered.failure_reproduced
+    else:
+        discovered_elements = tuple(discovered)
+        is_failure = True
+
+    discovered_set = set(discovered_elements)
     true_set = spec.trigger_set
 
     # Null case handling
     if spec.is_null_case:
-        if not discovered.is_failure and not discovered_set:
+        if not is_failure and not discovered_set:
             return (True, 1.0, 1.0, (), ())
         return (False, 0.0, 0.0, tuple(sorted(discovered_set)), ())
 
-    if not discovered.is_failure or not discovered_set:
+    if not is_failure or not discovered_set:
         return (False, 0.0, 0.0, (), tuple(sorted(true_set)))
 
     # Check primary trigger match

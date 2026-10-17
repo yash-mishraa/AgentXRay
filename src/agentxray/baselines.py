@@ -12,16 +12,12 @@ from agentxray.runner import BudgetExhaustedError, InterventionRunner, TimeoutEx
 def run_greedy_ablation(
     initial_input: InputCase,
     runner: InterventionRunner,
-    true_trigger: tuple[str, ...] = (),
 ) -> BaselineComparison:
     """Greedy single-element ablation baseline.
 
     Sequentially attempts to remove each element from the candidate set one-by-one.
     If the subset without element 'e' still fails, 'e' is permanently dropped.
     """
-    true_set = set(true_trigger)
-    budget_exhausted = False
-
     # Step 1: Baseline check
     try:
         base_res = runner.execute_trial(initial_input, intervention_type="greedy_baseline")
@@ -32,7 +28,7 @@ def run_greedy_ablation(
             failure_reproduced=False,
             minimality_check_passed=False,
             target_calls=runner.trial_count,
-            irrelevant_elements_remaining=len(set(initial_input.elements) - true_set),
+            irrelevant_elements_remaining=0,
             matches_ground_truth=False,
             budget_exhausted=True,
         )
@@ -45,7 +41,7 @@ def run_greedy_ablation(
             minimality_check_passed=False,
             target_calls=runner.trial_count,
             irrelevant_elements_remaining=0,
-            matches_ground_truth=(len(true_set) == 0),
+            matches_ground_truth=False,
             budget_exhausted=False,
         )
 
@@ -71,8 +67,9 @@ def run_greedy_ablation(
         discovered = tuple(current_elements)
 
         # Step 3: Minimality check on discovered subset
-        minimality_passed = True
-        if len(discovered) > 1:
+        minimality_passed = False
+        if len(discovered) >= 1:
+            minimality_passed = True
             for elem in discovered:
                 without_elem = tuple(e for e in discovered if e != elem)
                 sub_case = initial_input.subset(without_elem)
@@ -81,29 +78,27 @@ def run_greedy_ablation(
                     minimality_passed = False
                     break
 
-        discovered_set = set(discovered)
         return BaselineComparison(
             baseline_name="greedy_ablation",
             discovered_elements=discovered,
             failure_reproduced=True,
             minimality_check_passed=minimality_passed,
             target_calls=runner.trial_count,
-            irrelevant_elements_remaining=len(discovered_set - true_set),
-            matches_ground_truth=(discovered_set == true_set),
+            irrelevant_elements_remaining=0,
+            matches_ground_truth=False,
             budget_exhausted=runner.is_budget_exhausted(),
         )
 
     except (BudgetExhaustedError, TimeoutExceededError):
         discovered = tuple(current_elements)
-        discovered_set = set(discovered)
         return BaselineComparison(
             baseline_name="greedy_ablation",
             discovered_elements=discovered,
             failure_reproduced=True,
             minimality_check_passed=False,
             target_calls=runner.trial_count,
-            irrelevant_elements_remaining=len(discovered_set - true_set),
-            matches_ground_truth=(discovered_set == true_set),
+            irrelevant_elements_remaining=0,
+            matches_ground_truth=False,
             budget_exhausted=True,
         )
 
@@ -111,7 +106,6 @@ def run_greedy_ablation(
 def run_seeded_random_search(
     initial_input: InputCase,
     runner: InterventionRunner,
-    true_trigger: tuple[str, ...] = (),
     seed: int = 42,
 ) -> BaselineComparison:
     """Seeded random candidate search baseline.
@@ -119,7 +113,6 @@ def run_seeded_random_search(
     Randomly samples non-empty proper subsets under the configured trial budget,
     tracking the smallest candidate that reproduces the target failure.
     """
-    true_set = set(true_trigger)
     rng = random.Random(seed)
 
     # Step 1: Baseline check
@@ -132,7 +125,7 @@ def run_seeded_random_search(
             failure_reproduced=False,
             minimality_check_passed=False,
             target_calls=runner.trial_count,
-            irrelevant_elements_remaining=len(set(initial_input.elements) - true_set),
+            irrelevant_elements_remaining=0,
             matches_ground_truth=False,
             budget_exhausted=True,
         )
@@ -145,7 +138,7 @@ def run_seeded_random_search(
             minimality_check_passed=False,
             target_calls=runner.trial_count,
             irrelevant_elements_remaining=0,
-            matches_ground_truth=(len(true_set) == 0),
+            matches_ground_truth=False,
             budget_exhausted=False,
         )
 
@@ -158,6 +151,8 @@ def run_seeded_random_search(
         while not runner.is_budget_exhausted() and not runner.is_timed_out():
             if len(all_elements) <= 1:
                 break
+            if len(best_failing) <= 1:
+                break
             # Pick a random subset size between 1 and len - 1
             k = rng.randint(1, len(all_elements) - 1)
             sample = tuple(sorted(rng.sample(all_elements, k)))
@@ -168,15 +163,16 @@ def run_seeded_random_search(
             if res.outcome == TargetOutcome.FAILURE:
                 if len(sample) < len(best_failing):
                     best_failing = sample
+                    if len(best_failing) <= 1:
+                        # Early stop: minimal singleton candidate found
+                        break
 
     except (BudgetExhaustedError, TimeoutExceededError):
         budget_exhausted = True
 
     # Check 1-minimality of best found subset
     minimality_passed = False
-    if len(best_failing) == 1:
-        minimality_passed = True
-    elif not budget_exhausted:
+    if not budget_exhausted and len(best_failing) >= 1:
         try:
             passed = True
             for elem in best_failing:
@@ -191,14 +187,13 @@ def run_seeded_random_search(
             budget_exhausted = True
             minimality_passed = False
 
-    best_set = set(best_failing)
     return BaselineComparison(
         baseline_name="seeded_random",
         discovered_elements=best_failing,
         failure_reproduced=True,
         minimality_check_passed=minimality_passed,
         target_calls=runner.trial_count,
-        irrelevant_elements_remaining=len(best_set - true_set),
-        matches_ground_truth=(best_set == true_set),
+        irrelevant_elements_remaining=0,
+        matches_ground_truth=False,
         budget_exhausted=budget_exhausted or runner.is_budget_exhausted(),
     )

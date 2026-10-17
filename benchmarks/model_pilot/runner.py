@@ -282,6 +282,11 @@ def run_model_pilot_benchmark(
             confidence=confidence,
         )
         total_calls += runner_greedy.trial_count
+        g_matches, _, _, g_excess, _ = evaluate_model_pilot_ground_truth(ground_truth, greedy_comp)
+        greedy_comp = greedy_comp.model_copy(update={
+            "matches_ground_truth": g_matches,
+            "irrelevant_elements_remaining": len(g_excess),
+        })
 
         # 3. Run Stochastic Seeded Random Search Baseline
         target.reset_call_count()
@@ -296,6 +301,11 @@ def run_model_pilot_benchmark(
             seed=42,
         )
         total_calls += runner_random.trial_count
+        r_matches, _, _, r_excess, _ = evaluate_model_pilot_ground_truth(ground_truth, random_comp)
+        random_comp = random_comp.model_copy(update={
+            "matches_ground_truth": r_matches,
+            "irrelevant_elements_remaining": len(r_excess),
+        })
 
         eval_res = ModelPilotEvaluationResult(
             task_name=ground_truth.name,
@@ -350,9 +360,10 @@ def run_model_pilot_benchmark(
         summary=summary_text,
     )
 
-    out_p = Path(output_dir)
-    json_path = out_p / "model_pilot_report.json"
-    md_path = out_p / "model_pilot_report.md"
-    write_model_pilot_reports(report, json_path=json_path, md_path=md_path)
+    if output_dir is not None:
+        out_p = Path(output_dir)
+        json_path = out_p / "model_pilot_report.json"
+        md_path = out_p / "model_pilot_report.md"
+        write_model_pilot_reports(report, json_path=json_path, md_path=md_path)
 
     return report

@@ -144,3 +144,130 @@ def test_stochastic_baselines_null_case():
     matches_r, _, _, _, _ = evaluate_stochastic_ground_truth(gt, dummy_r)
     assert matches_r is True
 
+
+def test_stochastic_baselines_strict_search_isolation_and_post_hoc_evaluation():
+    """Verify stochastic baselines maintain strict search isolation and support post-hoc evaluation."""
+    from benchmarks.synthetic.stochastic_ground_truth import (
+        StochasticGroundTruthSpec,
+        evaluate_stochastic_ground_truth,
+    )
+
+    target, initial_input, gt = create_stochastic_single_factor_task(target_seed=42)
+    config = ExperimentConfig(experiment_name="test_gt_match", max_trials=200)
+
+    # 1. Greedy Ablation: returns default False/0 (no ground-truth leakage)
+    runner_g = InterventionRunner(config=config, target_fn=target.execute)
+    comp_g = run_stochastic_greedy_ablation(
+        initial_input=initial_input,
+        runner=runner_g,
+        trials_per_candidate=20,
+        failure_threshold=0.30,
+    )
+    assert comp_g.failure_reproduced is True
+    assert comp_g.matches_ground_truth is False
+    assert comp_g.irrelevant_elements_remaining == 0
+
+    # Post-hoc evaluation attaches correct metrics
+    g_match, prec, rec, excess, missing = evaluate_stochastic_ground_truth(gt, comp_g)
+    assert g_match is True
+    assert prec == 1.0
+    assert rec == 1.0
+    assert excess == ()
+    assert missing == ()
+
+    comp_g_updated = comp_g.model_copy(update={
+        "matches_ground_truth": g_match,
+        "irrelevant_elements_remaining": len(excess),
+    })
+    assert comp_g_updated.matches_ground_truth is True
+    assert comp_g_updated.irrelevant_elements_remaining == 0
+    # Search trace and discovered condition remain unmodified
+    assert comp_g_updated.discovered_elements == comp_g.discovered_elements
+    assert comp_g_updated.target_calls == comp_g.target_calls
+
+    # 2. Post-hoc evaluation with mismatched ground-truth
+    mismatched_gt = StochasticGroundTruthSpec(
+        task_id="mismatch",
+        name="Mismatch",
+        description="",
+        trigger_elements=("wrong_element",),
+        base_probability=0.0,
+        trigger_probability=0.9,
+    )
+    m_match, _, _, m_excess, _ = evaluate_stochastic_ground_truth(mismatched_gt, comp_g)
+    assert m_match is False
+    assert len(m_excess) == 1
+
+    # 3. Post-hoc evaluation with alternative trigger match
+    alt_gt = StochasticGroundTruthSpec(
+        task_id="alt",
+        name="Alt",
+        description="",
+        trigger_elements=("primary_mismatch",),
+        base_probability=0.0,
+        trigger_probability=0.9,
+        alternative_valid_triggers=(gt.trigger_elements,),
+    )
+    alt_match, _, _, alt_excess, _ = evaluate_stochastic_ground_truth(alt_gt, comp_g)
+    assert alt_match is True
+    assert len(alt_excess) == 0
+
+    # 4. Seeded Random Search: returns default False/0
+    target.reset(new_seed=42)
+    runner_r = InterventionRunner(config=config, target_fn=target.execute)
+    comp_r = run_stochastic_random_search(
+        initial_input=initial_input,
+        runner=runner_r,
+        trials_per_candidate=20,
+        failure_threshold=0.30,
+        seed=1,
+    )
+    assert comp_r.matches_ground_truth is False
+    assert comp_r.irrelevant_elements_remaining == 0
+
+    r_match, _, _, r_excess, _ = evaluate_stochastic_ground_truth(gt, comp_r)
+    assert r_match is True
+    assert len(r_excess) == 0
+
+
+def test_stochastic_baselines_search_trace_invariance():
+    """Verify stochastic baseline search traces are completely invariant to post-hoc evaluation."""
+    from benchmarks.synthetic.stochastic_ground_truth import (
+        StochasticGroundTruthSpec,
+        evaluate_stochastic_ground_truth,
+    )
+
+    target, initial_input, gt = create_stochastic_single_factor_task(target_seed=42)
+    config = ExperimentConfig(experiment_name="test_invariance", max_trials=100)
+
+    # Run Greedy Ablation
+    runner_g = InterventionRunner(config=config, target_fn=target.execute)
+    comp_g = run_stochastic_greedy_ablation(
+        initial_input=initial_input,
+        runner=runner_g,
+        trials_per_candidate=20,
+        failure_threshold=0.30,
+    )
+    trace_before = [(t.intervention_type, t.input_case.elements, t.result.outcome) for t in runner_g.trials]
+
+    # Evaluate multiple different ground-truth hypotheses post-hoc
+    gt1 = gt
+    gt2 = StochasticGroundTruthSpec(
+        task_id="alt", name="Alt", description="", trigger_elements=("param_mode_debug",),
+        base_probability=0.0, trigger_probability=0.8
+    )
+    gt3 = StochasticGroundTruthSpec(
+        task_id="wrong", name="Wrong", description="", trigger_elements=("distractor_0",),
+        base_probability=0.0, trigger_probability=0.8
+    )
+
+    m1, _, _, _, _ = evaluate_stochastic_ground_truth(gt1, comp_g)
+    m2, _, _, _, _ = evaluate_stochastic_ground_truth(gt2, comp_g)
+    m3, _, _, _, _ = evaluate_stochastic_ground_truth(gt3, comp_g)
+
+    assert m1 is True
+    assert m2 is True
+    assert m3 is False
+
+    trace_after = [(t.intervention_type, t.input_case.elements, t.result.outcome) for t in runner_g.trials]
+    assert trace_before == trace_after

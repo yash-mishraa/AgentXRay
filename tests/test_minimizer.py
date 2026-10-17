@@ -127,3 +127,28 @@ class TestDeltaDebugMinimizer:
         assert result.subset_elements == ("A",)
         assert result.is_one_minimal is True
         assert result.verified_by_check is True
+
+    def test_unconditional_failure_on_empty_set(self) -> None:
+        """Verify that when target fails unconditionally (even on empty set), 1-minimality is False."""
+        from benchmarks.synthetic.target import SyntheticTarget
+
+        def always_fail_rule(elements: set[str]) -> tuple[bool, str, str | None]:
+            return (True, "Unconditional failure", "ERR_ALWAYS")
+
+        target = SyntheticTarget(rule_fn=always_fail_rule, name="AlwaysFailingTarget")
+        initial_input = InputCase(
+            case_id="always_fail",
+            elements=["x", "y", "z"],
+        )
+        config = ExperimentConfig(experiment_name="test_always_fail", max_trials=50)
+        runner = InterventionRunner(config=config, target_fn=target.execute)
+        minimizer = DeltaDebugMinimizer(runner=runner)
+
+        result = minimizer.minimize(initial_input)
+
+        assert result.status == SearchStatus.COMPLETE
+        assert result.subset_elements == ()
+        assert result.is_one_minimal is False
+        assert result.is_globally_minimal is False
+        assert result.verified_by_check is False
+        assert "fails unconditionally" in result.status_message.lower()

@@ -137,9 +137,9 @@ class DeltaDebugMinimizer:
             # If removing any element STILL preserves failure, reduce to that smaller subset!
             verified_minimal = False
             while not verified_minimal:
-                if len(current_candidate) <= 1:
-                    # Single-element trigger is inherently 1-minimal
-                    verified_minimal = True
+                if len(current_candidate) == 0:
+                    # Target fails unconditionally even on empty input
+                    verified_minimal = False
                     break
 
                 unnecessary_element_found = False
@@ -159,8 +159,8 @@ class DeltaDebugMinimizer:
                 if not unnecessary_element_found:
                     verified_minimal = True
 
-            # If size is 1, it is 1-minimal and globally minimal among non-empty subsets
-            is_global = (len(current_candidate) == 1)
+            # If size is 1 and verified minimal, it is globally minimal among non-empty subsets
+            is_global = (len(current_candidate) == 1 and verified_minimal)
 
             return DiscoveredCondition(
                 subset_elements=current_candidate,
@@ -170,7 +170,11 @@ class DeltaDebugMinimizer:
                 is_globally_minimal=is_global,
                 verified_by_check=verified_minimal,
                 target_calls_used=self.runner.trial_count,
-                status_message="Successfully discovered and verified 1-minimal failure-inducing subset.",
+                status_message=(
+                    "Successfully discovered and verified 1-minimal failure-inducing subset."
+                    if verified_minimal
+                    else "Target fails unconditionally even on empty input; condition is not 1-minimal."
+                ),
             )
 
         except (BudgetExhaustedError, TimeoutExceededError) as exc:
