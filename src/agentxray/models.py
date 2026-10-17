@@ -324,14 +324,14 @@ class StochasticExperimentReport(BaseModel):
     trials_per_candidate: int = Field(..., ge=1, description="Number of trials executed per candidate subset.")
     total_target_calls: int = Field(..., ge=0, description="Sum of all target calls.")
     evaluations: tuple[StochasticEvaluationResult, ...] = Field(..., description="Per-task evaluation records.")
-    aggregate_metrics: dict[str, Any] = Field(default_factory=dict, description="Aggregate recovery, precision, FDR.")
+    aggregate_metrics: dict[str, Any] = Field(default_factory=dict, description="Aggregate recovery, precision, and verification statistics.")
     summary: str = Field(..., description="Executive narrative summary.")
     limitations: tuple[str, ...] = Field(
         default=(
             "Stochastic synthetic targets evaluate configurable binomial probabilities; they do not model complex semantic or non-monotonic prompt drift in real-world LLMs.",
             "Observed 1-minimality distinguishes cases where removal empirically drops failure from statistically supported cases where confidence bounds confirm the drop.",
             "Theoretical power is an asymptotic pre-experimental calculation (Cohen's arcsine approximation) for sample size planning; it does not measure empirical post-hoc power.",
-            "Benjamini-Hochberg FDR control applies to the family of candidate ablation tests; it does not account for adaptive candidate selection along the prior delta-debugging search path.",
+            "Berger's (1982) Intersection-Union Test controls Type I error for candidate 1-minimality across single-element ablations; it does not account for adaptive candidate selection along the prior delta-debugging search path.",
             "No external LLM APIs were called; all results were generated locally in the isolated stochastic testbed.",
         ),
         description="Explicit scientific and engineering limitations.",
@@ -384,7 +384,7 @@ class ModelPilotExperimentReport(BaseModel):
             "For null cases (where true trigger and predicted trigger are empty), precision and recall are mathematically undefined (0/0) and reported as N/A.",
             "Planted failure triggers are controlled experimental interventions; they do not reveal hidden neural weights or unobservable internal model chain-of-thought.",
             "Model stochasticity and temperature drift can introduce run-to-run outcome variability.",
-            "Benjamini-Hochberg FDR control applies to candidate ablation tests; adaptive selection bias (winner's curse) along the search path remains a factor.",
+            "Berger's (1982) Intersection-Union Test controls Type I error for candidate 1-minimality across single-element ablations; adaptive selection bias (winner's curse) along the search path remains a factor.",
             "Estimated spend calculations rely on published standard per-token pricing tables and represent estimates, not provider billing invoices.",
         ),
         description="Explicit scientific and engineering limitations.",

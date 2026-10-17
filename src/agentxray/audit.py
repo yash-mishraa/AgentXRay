@@ -419,7 +419,7 @@ def run_multiseed_audit(
     limitations = (
         "Audit results represent synthetic testbed benchmarks with known Bernoulli outcome generators.",
         "Asymptotic power calculations (Cohen's arcsine) reflect pre-experimental study design, not empirical dataset power.",
-        "Benjamini-Hochberg FDR adjustments control false discovery rate over final candidate ablation tests, but do not "
+        "Berger's (1982) Intersection-Union Test controls Type I error for candidate 1-minimality verification across ablation tests, but does not "
         "eliminate adaptive selection bias (winner's curse) along the greedy or ddmin search path.",
         "Sample size n=20 per condition provides ~50.4% theoretical power for weak signals (P=0.35 vs P=0.10); empirical classifications "
         "on weak signals correctly vary between observed_only, statistically_supported, and not_minimal across random seeds.",

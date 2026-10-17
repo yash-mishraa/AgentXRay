@@ -4,7 +4,7 @@ Extends delta debugging to probabilistic black-box targets, supporting:
 - Multi-trial candidate subset evaluation.
 - Wilson score confidence intervals for binomial failure proportions.
 - Statistical hypothesis testing for single-element removals against ablated controls.
-- Benjamini-Hochberg FDR correction.
+- Berger's (1982) Intersection-Union Test for 1-minimality verification.
 - Explicit classification into STATISTICALLY_SUPPORTED, OBSERVED_ONLY,
   INCONCLUSIVE, NOT_MINIMAL, or NOT_APPLICABLE.
 """

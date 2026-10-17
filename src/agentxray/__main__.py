@@ -30,9 +30,10 @@ from agentxray.models import (
     ExperimentReport,
     StochasticEvaluationResult,
     StochasticExperimentReport,
-    StochasticMinimalityStatus,
 )
 from agentxray.reporting import (
+    compute_stochastic_aggregate_metrics,
+    format_cohort_summary_sentences,
     format_markdown_report,
     format_model_pilot_markdown_report,
     format_stochastic_markdown_report,
@@ -169,7 +170,25 @@ def run_stochastic_benchmark(
     target_seed: int = 42,
     output_dir: Path | str = ".",
 ) -> StochasticExperimentReport:
-    """Run all 6 stochastic benchmark tasks across Minimizer and Baselines with uncertainty intervals."""
+    """Run all 6 stochastic benchmark tasks across Minimizer and Baselines with uncertainty intervals.
+
+    The emitted report's aggregate_metrics dictionary contains:
+    - tasks_evaluated: Total count of evaluated stochastic tasks.
+    - ground_truth_matches: Tasks matching ground truth exactly.
+    - statistically_supported_minimality: Tasks achieving STATISTICALLY_SUPPORTED minimality.
+    - active_tasks: Count of active (non-null) failure tasks.
+    - active_mean_precision: Mean precision across active tasks.
+    - active_mean_recall: Mean recall across active tasks.
+    - null_tasks: Count of null control tasks.
+    - null_detection_rate: Proportion of null controls matching ground truth (clean non-failure).
+    - null_false_positive_rate: Overall control false-alarm rate (1.0 - null_detection_rate).
+    - null_element_false_positives: Count of null controls with non-empty discovered elements.
+    - null_spurious_failures: Count of null controls with empty discovered sets that spuriously reproduced failure.
+    - mean_precision: Legacy mean precision across all evaluations where precision is not None.
+    - mean_recall: Legacy mean recall across all evaluations where recall is not None.
+    - mean_precision_evaluations: Denominator count for mean_precision.
+    - mean_recall_evaluations: Denominator count for mean_recall.
+    """
     config = ExperimentConfig(
         experiment_name="Phase1B_Stochastic_Benchmark",
         max_trials=max_trials,
@@ -261,20 +280,16 @@ def run_stochastic_benchmark(
         )
         evaluations.append(eval_res)
 
-    matched_count = sum(1 for e in evaluations if e.matches_ground_truth)
-    stat_supp_count = sum(
-        1 for e in evaluations
-        if e.minimizer_condition.minimality_status == StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
-    )
-    summary_text = (
+    metrics = compute_stochastic_aggregate_metrics(evaluations)
+
+    summary_parts = [
         f"Executed {len(evaluations)} stochastic synthetic tasks across Delta Debugging, "
         f"Greedy Ablation, and Seeded Random Search. Total target invocations: {total_calls}. "
-        f"Delta Debugging matched ground truth on {matched_count}/{len(evaluations)} tasks. "
-        f"Statistically supported 1-minimality established on {stat_supp_count}/{len(evaluations)} tasks."
-    )
-
-    valid_precisions = [e.precision for e in evaluations if e.precision is not None]
-    valid_recalls = [e.recall for e in evaluations if e.recall is not None]
+        f"Delta Debugging matched ground truth on {metrics['ground_truth_matches']}/{len(evaluations)} tasks. "
+        f"Statistically supported 1-minimality established on {metrics['statistically_supported_minimality']}/{len(evaluations)} tasks."
+    ]
+    summary_parts.extend(format_cohort_summary_sentences(metrics))
+    summary_text = " ".join(summary_parts)
 
     report = StochasticExperimentReport(
         experiment_name=config.experiment_name,
@@ -282,13 +297,7 @@ def run_stochastic_benchmark(
         trials_per_candidate=trials_per_candidate,
         total_target_calls=total_calls,
         evaluations=tuple(evaluations),
-        aggregate_metrics={
-            "tasks_evaluated": len(evaluations),
-            "ground_truth_matches": matched_count,
-            "statistically_supported_minimality": stat_supp_count,
-            "mean_precision": round(sum(valid_precisions) / len(valid_precisions), 4) if valid_precisions else None,
-            "mean_recall": round(sum(valid_recalls) / len(valid_recalls), 4) if valid_recalls else None,
-        },
+        aggregate_metrics=metrics,
         summary=summary_text,
     )
 
@@ -389,7 +398,7 @@ def main() -> None:
         "--alpha",
         type=float,
         default=0.05,
-        help="Statistical significance threshold for FDR adjustments and hypothesis tests (default: 0.05).",
+        help="Statistical significance threshold for hypothesis tests and minimality verification (default: 0.05).",
     )
     parser.add_argument(
         "--confidence",

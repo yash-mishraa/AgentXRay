@@ -285,7 +285,7 @@ def format_demo_output(result: DemoResult) -> str:
         "* Strict Black-Box Boundary: The algorithm observes ONLY binary tool outcomes (SUCCESS/FAILURE);",
         "  it has zero access to agent prompts, system prompt internals, or provider weights.",
         "* Real-World Applicability: In live stochastic LLMs (e.g. Llama-3, GPT-4), probabilistic noise",
-        "  requires AgentXRay's stochastic mode with Wilson confidence intervals and Benjamini-Hochberg FDR control.",
+        "  requires AgentXRay's stochastic mode with Wilson confidence intervals and Berger's (1982) Intersection-Union Test.",
         sep,
     ])
 

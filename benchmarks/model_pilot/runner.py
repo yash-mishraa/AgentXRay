@@ -13,13 +13,15 @@ from agentxray.models import (
     ExperimentConfig,
     ModelPilotEvaluationResult,
     ModelPilotExperimentReport,
-    StochasticMinimalityStatus,
 )
 from agentxray.providers.base import ModelProvider
 from agentxray.providers.fake import FakeProvider
 from agentxray.providers.ollama_adapter import OllamaProvider
-from agentxray.providers.openai_adapter import OpenAIProvider
-from agentxray.reporting import write_model_pilot_reports
+from agentxray.reporting import (
+    compute_stochastic_aggregate_metrics,
+    format_cohort_summary_sentences,
+    write_model_pilot_reports,
+)
 from agentxray.runner import InterventionRunner
 from agentxray.stochastic_baselines import (
     run_stochastic_greedy_ablation,
@@ -177,7 +179,7 @@ def run_model_pilot_benchmark(
     failure_threshold : float
         Proportion threshold to classify candidate as failing.
     alpha : float
-        Significance level for hypothesis tests and FDR adjustments.
+        Significance level for 1-minimality verification hypothesis tests.
     confidence : float
         Confidence level for Wilson and Newcombe uncertainty intervals.
     timeout_seconds : float
@@ -188,7 +190,22 @@ def run_model_pilot_benchmark(
     Returns
     -------
     ModelPilotExperimentReport
-        Complete validated experimental report.
+        Complete validated experimental report. The aggregate_metrics dictionary contains:
+        - tasks_evaluated: Total count of evaluated pilot tasks.
+        - ground_truth_matches: Tasks matching ground truth exactly.
+        - statistically_supported_minimality: Tasks achieving STATISTICALLY_SUPPORTED minimality.
+        - active_tasks: Count of active (non-null) failure tasks.
+        - active_mean_precision: Mean precision across active tasks.
+        - active_mean_recall: Mean recall across active tasks.
+        - null_tasks: Count of null control tasks.
+        - null_detection_rate: Proportion of null controls matching ground truth (clean non-failure).
+        - null_false_positive_rate: Overall control false-alarm rate (1.0 - null_detection_rate).
+        - null_element_false_positives: Count of null controls with non-empty discovered elements.
+        - null_spurious_failures: Count of null controls with empty discovered sets that spuriously reproduced failure.
+        - mean_precision: Legacy mean precision across all evaluations where precision is not None.
+        - mean_recall: Legacy mean recall across all evaluations where recall is not None.
+        - mean_precision_evaluations: Denominator count for mean_precision.
+        - mean_recall_evaluations: Denominator count for mean_recall.
     """
     if live and max_spend_usd > 1.00:
         raise ValueError(
@@ -323,22 +340,17 @@ def run_model_pilot_benchmark(
         )
         evaluations.append(eval_res)
 
-    matched_count = sum(1 for e in evaluations if e.matches_ground_truth)
-    stat_supp_count = sum(
-        1 for e in evaluations
-        if e.minimizer_condition.minimality_status == StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
-    )
+    metrics = compute_stochastic_aggregate_metrics(evaluations)
 
-    summary_text = (
+    summary_parts = [
         f"Executed {len(evaluations)} model-backed pilot tasks under execution tier [{tier.value.upper()}] "
         f"using provider '{provider.provider_name}' ({resolved_model}). "
         f"Total target invocations: {total_calls}. "
-        f"Delta Debugging recovered ground-truth trigger on {matched_count}/{len(evaluations)} tasks. "
-        f"Statistically supported minimality established on {stat_supp_count}/{len(evaluations)} tasks."
-    )
-
-    valid_precisions = [e.precision for e in evaluations if e.precision is not None]
-    valid_recalls = [e.recall for e in evaluations if e.recall is not None]
+        f"Delta Debugging recovered ground-truth trigger on {metrics['ground_truth_matches']}/{len(evaluations)} tasks. "
+        f"Statistically supported minimality established on {metrics['statistically_supported_minimality']}/{len(evaluations)} tasks."
+    ]
+    summary_parts.extend(format_cohort_summary_sentences(metrics))
+    summary_text = " ".join(summary_parts)
 
     report = ModelPilotExperimentReport(
         experiment_name=config.experiment_name,
@@ -350,13 +362,7 @@ def run_model_pilot_benchmark(
         trials_per_candidate=trials_per_candidate,
         total_target_calls=total_calls,
         evaluations=tuple(evaluations),
-        aggregate_metrics={
-            "tasks_evaluated": len(evaluations),
-            "ground_truth_matches": matched_count,
-            "statistically_supported_minimality": stat_supp_count,
-            "mean_precision": round(sum(valid_precisions) / len(valid_precisions), 4) if valid_precisions else None,
-            "mean_recall": round(sum(valid_recalls) / len(valid_recalls), 4) if valid_recalls else None,
-        },
+        aggregate_metrics=metrics,
         summary=summary_text,
     )
 

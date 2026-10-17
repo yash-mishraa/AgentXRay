@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, Sequence
 
 from agentxray.models import (
     ExecutionTier,
     ExperimentReport,
     ModelPilotExperimentReport,
     StochasticExperimentReport,
+    StochasticMinimalityStatus,
 )
 from agentxray.statistics import compare_proportions, estimate_two_proportion_power
 
@@ -286,7 +288,7 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
         "- **Hypotheses**:",
         "  * $H_1$ (Trigger Recovery): Delta debugging isolates the planted reference trigger with precision $\\ge 0.80$ and recall $= 1.0$ under active intervention.",
         "  * $H_0$ (False Discovery Resistance): Under clean baseline control (no failure trigger), delta debugging reports zero failure triggers (minimality status: `not_applicable`).",
-        "  * $H_2$ (1-Minimality Verification): Every single-element removal from the isolated trigger produces a statistically significant drop in failure rate ($q < 0.05$ under Benjamini-Hochberg FDR control).",
+        "  * $H_2$ (1-Minimality Verification): Every single-element removal from the isolated trigger produces a statistically significant drop in failure rate (each removal test $p < \\alpha$ under Berger's (1982) Intersection-Union Test at $\\alpha = 0.05$).",
         "",
         "### C. Epistemic Separation & Ground-Truth Methodology",
         "- **Observable Evaluator**: The outcome evaluator (`ToolCallingTaskEvaluator`) inspects ONLY runtime interaction traces (tool invocations, argument schemas, execution outputs, and final response text). It has zero access to ground truth.",
@@ -343,7 +345,13 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
 
     for eval_item in report.evaluations:
         cond = eval_item.minimizer_condition
-        trigger_str = ", ".join(f"`{e}`" for e in cond.subset_elements) if cond.subset_elements else "*(None - Null Case)*"
+        is_null = getattr(eval_item, "is_null_case", False) or not bool(eval_item.ground_truth_trigger)
+        if cond.subset_elements:
+            trigger_str = ", ".join(f"`{e}`" for e in cond.subset_elements)
+        elif is_null:
+            trigger_str = "*(None - Null Case)*"
+        else:
+            trigger_str = "*(none)*"
         match_str = "YES" if eval_item.matches_ground_truth else "NO"
         lines.append(
             f"| **{eval_item.task_name}** | Stochastic Delta Debugging | {trigger_str} | "
@@ -351,7 +359,12 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
         )
 
         for b in eval_item.baseline_comparisons:
-            b_trig = ", ".join(f"`{e}`" for e in b.discovered_elements) if b.discovered_elements else "*(None - Null Case)*"
+            if b.discovered_elements:
+                b_trig = ", ".join(f"`{e}`" for e in b.discovered_elements)
+            elif is_null:
+                b_trig = "*(None - Null Case)*"
+            else:
+                b_trig = "*(none)*"
             b_match = "YES" if b.matches_ground_truth else "NO"
             lines.append(
                 f"| | *{b.baseline_name}* | {b_trig} | `{b.minimality_status.value}` | "
@@ -428,4 +441,130 @@ def write_model_pilot_reports(
 
     json_p.write_text(format_model_pilot_json_report(report), encoding="utf-8")
     md_p.write_text(format_model_pilot_markdown_report(report), encoding="utf-8")
+
+
+def compute_stochastic_aggregate_metrics(evaluations: Sequence[Any]) -> dict[str, Any]:
+    """Compute partitioned aggregate metrics across active failure tasks and control tasks.
+
+    Parameters
+    ----------
+    evaluations : Sequence[Any]
+        Evaluation records (StochasticEvaluationResult or ModelPilotEvaluationResult).
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary with aggregate metrics:
+        - tasks_evaluated: Total count of evaluated tasks.
+        - ground_truth_matches: Tasks matching ground truth exactly.
+        - statistically_supported_minimality: Tasks achieving STATISTICALLY_SUPPORTED minimality.
+        - active_tasks: Count of active (non-null) failure tasks.
+        - active_mean_precision: Mean precision across active tasks.
+        - active_mean_recall: Mean recall across active tasks.
+        - null_tasks: Count of null control tasks.
+        - null_detection_rate: Proportion of null controls matching ground truth (clean non-failure).
+        - null_false_positive_rate: Overall control false-alarm rate (1.0 - null_detection_rate).
+        - null_element_false_positives: Count of null controls with non-empty discovered elements.
+        - null_spurious_failures: Count of null controls with empty discovered sets that spuriously reproduced failure.
+        - mean_precision: Legacy mean precision across all evaluations where precision is not None.
+        - mean_recall: Legacy mean recall across all evaluations where recall is not None.
+        - mean_precision_evaluations: Denominator count for mean_precision.
+        - mean_recall_evaluations: Denominator count for mean_recall.
+    """
+    active_evals = [
+        e for e in evaluations
+        if (not getattr(e, "is_null_case", False)) and bool(e.ground_truth_trigger)
+    ]
+    null_evals = [
+        e for e in evaluations
+        if getattr(e, "is_null_case", False) or not bool(e.ground_truth_trigger)
+    ]
+
+    active_precisions = [e.precision for e in active_evals if e.precision is not None]
+    active_recalls = [e.recall for e in active_evals if e.recall is not None]
+    active_mean_prec = (
+        round(sum(active_precisions) / len(active_precisions), 4)
+        if active_precisions
+        else None
+    )
+    active_mean_rec = (
+        round(sum(active_recalls) / len(active_recalls), 4)
+        if active_recalls
+        else None
+    )
+
+    null_matches = sum(1 for e in null_evals if e.matches_ground_truth)
+    null_fps = len(null_evals) - null_matches
+    null_element_false_positives = sum(
+        1 for e in null_evals if bool(e.minimizer_condition.subset_elements)
+    )
+    null_spurious_failures = sum(
+        1 for e in null_evals
+        if (not bool(e.minimizer_condition.subset_elements)) and (not e.matches_ground_truth)
+    )
+    null_detection_rate = (
+        round(null_matches / len(null_evals), 4)
+        if null_evals
+        else None
+    )
+    null_fp_rate = (
+        round(null_fps / len(null_evals), 4)
+        if null_evals
+        else None
+    )
+
+    valid_precisions = [e.precision for e in evaluations if e.precision is not None]
+    valid_recalls = [e.recall for e in evaluations if e.recall is not None]
+
+    matched_count = sum(1 for e in evaluations if e.matches_ground_truth)
+    stat_supp_count = sum(
+        1 for e in evaluations
+        if getattr(e.minimizer_condition, "minimality_status", None) == StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
+    )
+
+    return {
+        "tasks_evaluated": len(evaluations),
+        "ground_truth_matches": matched_count,
+        "statistically_supported_minimality": stat_supp_count,
+        "active_tasks": len(active_evals),
+        "active_mean_precision": active_mean_prec,
+        "active_mean_recall": active_mean_rec,
+        "null_tasks": len(null_evals),
+        "null_detection_rate": null_detection_rate,
+        "null_false_positive_rate": null_fp_rate,
+        "null_element_false_positives": null_element_false_positives,
+        "null_spurious_failures": null_spurious_failures,
+        "mean_precision": round(sum(valid_precisions) / len(valid_precisions), 4) if valid_precisions else None,
+        "mean_recall": round(sum(valid_recalls) / len(valid_recalls), 4) if valid_recalls else None,
+        "mean_precision_evaluations": len(valid_precisions),
+        "mean_recall_evaluations": len(valid_recalls),
+    }
+
+
+def format_cohort_summary_sentences(metrics: dict[str, Any]) -> list[str]:
+    """Generate narrative summary sentences for active and control cohorts from aggregate metrics."""
+    parts: list[str] = []
+    if metrics.get("active_tasks", 0) > 0:
+        prec = metrics.get("active_mean_precision")
+        rec = metrics.get("active_mean_recall")
+        prec_str = str(prec) if prec is not None else "N/A"
+        rec_str = str(rec) if rec is not None else "N/A"
+        parts.append(
+            f"Active tasks (n={metrics['active_tasks']}): mean precision={prec_str}, mean recall={rec_str}."
+        )
+    if metrics.get("null_tasks", 0) > 0:
+        det_rate = metrics.get("null_detection_rate")
+        fp_rate = metrics.get("null_false_positive_rate")
+        det_str = str(det_rate) if det_rate is not None else "N/A"
+        fp_str = str(fp_rate) if fp_rate is not None else "N/A"
+        null_tasks = metrics["null_tasks"]
+        null_matches = null_tasks - (metrics.get("null_element_false_positives", 0) + metrics.get("null_spurious_failures", 0))
+        elem_fps = metrics.get("null_element_false_positives", 0)
+        spur_fails = metrics.get("null_spurious_failures", 0)
+        parts.append(
+            f"Control tasks (n={null_tasks}): clean null detection rate={det_str} "
+            f"({null_matches}/{null_tasks}), false positive rate={fp_str} "
+            f"(element false discoveries: {elem_fps}, spurious empty-set failures: {spur_fails})."
+        )
+    return parts
 
