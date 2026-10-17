@@ -1,0 +1,35 @@
+{
+  "protocol_version": "1.1",
+  "task_id": "pilot_calibrated_currency",
+  "candidate_space_size": 4,
+  "elements": [
+    {
+      "id": "elem_1",
+      "element_text": "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")",
+      "element_role": "planted_trigger"
+    },
+    {
+      "id": "elem_2",
+      "element_text": "concise_summary: provide clear one-line reimbursement statement",
+      "element_role": "distractor_1"
+    },
+    {
+      "id": "elem_3",
+      "element_text": "compliance_tag: include audit reference code REF-2026",
+      "element_role": "distractor_2"
+    },
+    {
+      "id": "elem_4",
+      "element_text": "audit_memo: append verification timestamp to final answer",
+      "element_role": "distractor_3"
+    }
+  ],
+  "base_system_prompt": "You are an automated accounting assistant. Always use the calculator tool for calculations.",
+  "user_prompt": "Calculate total reimbursement for expenses of 150 and 250.",
+  "tools": [
+    {
+      "name": "calculator",
+      "description": "Perform basic arithmetic calculations. Accepts standard arithmetic expressions containing numbers, +, -, *, /, and parentheses."
+    }
+  ]
+}
