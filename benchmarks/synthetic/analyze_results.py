@@ -1,17 +1,23 @@
-"""Statistical analysis script for Phase 2A scaling benchmark results."""
+"""Statistical analysis script for Phase 2A/2A.1 scaling benchmark results."""
 
-import json
+import argparse
 from collections import defaultdict
+import json
 import math
-from agentxray.statistics import compare_paired_differences, adjust_p_values_bh
+from pathlib import Path
 
-def main():
-    with open("benchmarks/results/phase_2a_scaling_results.json", "r") as f:
+from agentxray.statistics import adjust_p_values_bh, compare_paired_differences
+
+
+def analyze_suite(results_path: Path):
+    with open(results_path, "r") as f:
         data = json.load(f)
 
     instances = data["instances"]
     total = len(instances)
-    print(f"Total instances analyzed: {total}")
+    print(f"\n=======================================================")
+    print(f"ANALYZING: {results_path} (N={total} instances)")
+    print(f"=======================================================")
 
     algos = ["stochastic_delta_debugging", "stochastic_greedy_ablation", "stochastic_seeded_random"]
 
@@ -23,12 +29,17 @@ def main():
             "search_calls": [],
             "verif_calls": [],
             "subsets": [],
-            "matched_gt": 0,
-            "verified_minimal": 0,
+            "matched_gt_all": 0,
+            "matched_gt_non_null": 0,
+            "verified_minimal_all": 0,
+            "verified_minimal_non_null": 0,
             "budget_exhausted": 0,
-            "precisions": [],
-            "recalls": [],
+            "precisions_all": [],
+            "recalls_all": [],
+            "precisions_non_null": [],
+            "recalls_non_null": [],
             "null_false_positives": 0,
+            "null_correct": 0,
             "null_count": 0,
             "non_null_count": 0,
         }
@@ -46,22 +57,33 @@ def main():
             st["search_calls"].append(r["search_target_calls"])
             st["verif_calls"].append(r["verification_target_calls"])
             st["subsets"].append(r["subsets_examined"])
-            st["precisions"].append(r["precision"])
-            st["recalls"].append(r["recall"])
+            st["precisions_all"].append(r["precision"])
+            st["recalls_all"].append(r["recall"])
+
             if r["matches_ground_truth"]:
-                st["matched_gt"] += 1
+                st["matched_gt_all"] += 1
             if r["is_verified_one_minimal"]:
-                st["verified_minimal"] += 1
+                st["verified_minimal_all"] += 1
             if r["budget_exhausted"]:
                 st["budget_exhausted"] += 1
+
             if is_null:
                 st["null_count"] += 1
-                if r["failure_reproduced"] or len(r["discovered_elements"]) > 0:
+                is_fp = r["failure_reproduced"] or len(r["discovered_elements"]) > 0
+                if is_fp:
                     st["null_false_positives"] += 1
+                else:
+                    st["null_correct"] += 1
             else:
                 st["non_null_count"] += 1
+                st["precisions_non_null"].append(r["precision"])
+                st["recalls_non_null"].append(r["recall"])
+                if r["matches_ground_truth"]:
+                    st["matched_gt_non_null"] += 1
+                if r["is_verified_one_minimal"]:
+                    st["verified_minimal_non_null"] += 1
 
-    print("\n=== OVERALL SUMMARY (N=400 instances, 1200 runs) ===")
+    print("\n=== OVERALL SUMMARY (Separated Null vs Non-Null Evaluation) ===")
     for a in algos:
         st = overall[a]
         mean_calls = sum(st["target_calls"]) / total
@@ -69,30 +91,41 @@ def main():
         mean_search = sum(st["search_calls"]) / total
         mean_verif = sum(st["verif_calls"]) / total
         mean_sub = sum(st["subsets"]) / total
-        gt_rate = st["matched_gt"] / total
-        verif_rate = st["verified_minimal"] / total
+
+        # Corrected separated metrics
+        null_n = st["null_count"]
+        non_null_n = st["non_null_count"]
+
+        null_detection_rate = st["null_correct"] / null_n if null_n > 0 else 0.0
+        null_fdr = st["null_false_positives"] / null_n if null_n > 0 else 0.0
+        non_null_gt_recovery = st["matched_gt_non_null"] / non_null_n if non_null_n > 0 else 0.0
+        non_null_1_minimality = st["verified_minimal_non_null"] / non_null_n if non_null_n > 0 else 0.0
+        mean_prec_non_null = sum(st["precisions_non_null"]) / non_null_n if non_null_n > 0 else 0.0
+        mean_rec_non_null = sum(st["recalls_non_null"]) / non_null_n if non_null_n > 0 else 0.0
         exh_rate = st["budget_exhausted"] / total
-        null_fdr = st["null_false_positives"] / st["null_count"] if st["null_count"] > 0 else 0.0
-        mean_prec = sum(st["precisions"]) / total
-        mean_rec = sum(st["recalls"]) / total
 
         print(f"\nAlgorithm: {a}")
         print(f"  Target Calls (mean ± std): {mean_calls:.1f} (median: {med_calls:.1f})")
         print(f"    - Search Calls (mean): {mean_search:.1f}")
         print(f"    - Verification Calls (mean): {mean_verif:.1f}")
         print(f"  Subsets Examined (mean): {mean_sub:.1f}")
-        print(f"  Ground Truth Recovery Rate: {gt_rate*100:.1f}%")
-        print(f"  1-Minimality Verification Rate: {verif_rate*100:.1f}%")
-        print(f"  Mean Precision: {mean_prec:.3f}, Mean Recall: {mean_rec:.3f}")
-        print(f"  Null Target False Discovery Rate: {null_fdr*100:.1f}% ({st['null_false_positives']}/{st['null_count']})")
-        print(f"  Budget Exhaustion Rate: {exh_rate*100:.1f}% ({st['budget_exhausted']}/{total})")
+        print(f"  [Non-Null Targets N={non_null_n}]:")
+        print(f"    - Ground Truth Trigger Recovery Rate: {non_null_gt_recovery*100:.1f}% ({st['matched_gt_non_null']}/{non_null_n})")
+        print(f"    - 1-Minimality Verification Rate:     {non_null_1_minimality*100:.1f}% ({st['verified_minimal_non_null']}/{non_null_n})")
+        print(f"    - Mean Precision: {mean_prec_non_null:.3f}, Mean Recall: {mean_rec_non_null:.3f}")
+        print(f"  [Null Targets N={null_n}]:")
+        print(f"    - Null Detection Rate (True Negatives): {null_detection_rate*100:.1f}% ({st['null_correct']}/{null_n})")
+        print(f"    - False Discovery Rate on Null Targets: {null_fdr*100:.1f}% ({st['null_false_positives']}/{null_n})")
+        print(f"  [Resource Boundaries N={total}]:")
+        print(f"    - Budget Exhaustion Rate: {exh_rate*100:.1f}% ({st['budget_exhausted']}/{total})")
 
     # 2. Scaling by Candidate Space Size K in {4, 8, 12, 16, 20}
     print("\n=== SCALING BY CANDIDATE SIZE K (Mean Target Calls / Subsets) ===")
     for k in [4, 8, 12, 16, 20]:
         k_insts = [inst for inst in instances if inst["k"] == k]
         n_k = len(k_insts)
-        print(f"\n--- K = {k} (N={n_k} instances) ---")
+        n_k_non_null = len([inst for inst in k_insts if not inst["is_null_case"]])
+        print(f"\n--- K = {k} (N={n_k} total, N_non_null={n_k_non_null}) ---")
         for a_key, res_field in [
             ("Delta Debugging", "dd_result"),
             ("Greedy Ablation", "greedy_result"),
@@ -100,11 +133,11 @@ def main():
         ]:
             calls = [inst[res_field]["target_calls"] for inst in k_insts]
             subs = [inst[res_field]["subsets_examined"] for inst in k_insts]
-            gt = [inst[res_field]["matches_ground_truth"] for inst in k_insts]
+            gt_non_null = [inst[res_field]["matches_ground_truth"] for inst in k_insts if not inst["is_null_case"]]
             mean_c = sum(calls) / n_k
             mean_s = sum(subs) / n_k
-            gt_pct = sum(gt) / n_k * 100.0
-            print(f"  {a_key:18s}: Calls={mean_c:6.1f}, Subsets={mean_s:4.1f}, GT Match={gt_pct:5.1f}%")
+            gt_pct = sum(gt_non_null) / n_k_non_null * 100.0 if n_k_non_null > 0 else 0.0
+            print(f"  {a_key:18s}: Calls={mean_c:6.1f}, Subsets={mean_s:4.1f}, Non-Null GT Recovery={gt_pct:5.1f}%")
 
     # 3. Scaling by Target Family
     print("\n=== PERFORMANCE BY TARGET FAMILY (Mean Target Calls / Match Rate) ===")
@@ -112,7 +145,9 @@ def main():
     for fam in families:
         fam_insts = [inst for inst in instances if inst["family"] == fam]
         n_f = len(fam_insts)
-        print(f"\n--- Family: {fam} (N={n_f} instances) ---")
+        is_fam_null = fam_insts[0]["is_null_case"]
+        fam_label = f"{fam} [NULL]" if is_fam_null else fam
+        print(f"\n--- Family: {fam_label} (N={n_f} instances) ---")
         for a_key, res_field in [
             ("Delta Debugging", "dd_result"),
             ("Greedy Ablation", "greedy_result"),
@@ -126,7 +161,8 @@ def main():
             mean_s = sum(subs) / n_f
             gt_pct = sum(gt) / n_f * 100.0
             ver_pct = sum(ver) / n_f * 100.0
-            print(f"  {a_key:18s}: Calls={mean_c:6.1f}, Subsets={mean_s:4.1f}, GT={gt_pct:5.1f}%, Verified={ver_pct:5.1f}%")
+            metric_label = "Null Detection" if is_fam_null else "GT Recovery"
+            print(f"  {a_key:18s}: Calls={mean_c:6.1f}, Subsets={mean_s:4.1f}, {metric_label}={gt_pct:5.1f}%, Verified={ver_pct:5.1f}%")
 
     # 4. Paired Comparisons: Delta Debugging vs Greedy Ablation across all instances
     print("\n=== PAIRED STATISTICAL COMPARISONS ===")
@@ -158,6 +194,28 @@ def main():
     adjusted_p = adjust_p_values_bh(family_p_vals)
     for (fam, comp), q in zip(family_diffs, adjusted_p):
         print(f"  {fam:24s}: mean diff={comp.mean_difference:+7.1f}, median={comp.median_difference:+6.1f}, W={comp.wilcoxon_w:6.1f}, raw p={comp.wilcoxon_p_value:.5f}, BH q={q:.5f}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Analyze scaling benchmark results")
+    parser.add_argument(
+        "--results-file",
+        type=str,
+        default="benchmarks/results/phase_2a1_scaling_results.json",
+        help="Path to results JSON file",
+    )
+    args = parser.parse_args()
+    p = Path(args.results_file)
+    if not p.exists():
+        # Fallback to phase_2a if phase_2a1 not generated yet
+        fallback = Path("benchmarks/results/phase_2a_scaling_results.json")
+        if fallback.exists():
+            p = fallback
+        else:
+            raise FileNotFoundError(f"Neither {p} nor {fallback} exists")
+
+    analyze_suite(p)
+
 
 if __name__ == "__main__":
     main()

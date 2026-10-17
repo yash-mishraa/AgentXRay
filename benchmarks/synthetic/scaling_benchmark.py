@@ -32,8 +32,10 @@ from typing import Any, Sequence
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentxray.models import (
+    CandidateEvaluation,
     ExperimentConfig,
     InputCase,
+    SearchStatus,
     StochasticDiscoveredCondition,
     StochasticMinimalityStatus,
 )
@@ -214,7 +216,7 @@ def create_scaling_task(
             name=f"Non-Monotonic Target (K={k})",
             description=f"Non-monotonic suppression/restoration: '{a}' (0.90), suppressed by '{b}' (0.10), restored by '{c}' (0.90).",
             trigger_elements=(a,),
-            alternative_valid_triggers=((a, b, c),),
+            alternative_valid_triggers=(),
             base_probability=0.05,
             trigger_probability=0.90,
         )
@@ -259,6 +261,7 @@ def create_scaling_task(
         rule_fn=rule_fn,
         name=f"Synthetic_{target_family}_K{k}_s{seed}",
         target_seed=seed,
+        crn_mode=True,
     )
     initial_input = InputCase(
         case_id=f"case_{target_family}_k{k}_s{seed}",
@@ -315,6 +318,7 @@ def run_scaling_instance(
     max_trials: int = 1000,
     timeout_seconds: float = 60.0,
     random_search_seed: int = 999,
+    event_logger: Callable[[str, int, CandidateEvaluation, str, int], None] | None = None,
 ) -> ScalingInstanceResult:
     """Execute all three algorithms on an identical, paired benchmark instance."""
     # Determine failure threshold: 0.25 for weak_signal, 0.50 for others
@@ -329,7 +333,15 @@ def run_scaling_instance(
         max_trials=max_trials,
         timeout_seconds=timeout_seconds,
     )
-    runner_dd = InterventionRunner(config=config_dd, target_fn=target.execute)
+    step_dd = 0
+
+    def on_eval_dd(eval_res: CandidateEvaluation, itype: str) -> None:
+        nonlocal step_dd
+        step_dd += 1
+        if event_logger is not None:
+            event_logger("stochastic_delta_debugging", step_dd, eval_res, itype, runner_dd.trial_count)
+
+    runner_dd = InterventionRunner(config=config_dd, target_fn=target.execute, on_candidate_evaluated=on_eval_dd)
     minimizer = StochasticDeltaDebugMinimizer(
         runner=runner_dd,
         trials_per_candidate=trials_per_candidate,
@@ -364,22 +376,35 @@ def run_scaling_instance(
         max_trials=max_trials,
         timeout_seconds=timeout_seconds,
     )
-    runner_greedy = InterventionRunner(config=config_greedy, target_fn=target.execute)
+    step_greedy = 0
+
+    def on_eval_greedy(eval_res: CandidateEvaluation, itype: str) -> None:
+        nonlocal step_greedy
+        step_greedy += 1
+        if event_logger is not None:
+            event_logger("stochastic_greedy_ablation", step_greedy, eval_res, itype, runner_greedy.trial_count)
+
+    runner_greedy = InterventionRunner(config=config_greedy, target_fn=target.execute, on_candidate_evaluated=on_eval_greedy)
     start_time = time.perf_counter()
     greedy_comp = run_stochastic_greedy_ablation(
         initial_input=initial_input,
         runner=runner_greedy,
         trials_per_candidate=trials_per_candidate,
         failure_threshold=threshold,
-        true_trigger=gt.trigger_elements,
-        alternative_valid_triggers=gt.alternative_valid_triggers,
     )
     greedy_runtime = (time.perf_counter() - start_time) * 1000.0
+
+    if not greedy_comp.failure_reproduced:
+        greedy_status = SearchStatus.NO_TRIGGER_FOUND
+    elif greedy_comp.budget_exhausted:
+        greedy_status = SearchStatus.BUDGET_EXHAUSTED
+    else:
+        greedy_status = SearchStatus.COMPLETE
 
     # Wrap greedy condition to evaluate ground truth
     dummy_greedy_cond = StochasticDiscoveredCondition(
         subset_elements=greedy_comp.discovered_elements,
-        status=dd_cond.status,
+        status=greedy_status,
         is_failure=greedy_comp.failure_reproduced,
         minimality_status=greedy_comp.minimality_status,
         candidate_evaluation=greedy_comp.candidate_evaluation,
@@ -413,22 +438,35 @@ def run_scaling_instance(
         max_trials=max_trials,
         timeout_seconds=timeout_seconds,
     )
-    runner_random = InterventionRunner(config=config_random, target_fn=target.execute)
+    step_random = 0
+
+    def on_eval_random(eval_res: CandidateEvaluation, itype: str) -> None:
+        nonlocal step_random
+        step_random += 1
+        if event_logger is not None:
+            event_logger("stochastic_seeded_random", step_random, eval_res, itype, runner_random.trial_count)
+
+    runner_random = InterventionRunner(config=config_random, target_fn=target.execute, on_candidate_evaluated=on_eval_random)
     start_time = time.perf_counter()
     random_comp = run_stochastic_random_search(
         initial_input=initial_input,
         runner=runner_random,
         trials_per_candidate=trials_per_candidate,
         failure_threshold=threshold,
-        true_trigger=gt.trigger_elements,
-        alternative_valid_triggers=gt.alternative_valid_triggers,
         seed=random_search_seed + seed,
     )
     random_runtime = (time.perf_counter() - start_time) * 1000.0
 
+    if not random_comp.failure_reproduced:
+        random_status = SearchStatus.NO_TRIGGER_FOUND
+    elif random_comp.budget_exhausted:
+        random_status = SearchStatus.BUDGET_EXHAUSTED
+    else:
+        random_status = SearchStatus.COMPLETE
+
     dummy_random_cond = StochasticDiscoveredCondition(
         subset_elements=random_comp.discovered_elements,
-        status=dd_cond.status,
+        status=random_status,
         is_failure=random_comp.failure_reproduced,
         minimality_status=random_comp.minimality_status,
         candidate_evaluation=random_comp.candidate_evaluation,
@@ -489,21 +527,63 @@ def run_full_scaling_benchmark(
     target_families: Sequence[str] = TARGET_FAMILIES,
     trials_per_candidate: int = 10,
     max_trials: int = 1000,
+    event_log_path: Path | None = None,
 ) -> ScalingBenchmarkSuite:
     """Execute complete multi-instance scaling benchmark sweep."""
     all_instances: list[ScalingInstanceResult] = []
+    event_file = None
 
-    for k in candidate_sizes:
-        for family in target_families:
-            for s in range(seeds_per_condition):
-                inst_res = run_scaling_instance(
-                    family=family,
-                    k=k,
-                    seed=100 + s,
-                    trials_per_candidate=trials_per_candidate,
-                    max_trials=max_trials,
-                )
-                all_instances.append(inst_res)
+    if event_log_path is not None:
+        event_log_path.parent.mkdir(parents=True, exist_ok=True)
+        event_file = open(event_log_path, "w", encoding="utf-8")
+
+    try:
+        for k in candidate_sizes:
+            for family in target_families:
+                for s in range(seeds_per_condition):
+                    inst_seed = 100 + s
+                    inst_start = time.perf_counter()
+
+                    def make_logger(fam: str, cand_k: int, seed_val: int, start_t: float):
+                        def logger(alg: str, step: int, eval_res: CandidateEvaluation, itype: str, cum_calls: int) -> None:
+                            if event_file is None:
+                                return
+                            is_verif = "minimality_check" in itype
+                            phase = "minimality_verification" if is_verif else "search"
+                            rec = {
+                                "benchmark_version": "phase_2a1",
+                                "target_family": fam,
+                                "k": cand_k,
+                                "seed": seed_val,
+                                "algorithm": alg,
+                                "step_index": step,
+                                "phase": phase,
+                                "candidate_elements": list(eval_res.candidate_elements),
+                                "candidate_size": len(eval_res.candidate_elements),
+                                "trials_requested": eval_res.trials,
+                                "failures_observed": eval_res.failures,
+                                "failure_rate": eval_res.failure_rate,
+                                "ci_lower": eval_res.confidence_interval[0],
+                                "ci_upper": eval_res.confidence_interval[1],
+                                "cumulative_target_calls": cum_calls,
+                                "elapsed_ms": round((time.perf_counter() - start_t) * 1000.0, 2),
+                            }
+                            event_file.write(json.dumps(rec) + "\n")
+                        return logger
+
+                    inst_logger = make_logger(family, k, inst_seed, inst_start) if event_file is not None else None
+                    inst_res = run_scaling_instance(
+                        family=family,
+                        k=k,
+                        seed=inst_seed,
+                        trials_per_candidate=trials_per_candidate,
+                        max_trials=max_trials,
+                        event_logger=inst_logger,
+                    )
+                    all_instances.append(inst_res)
+    finally:
+        if event_file is not None:
+            event_file.close()
 
     return ScalingBenchmarkSuite(
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -519,11 +599,12 @@ def run_full_scaling_benchmark(
 def export_benchmark_results(
     suite: ScalingBenchmarkSuite,
     output_dir: Path,
+    version_prefix: str = "phase_2a1_scaling",
 ) -> tuple[Path, Path]:
     """Serialize benchmark suite to structured JSON and tabular CSV."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    json_path = output_dir / "phase_2a_scaling_results.json"
-    csv_path = output_dir / "phase_2a_scaling_summary.csv"
+    json_path = output_dir / f"{version_prefix}_results.json"
+    csv_path = output_dir / f"{version_prefix}_summary.csv"
 
     # 1. JSON Export
     with open(json_path, "w", encoding="utf-8") as f:
@@ -579,22 +660,26 @@ def export_benchmark_results(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Phase 2A Scaling Benchmark Suite")
+    parser = argparse.ArgumentParser(description="Run Phase 2A.1 Scaling Benchmark Suite")
     parser.add_argument("--seeds", type=int, default=10, help="Number of seeds per condition")
     parser.add_argument("--trials", type=int, default=10, help="Trials per candidate")
     parser.add_argument("--max-trials", type=int, default=1000, help="Max trial budget per run")
     parser.add_argument("--output-dir", type=str, default="benchmarks/results", help="Output directory")
+    parser.add_argument("--version-prefix", type=str, default="phase_2a1_scaling", help="Prefix for exported result files")
 
     args = parser.parse_args()
+    out_dir = Path(args.output_dir)
+    event_log_path = out_dir / "phase_2a1_event_log.jsonl"
+
     print(f"Running Scaling Benchmark: {len(CANDIDATE_SIZES)} sizes x {len(TARGET_FAMILIES)} families x {args.seeds} seeds...")
     start = time.perf_counter()
     suite = run_full_scaling_benchmark(
         seeds_per_condition=args.seeds,
         trials_per_candidate=args.trials,
         max_trials=args.max_trials,
+        event_log_path=event_log_path,
     )
     elapsed = time.perf_counter() - start
-    out_dir = Path(args.output_dir)
-    j_p, c_p = export_benchmark_results(suite, out_dir)
+    j_p, c_p = export_benchmark_results(suite, out_dir, version_prefix=args.version_prefix)
     print(f"Completed {suite.total_instances} benchmark instances in {elapsed:.2f}s!")
-    print(f"Results written to:\n  JSON: {j_p}\n  CSV:  {c_p}")
+    print(f"Results written to:\n  JSON: {j_p}\n  CSV:  {c_p}\n  Event Log: {event_log_path}")

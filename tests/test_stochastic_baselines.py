@@ -27,12 +27,11 @@ def test_stochastic_greedy_ablation_success():
         runner=runner,
         trials_per_candidate=20,
         failure_threshold=0.30,
-        true_trigger=gt.trigger_elements,
     )
 
     assert comp.failure_reproduced is True
     assert set(comp.discovered_elements) == {"param_mode_debug"}
-    assert comp.matches_ground_truth is True
+    assert set(comp.discovered_elements) == set(gt.trigger_elements)
     assert comp.target_calls <= config.max_trials
 
 
@@ -47,7 +46,6 @@ def test_stochastic_greedy_ablation_budget_cap():
         runner=runner,
         trials_per_candidate=20,
         failure_threshold=0.30,
-        true_trigger=gt.trigger_elements,
     )
 
     assert comp.target_calls <= 50
@@ -68,7 +66,6 @@ def test_stochastic_random_search_reproducible_and_capped():
         runner=runner1,
         trials_per_candidate=20,
         failure_threshold=0.30,
-        true_trigger=gt.trigger_elements,
         seed=999,
     )
 
@@ -80,7 +77,6 @@ def test_stochastic_random_search_reproducible_and_capped():
         runner=runner2,
         trials_per_candidate=20,
         failure_threshold=0.30,
-        true_trigger=gt.trigger_elements,
         seed=999,
     )
 
@@ -92,6 +88,8 @@ def test_stochastic_random_search_reproducible_and_capped():
 
 def test_stochastic_baselines_null_case():
     """Verify stochastic baselines correctly report NOT_APPLICABLE and no failure on null case."""
+    from agentxray.models import SearchStatus, StochasticDiscoveredCondition
+    from benchmarks.synthetic.stochastic_ground_truth import evaluate_stochastic_ground_truth
     from benchmarks.synthetic.stochastic_tasks import create_stochastic_null_task
 
     target, initial_input, gt = create_stochastic_null_task(target_seed=42)
@@ -105,12 +103,21 @@ def test_stochastic_baselines_null_case():
         runner=runner_g,
         trials_per_candidate=20,
         failure_threshold=0.30,
-        true_trigger=gt.trigger_elements,
     )
     assert comp_g.failure_reproduced is False
     assert comp_g.discovered_elements == ()
     assert comp_g.minimality_status == StochasticMinimalityStatus.NOT_APPLICABLE
-    assert comp_g.matches_ground_truth is True
+
+    dummy_g = StochasticDiscoveredCondition(
+        subset_elements=comp_g.discovered_elements,
+        status=SearchStatus.COMPLETE,
+        is_failure=comp_g.failure_reproduced,
+        minimality_status=comp_g.minimality_status,
+        candidate_evaluation=comp_g.candidate_evaluation,
+        target_calls_used=comp_g.target_calls,
+    )
+    matches_g, _, _, _, _ = evaluate_stochastic_ground_truth(gt, dummy_g)
+    assert matches_g is True
 
     # Random Search on Null Case
     target.reset(new_seed=42)
@@ -120,11 +127,20 @@ def test_stochastic_baselines_null_case():
         runner=runner_r,
         trials_per_candidate=20,
         failure_threshold=0.30,
-        true_trigger=gt.trigger_elements,
         seed=42,
     )
     assert comp_r.failure_reproduced is False
     assert comp_r.discovered_elements == ()
     assert comp_r.minimality_status == StochasticMinimalityStatus.NOT_APPLICABLE
-    assert comp_r.matches_ground_truth is True
+
+    dummy_r = StochasticDiscoveredCondition(
+        subset_elements=comp_r.discovered_elements,
+        status=SearchStatus.COMPLETE,
+        is_failure=comp_r.failure_reproduced,
+        minimality_status=comp_r.minimality_status,
+        candidate_evaluation=comp_r.candidate_evaluation,
+        target_calls_used=comp_r.target_calls,
+    )
+    matches_r, _, _, _, _ = evaluate_stochastic_ground_truth(gt, dummy_r)
+    assert matches_r is True
 

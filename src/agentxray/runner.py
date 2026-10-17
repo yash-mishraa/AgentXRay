@@ -32,9 +32,11 @@ class InterventionRunner:
         self,
         config: ExperimentConfig,
         target_fn: Callable[[InputCase], TargetResult],
+        on_candidate_evaluated: Callable[..., None] | None = None,
     ) -> None:
         self.config = config
         self._target_fn = target_fn
+        self.on_candidate_evaluated = on_candidate_evaluated
         self._trials: list[ProbeTrial] = []
         self._start_time = time.perf_counter()
 

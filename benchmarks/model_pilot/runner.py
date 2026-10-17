@@ -280,8 +280,6 @@ def run_model_pilot_benchmark(
             failure_threshold=failure_threshold,
             alpha=alpha,
             confidence=confidence,
-            true_trigger=ground_truth.trigger_elements,
-            alternative_valid_triggers=ground_truth.alternative_valid_triggers,
         )
         total_calls += runner_greedy.trial_count
 
@@ -295,8 +293,6 @@ def run_model_pilot_benchmark(
             failure_threshold=failure_threshold,
             alpha=alpha,
             confidence=confidence,
-            true_trigger=ground_truth.trigger_elements,
-            alternative_valid_triggers=ground_truth.alternative_valid_triggers,
             seed=42,
         )
         total_calls += runner_random.trial_count

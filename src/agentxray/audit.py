@@ -298,8 +298,6 @@ def run_multiseed_audit(
                 failure_threshold=failure_threshold,
                 alpha=alpha,
                 confidence=confidence,
-                true_trigger=ground_truth.trigger_elements,
-                alternative_valid_triggers=ground_truth.alternative_valid_triggers,
             )
             dur_greedy = time.perf_counter() - t0
 
@@ -307,12 +305,15 @@ def run_multiseed_audit(
             is_fp_g = is_null and (comp_greedy.failure_reproduced or len(comp_greedy.discovered_elements) > 0)
             disc_g = set(comp_greedy.discovered_elements)
             true_g = set(ground_truth.trigger_elements)
+            alt_g = [set(alt) for alt in ground_truth.alternative_valid_triggers]
             if is_null:
+                matches_g = (not comp_greedy.failure_reproduced) and len(disc_g) == 0
                 prec_g = 1.0 if not disc_g else 0.0
                 rec_g = 1.0 if not disc_g else 0.0
                 excess_g = len(disc_g)
                 missing_g = 0
             else:
+                matches_g = (disc_g == true_g or any(disc_g == alt for alt in alt_g)) and comp_greedy.failure_reproduced
                 tp_g = len(disc_g & true_g)
                 fp_g = len(disc_g - true_g)
                 fn_g = len(true_g - disc_g)
@@ -327,7 +328,7 @@ def run_multiseed_audit(
                     task_id=ground_truth.task_id,
                     task_name=ground_truth.name,
                     method="greedy_ablation",
-                    matches_ground_truth=comp_greedy.matches_ground_truth,
+                    matches_ground_truth=matches_g,
                     is_null_case=is_null,
                     is_false_positive=is_fp_g,
                     precision=prec_g,
@@ -353,8 +354,6 @@ def run_multiseed_audit(
                 failure_threshold=failure_threshold,
                 alpha=alpha,
                 confidence=confidence,
-                true_trigger=ground_truth.trigger_elements,
-                alternative_valid_triggers=ground_truth.alternative_valid_triggers,
                 seed=seed,
             )
             dur_random = time.perf_counter() - t0
@@ -362,12 +361,15 @@ def run_multiseed_audit(
             is_fp_r = is_null and (comp_random.failure_reproduced or len(comp_random.discovered_elements) > 0)
             disc_r = set(comp_random.discovered_elements)
             true_r = set(ground_truth.trigger_elements)
+            alt_r = [set(alt) for alt in ground_truth.alternative_valid_triggers]
             if is_null:
+                matches_r = (not comp_random.failure_reproduced) and len(disc_r) == 0
                 prec_r = 1.0 if not disc_r else 0.0
                 rec_r = 1.0 if not disc_r else 0.0
                 excess_r = len(disc_r)
                 missing_r = 0
             else:
+                matches_r = (disc_r == true_r or any(disc_r == alt for alt in alt_r)) and comp_random.failure_reproduced
                 tp_r = len(disc_r & true_r)
                 fp_r = len(disc_r - true_r)
                 fn_r = len(true_r - disc_r)
@@ -382,7 +384,7 @@ def run_multiseed_audit(
                     task_id=ground_truth.task_id,
                     task_name=ground_truth.name,
                     method="random_search",
-                    matches_ground_truth=comp_random.matches_ground_truth,
+                    matches_ground_truth=matches_r,
                     is_null_case=is_null,
                     is_false_positive=is_fp_r,
                     precision=prec_r,

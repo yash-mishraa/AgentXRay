@@ -149,9 +149,8 @@ def test_stochastic_baselines_on_calibrated_task() -> None:
         runner=runner_greedy,
         trials_per_candidate=3,
         failure_threshold=0.50,
-        true_trigger=gt.trigger_elements,
     )
-    assert greedy_res.matches_ground_truth is True
+    assert set(greedy_res.discovered_elements) == set(gt.trigger_elements)
     assert len(greedy_res.discovered_elements) == 1
     assert "strict_currency_formatting" in greedy_res.discovered_elements[0]
 
@@ -162,10 +161,9 @@ def test_stochastic_baselines_on_calibrated_task() -> None:
         runner=runner_random,
         trials_per_candidate=3,
         failure_threshold=0.50,
-        true_trigger=gt.trigger_elements,
         seed=42,
     )
-    assert random_res.matches_ground_truth is True
+    assert set(random_res.discovered_elements) == set(gt.trigger_elements)
     assert len(random_res.discovered_elements) == 1
 
 

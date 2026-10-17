@@ -73,8 +73,6 @@ def run_stochastic_greedy_ablation(
     alpha: float = 0.05,
     confidence: float = 0.95,
     alternative: str = "two-sided",
-    true_trigger: tuple[str, ...] = (),
-    alternative_valid_triggers: tuple[tuple[str, ...], ...] = (),
 ) -> StochasticBaselineComparison:
     """Stochastic greedy single-element ablation baseline.
 
@@ -82,9 +80,6 @@ def run_stochastic_greedy_ablation(
     If the subset without element 'e' still reproduces failure rate >= failure_threshold,
     'e' is permanently dropped.
     """
-    true_set = set(true_trigger)
-    alt_sets = [set(alt) for alt in alternative_valid_triggers]
-
     # Step 1: Baseline check
     try:
         base_eval = evaluate_candidate_stochastically(
@@ -111,7 +106,7 @@ def run_stochastic_greedy_ablation(
                 failure_rate=0.0,
                 confidence_interval=(0.0, 1.0),
             ),
-            irrelevant_elements_remaining=len(set(initial_input.elements) - true_set),
+            irrelevant_elements_remaining=0,
             matches_ground_truth=False,
             budget_exhausted=True,
         )
@@ -128,7 +123,7 @@ def run_stochastic_greedy_ablation(
             subsets_examined=len({t.input_case.elements for t in runner.trials}),
             candidate_evaluation=base_eval,
             irrelevant_elements_remaining=0,
-            matches_ground_truth=(len(true_set) == 0),
+            matches_ground_truth=False,
             budget_exhausted=False,
         )
 
@@ -159,14 +154,11 @@ def run_stochastic_greedy_ablation(
 
         discovered = tuple(current_elements)
 
-        # Step 3: Minimality evaluation of discovered subset
+        # Step 3: Minimality evaluation of discovered subset S \ {e}
         removal_evals: dict[str, CandidateEvaluation] = {}
         for elem in discovered:
-            if len(discovered) > 1:
-                without_elem = tuple(e for e in discovered if e != elem)
-                sub_case = initial_input.subset(without_elem)
-            else:
-                sub_case = initial_input.without(elem)
+            without_elem = tuple(e for e in discovered if e != elem)
+            sub_case = initial_input.subset(without_elem)
 
             rem_eval = evaluate_candidate_stochastically(
                 runner=runner,
@@ -187,9 +179,6 @@ def run_stochastic_greedy_ablation(
             alternative=alternative,
         )
 
-        discovered_set = set(discovered)
-        matches_gt = (discovered_set == true_set) or any(discovered_set == alt for alt in alt_sets)
-
         search_calls = sum(1 for t in runner.trials if t.intervention_type != "stochastic_greedy_minimality_check")
         verif_calls = sum(1 for t in runner.trials if t.intervention_type == "stochastic_greedy_minimality_check")
         subsets_cnt = len({t.input_case.elements for t in runner.trials})
@@ -204,15 +193,13 @@ def run_stochastic_greedy_ablation(
             verification_target_calls=verif_calls,
             subsets_examined=subsets_cnt,
             candidate_evaluation=current_eval,
-            irrelevant_elements_remaining=len(discovered_set - true_set),
-            matches_ground_truth=matches_gt,
+            irrelevant_elements_remaining=0,
+            matches_ground_truth=False,
             budget_exhausted=runner.is_budget_exhausted(),
         )
 
     except (BudgetExhaustedError, TimeoutExceededError):
         discovered = tuple(current_elements)
-        discovered_set = set(discovered)
-        matches_gt = (discovered_set == true_set) or any(discovered_set == alt for alt in alt_sets)
         search_calls = sum(1 for t in runner.trials if t.intervention_type != "stochastic_greedy_minimality_check")
         verif_calls = sum(1 for t in runner.trials if t.intervention_type == "stochastic_greedy_minimality_check")
         subsets_cnt = len({t.input_case.elements for t in runner.trials})
@@ -226,8 +213,8 @@ def run_stochastic_greedy_ablation(
             verification_target_calls=verif_calls,
             subsets_examined=subsets_cnt,
             candidate_evaluation=current_eval,
-            irrelevant_elements_remaining=len(discovered_set - true_set),
-            matches_ground_truth=matches_gt,
+            irrelevant_elements_remaining=0,
+            matches_ground_truth=False,
             budget_exhausted=True,
         )
 
@@ -240,8 +227,6 @@ def run_stochastic_random_search(
     alpha: float = 0.05,
     confidence: float = 0.95,
     alternative: str = "two-sided",
-    true_trigger: tuple[str, ...] = (),
-    alternative_valid_triggers: tuple[tuple[str, ...], ...] = (),
     seed: int = 42,
     max_samples: int | None = None,
 ) -> StochasticBaselineComparison:
@@ -250,8 +235,6 @@ def run_stochastic_random_search(
     Randomly samples non-empty proper subsets under the configured trial budget,
     tracking the smallest candidate that achieves failure rate >= failure_threshold.
     """
-    true_set = set(true_trigger)
-    alt_sets = [set(alt) for alt in alternative_valid_triggers]
     rng = random.Random(seed)
 
     # Step 1: Baseline check
@@ -280,7 +263,7 @@ def run_stochastic_random_search(
                 failure_rate=0.0,
                 confidence_interval=(0.0, 1.0),
             ),
-            irrelevant_elements_remaining=len(set(initial_input.elements) - true_set),
+            irrelevant_elements_remaining=0,
             matches_ground_truth=False,
             budget_exhausted=True,
         )
@@ -297,7 +280,7 @@ def run_stochastic_random_search(
             subsets_examined=len({t.input_case.elements for t in runner.trials}),
             candidate_evaluation=base_eval,
             irrelevant_elements_remaining=0,
-            matches_ground_truth=(len(true_set) == 0),
+            matches_ground_truth=False,
             budget_exhausted=False,
         )
 
@@ -342,18 +325,15 @@ def run_stochastic_random_search(
     except (BudgetExhaustedError, TimeoutExceededError):
         budget_exhausted = True
 
-    # Attempt minimality check on best_candidate
+    # Attempt minimality check on best_candidate S \ {e}
     removal_evals: dict[str, CandidateEvaluation] = {}
     minimality_status = StochasticMinimalityStatus.INCONCLUSIVE
 
     if not budget_exhausted:
         try:
             for elem in best_candidate:
-                if len(best_candidate) > 1:
-                    without_elem = tuple(e for e in best_candidate if e != elem)
-                    sub_case = initial_input.subset(without_elem)
-                else:
-                    sub_case = initial_input.without(elem)
+                without_elem = tuple(e for e in best_candidate if e != elem)
+                sub_case = initial_input.subset(without_elem)
 
                 rem_eval = evaluate_candidate_stochastically(
                     runner=runner,
@@ -377,9 +357,6 @@ def run_stochastic_random_search(
             budget_exhausted = True
             minimality_status = StochasticMinimalityStatus.INCONCLUSIVE
 
-    best_set = set(best_candidate)
-    matches_gt = (best_set == true_set) or any(best_set == alt for alt in alt_sets)
-
     search_calls = sum(1 for t in runner.trials if t.intervention_type != "stochastic_random_minimality_check")
     verif_calls = sum(1 for t in runner.trials if t.intervention_type == "stochastic_random_minimality_check")
     subsets_cnt = len({t.input_case.elements for t in runner.trials})
@@ -394,7 +371,7 @@ def run_stochastic_random_search(
         verification_target_calls=verif_calls,
         subsets_examined=subsets_cnt,
         candidate_evaluation=best_eval,
-        irrelevant_elements_remaining=len(best_set - true_set),
-        matches_ground_truth=matches_gt,
+        irrelevant_elements_remaining=0,
+        matches_ground_truth=False,
         budget_exhausted=budget_exhausted or runner.is_budget_exhausted(),
     )

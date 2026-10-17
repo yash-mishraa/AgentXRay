@@ -65,9 +65,9 @@ class TestInputCase:
         assert case.case_id == "case_1"
         assert case.elements == ("param_a", "param_b")
 
-    def test_empty_elements_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            InputCase(elements=[])
+    def test_empty_elements_allowed(self) -> None:
+        case = InputCase(elements=[])
+        assert case.elements == ()
 
     def test_duplicate_elements_rejected(self) -> None:
         with pytest.raises(ValidationError):
@@ -77,8 +77,8 @@ class TestInputCase:
         case = InputCase(elements=["  clean_me  ", "other"])
         assert case.elements == ("clean_me", "other")
 
-        with pytest.raises(ValidationError):
-            InputCase(elements=["   ", ""])
+        empty_case = InputCase(elements=["   ", ""])
+        assert empty_case.elements == ()
 
     def test_without_method(self) -> None:
         case = InputCase(elements=["a", "b", "c"])
@@ -88,18 +88,17 @@ class TestInputCase:
         # Removing non-existent element returns copy with same elements
         assert case.without("z").elements == ("a", "b", "c")
 
-        # Removing all elements raises ValueError
+        # Removing all elements returns empty InputCase
         single = InputCase(elements=["solo"])
-        with pytest.raises(ValueError):
-            single.without("solo")
+        assert single.without("solo").elements == ()
 
     def test_subset_method(self) -> None:
         case = InputCase(elements=["a", "b", "c", "d"])
         sub = case.subset(["b", "d"])
         assert sub.elements == ("b", "d")
+        assert case.subset([]).elements == ()
 
-        with pytest.raises(ValueError):
-            case.subset(["not_in_case"])
+        assert case.subset(["not_in_case"]).elements == ()
 
 
 class TestTargetResult:

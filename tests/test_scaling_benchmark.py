@@ -1,7 +1,7 @@
 """Comprehensive regression test suite for Phase 2A scaling benchmark, ground truth, and statistics."""
 
-from __future__ import annotations
-
+import json
+from pathlib import Path
 import pytest
 
 from agentxray.models import (
@@ -26,9 +26,11 @@ from benchmarks.synthetic.scaling_benchmark import (
     CANDIDATE_SIZES,
     TARGET_FAMILIES,
     create_scaling_task,
+    run_full_scaling_benchmark,
     run_scaling_instance,
 )
 from benchmarks.synthetic.stochastic_ground_truth import evaluate_stochastic_ground_truth
+from benchmarks.synthetic.stochastic_target import StochasticSyntheticTarget
 
 
 def test_ground_truth_labeling_across_all_families_and_sizes():
@@ -51,8 +53,7 @@ def test_ground_truth_labeling_across_all_families_and_sizes():
                 assert set(gt.trigger_elements).issubset(set(initial_input.elements))
             elif family == "non_monotonic":
                 assert len(gt.trigger_elements) == 1
-                assert len(gt.alternative_valid_triggers) == 1
-                assert len(gt.alternative_valid_triggers[0]) == 3
+                assert len(gt.alternative_valid_triggers) == 0
             else:
                 assert len(gt.trigger_elements) == 1
                 assert set(gt.trigger_elements).issubset(set(initial_input.elements))
@@ -95,7 +96,6 @@ def test_null_target_false_discoveries():
         runner=runner_gr,
         trials_per_candidate=10,
         failure_threshold=0.50,
-        true_trigger=gt.trigger_elements,
     )
     assert gr_comp.failure_reproduced is False
     assert gr_comp.minimality_status == StochasticMinimalityStatus.NOT_APPLICABLE
@@ -109,7 +109,6 @@ def test_null_target_false_discoveries():
         runner=runner_rnd,
         trials_per_candidate=10,
         failure_threshold=0.50,
-        true_trigger=gt.trigger_elements,
         seed=42,
     )
     assert rnd_comp.failure_reproduced is False
@@ -194,3 +193,149 @@ def test_bh_adjustment_on_scaling_results():
     # Monotonicity with raw
     for i in range(len(raw_p) - 1):
         assert adjusted[i] <= adjusted[i + 1]
+
+
+def test_no_ground_truth_leakage_in_baseline_search():
+    """Verify that baseline algorithms make search decisions purely via target queries without ground truth access."""
+    target, initial_input, gt = create_scaling_task("single_trigger", k=8, seed=42)
+    config = ExperimentConfig(experiment_name="test_no_leak", max_trials=500)
+
+    # Run greedy ablation without passing gt
+    target.reset(new_seed=42)
+    runner_g = InterventionRunner(config=config, target_fn=target.execute)
+    comp_g = run_stochastic_greedy_ablation(
+        initial_input=initial_input,
+        runner=runner_g,
+        trials_per_candidate=10,
+        failure_threshold=0.50,
+    )
+    # The algorithm must succeed on its own based purely on target outputs
+    assert comp_g.failure_reproduced is True
+    assert set(comp_g.discovered_elements) == set(gt.trigger_elements)
+
+
+def test_minimality_verification_on_coexisting_independent_triggers():
+    r"""Verify that 1-minimality check evaluates S \ {e} = empty set when |S| = 1.
+
+    In multiple_independent with two triggers t1 and t2, testing {t1} \ {t1} = {}
+    yields base noise P=0.05 < 0.50, correctly establishing statistically supported 1-minimality.
+    """
+    target, initial_input, gt = create_scaling_task("multiple_independent", k=6, seed=100)
+    config = ExperimentConfig(experiment_name="test_mi_verif", max_trials=500)
+
+    # 1. Delta Debugging
+    target.reset(new_seed=100)
+    runner_dd = InterventionRunner(config=config, target_fn=target.execute)
+    minimizer = StochasticDeltaDebugMinimizer(runner=runner_dd, trials_per_candidate=10, failure_threshold=0.50)
+    res_dd = minimizer.minimize(initial_input)
+
+    assert res_dd.is_failure is True
+    assert len(res_dd.subset_elements) == 1
+    # Both t1 and t2 are valid 1-minimal triggers
+    assert res_dd.subset_elements[0] in ("elem_t_indep_1", "elem_t_indep_2")
+    # Minimality verification must evaluate empty set, not initial_input.without(elem) which contains the other trigger!
+    # Because removing the singleton leaves empty set (P=0.05), minimality status must be STATISTICALLY_SUPPORTED
+    assert res_dd.minimality_status == StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
+
+
+def test_non_monotonic_unique_one_minimality_truth_table():
+    """Verify that under the non-monotonic rule, {A} is the sole 1-minimal trigger and {A, B, C} is not."""
+    target, initial_input, gt = create_scaling_task("non_monotonic", k=6, seed=42)
+    a, b, c = "elem_t_nm_trigger", "elem_t_nm_suppressor", "elem_t_nm_restorer"
+
+    # Truth table
+    # P({A}) = 0.90
+    assert target.execute(InputCase(case_id="1", elements=(a,))).metadata["underlying_probability"] == 0.90
+    # P({A, B}) = 0.10
+    assert target.execute(InputCase(case_id="2", elements=(a, b))).metadata["underlying_probability"] == 0.10
+    # P({A, B, C}) = 0.90
+    assert target.execute(InputCase(case_id="3", elements=(a, b, c))).metadata["underlying_probability"] == 0.90
+    # {A, B, C} \ {B} = {A, C} -> P({A, C}) = 0.90 (since A is present and B is absent)
+    assert target.execute(InputCase(case_id="4", elements=(a, c))).metadata["underlying_probability"] == 0.90
+
+    # Since removing B from {A, B, C} still produces failure (P=0.90 >= 0.50), {A, B, C} is NOT 1-minimal.
+    assert gt.alternative_valid_triggers == ()
+    assert gt.trigger_elements == (a,)
+
+
+def test_crn_reproducibility_and_candidate_level_matching():
+    """Verify Common Random Numbers produces identical outcomes for identical subsets regardless of evaluation order."""
+    def dummy_rule(elems: set[str]) -> float:
+        return 0.70 if "t" in elems else 0.20
+
+    t1 = StochasticSyntheticTarget(rule_fn=dummy_rule, target_seed=777, crn_mode=True)
+    t2 = StochasticSyntheticTarget(rule_fn=dummy_rule, target_seed=777, crn_mode=True)
+
+    # In t1, evaluate candidate A three times, then candidate B three times
+    case_a = InputCase(case_id="a", elements=("t", "d1"))
+    case_b = InputCase(case_id="b", elements=("d2",))
+
+    out_a_t1 = [t1.execute(case_a).outcome for _ in range(5)]
+    out_b_t1 = [t1.execute(case_b).outcome for _ in range(5)]
+
+    # In t2, evaluate candidate B first, then candidate A
+    out_b_t2 = [t2.execute(case_b).outcome for _ in range(5)]
+    out_a_t2 = [t2.execute(case_a).outcome for _ in range(5)]
+
+    assert out_a_t1 == out_a_t2
+    assert out_b_t1 == out_b_t2
+
+
+def test_event_log_schema_and_completeness(tmp_path: Path):
+    """Verify event logging emits valid JSONL records with all required fields."""
+    log_file = tmp_path / "test_event_log.jsonl"
+    suite = run_full_scaling_benchmark(
+        seeds_per_condition=1,
+        candidate_sizes=(4,),
+        target_families=("single_trigger",),
+        trials_per_candidate=5,
+        max_trials=100,
+        event_log_path=log_file,
+    )
+    assert log_file.exists()
+    lines = [json.loads(line) for line in log_file.read_text(encoding="utf-8").strip().split("\n")]
+    assert len(lines) > 0
+
+    required_fields = {
+        "benchmark_version",
+        "target_family",
+        "k",
+        "seed",
+        "algorithm",
+        "step_index",
+        "phase",
+        "candidate_elements",
+        "candidate_size",
+        "trials_requested",
+        "failures_observed",
+        "failure_rate",
+        "ci_lower",
+        "ci_upper",
+        "cumulative_target_calls",
+        "elapsed_ms",
+    }
+    for rec in lines:
+        assert required_fields.issubset(rec.keys())
+        assert rec["benchmark_version"] == "phase_2a1"
+        assert rec["phase"] in ("search", "minimality_verification")
+        assert rec["trials_requested"] > 0
+        assert 0.0 <= rec["failure_rate"] <= 1.0
+
+
+def test_separation_of_null_detection_from_non_null_recovery():
+    """Verify null targets and non-null targets are analyzed separately and not pooled."""
+    inst_null = run_scaling_instance(family="null_target", k=4, seed=100, trials_per_candidate=10)
+    inst_non_null = run_scaling_instance(family="single_trigger", k=4, seed=100, trials_per_candidate=10)
+
+    assert inst_null.is_null_case is True
+    assert inst_non_null.is_null_case is False
+
+    # On null target, delta debugging must reproduce NO failure and discover NO elements
+    assert inst_null.dd_result.failure_reproduced is False
+    assert len(inst_null.dd_result.discovered_elements) == 0
+    assert inst_null.dd_result.matches_ground_truth is True
+
+    # On non-null target, delta debugging recovers trigger
+    assert inst_non_null.dd_result.failure_reproduced is True
+    assert len(inst_non_null.dd_result.discovered_elements) == 1
+    assert inst_non_null.dd_result.matches_ground_truth is True

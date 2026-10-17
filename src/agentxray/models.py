@@ -64,19 +64,19 @@ class InputCase(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     case_id: str = Field(default_factory=lambda: str(uuid4()), description="Unique identifier for this input configuration.")
-    elements: tuple[str, ...] = Field(..., min_length=1, description="Ordered discrete elements forming the input.")
+    elements: tuple[str, ...] = Field(default=(), description="Ordered discrete elements forming the input.")
     description: str = Field(default="", description="Optional human-readable description.")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Metadata associated with this input.")
 
     @field_validator("elements", mode="before")
     @classmethod
     def validate_elements(cls, v: Any) -> tuple[str, ...]:
-        if not v:
-            raise ValueError("InputCase elements cannot be empty")
+        if v is None:
+            return ()
         if isinstance(v, (list, set, tuple)):
             clean = [str(elem).strip() for elem in v if str(elem).strip()]
             if not clean:
-                raise ValueError("InputCase must contain at least one non-empty string element")
+                return ()
             # Preserve order while checking for duplicates
             seen: set[str] = set()
             ordered: list[str] = []
@@ -91,8 +91,6 @@ class InputCase(BaseModel):
     def without(self, element: str) -> InputCase:
         """Return a new InputCase omitting the specified element."""
         new_elements = tuple(e for e in self.elements if e != element)
-        if not new_elements:
-            raise ValueError(f"Cannot remove {element!r}: would result in empty InputCase")
         return InputCase(
             case_id=str(uuid4()),
             elements=new_elements,
@@ -104,8 +102,6 @@ class InputCase(BaseModel):
         """Return a new InputCase retaining only elements present in kept."""
         kept_set = set(kept)
         new_elements = tuple(e for e in self.elements if e in kept_set)
-        if not new_elements:
-            raise ValueError("Subset must contain at least one element")
         return InputCase(
             case_id=str(uuid4()),
             elements=new_elements,
@@ -271,8 +267,8 @@ class StochasticBaselineComparison(BaseModel):
     verification_target_calls: int = Field(default=0, ge=0, description="Target calls spent in verification phase.")
     subsets_examined: int = Field(default=0, ge=0, description="Count of distinct candidate subsets evaluated.")
     candidate_evaluation: CandidateEvaluation = Field(..., description="Statistical evaluation of isolated candidate.")
-    irrelevant_elements_remaining: int = Field(..., ge=0, description="Count of non-causal distractor elements retained.")
-    matches_ground_truth: bool = Field(..., description="Exact match with planted trigger.")
+    irrelevant_elements_remaining: int = Field(default=0, ge=0, description="Count of non-causal distractor elements retained.")
+    matches_ground_truth: bool = Field(default=False, description="Exact match with planted trigger.")
     budget_exhausted: bool = Field(default=False, description="Whether search budget was exhausted.")
 
 

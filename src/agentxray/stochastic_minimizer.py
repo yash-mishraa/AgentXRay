@@ -68,13 +68,17 @@ def evaluate_candidate_stochastically(
     rate = failures / executed if executed > 0 else 0.0
     ci = wilson_score_interval(failures, executed, confidence=confidence)
 
-    return CandidateEvaluation(
+    eval_result = CandidateEvaluation(
         candidate_elements=input_case.elements,
         trials=executed,
         failures=failures,
         failure_rate=round(rate, 4),
         confidence_interval=ci,
     )
+    if hasattr(runner, "on_candidate_evaluated") and runner.on_candidate_evaluated is not None:
+        runner.on_candidate_evaluated(eval_result, intervention_type)
+
+    return eval_result
 
 
 def split_into_chunks(elements: tuple[str, ...], n: int) -> list[tuple[str, ...]]:
@@ -244,12 +248,8 @@ class StochasticDeltaDebugMinimizer:
                     break
 
                 for elem in current_candidate:
-                    if len(current_candidate) > 1:
-                        candidate_without_elem = tuple(e for e in current_candidate if e != elem)
-                        sub_case = initial_input.subset(candidate_without_elem)
-                    else:
-                        # Single-element candidate: evaluate input without this element as the ablation control
-                        sub_case = initial_input.without(elem)
+                    candidate_without_elem = tuple(e for e in current_candidate if e != elem)
+                    sub_case = initial_input.subset(candidate_without_elem)
 
                     eval_without = evaluate_candidate_stochastically(
                         runner=self.runner,

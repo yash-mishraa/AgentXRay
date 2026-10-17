@@ -10,6 +10,7 @@ simulate a real Large Language Model or API-backed agent system.
 
 from __future__ import annotations
 
+import hashlib
 import random
 import time
 from typing import Callable
@@ -31,23 +32,34 @@ class StochasticSyntheticTarget:
         rule_fn: StochasticRuleCallable,
         name: str = "StochasticSyntheticTarget",
         target_seed: int = 42,
+        crn_mode: bool = False,
     ) -> None:
         self.name = name
         self._rule_fn = rule_fn
         self._target_seed = target_seed
+        self._crn_mode = crn_mode
         self._rng = random.Random(target_seed)
         self._call_count = 0
+        self._subset_replicate_counts: dict[tuple[str, ...], int] = {}
 
     @property
     def call_count(self) -> int:
         """Total number of times execute() has been called."""
         return self._call_count
 
-    def reset(self, new_seed: int | None = None) -> None:
+    @property
+    def crn_mode(self) -> bool:
+        """Whether Common Random Numbers mode is enabled."""
+        return self._crn_mode
+
+    def reset(self, new_seed: int | None = None, crn_mode: bool | None = None) -> None:
         """Reset execution counter and reseed the internal PRNG."""
         self._call_count = 0
+        self._subset_replicate_counts.clear()
         if new_seed is not None:
             self._target_seed = new_seed
+        if crn_mode is not None:
+            self._crn_mode = crn_mode
         self._rng = random.Random(self._target_seed)
 
     def execute(self, input_case: InputCase) -> TargetResult:
@@ -66,14 +78,24 @@ class StochasticSyntheticTarget:
         start = time.perf_counter()
         self._call_count += 1
         elements_set = set(input_case.elements)
+        canonical_subset = tuple(sorted(input_case.elements))
 
         # Evaluate underlying failure probability P(failure | elements)
         failure_prob = self._rule_fn(elements_set)
         if not (0.0 <= failure_prob <= 1.0):
             raise ValueError(f"Rule function returned invalid probability: {failure_prob}")
 
-        # Independent Bernoulli trial: success if u < failure_prob
-        u = self._rng.random()
+        if self._crn_mode:
+            rep_idx = self._subset_replicate_counts.get(canonical_subset, 0)
+            self._subset_replicate_counts[canonical_subset] = rep_idx + 1
+            key = f"{self._target_seed}:{','.join(canonical_subset)}:{rep_idx}".encode("utf-8")
+            h = hashlib.sha256(key).digest()
+            int_val = int.from_bytes(h[:8], "big") >> 11
+            u = int_val / (1 << 53)
+        else:
+            rep_idx = self._call_count
+            u = self._rng.random()
+
         is_failure = u < failure_prob
 
         elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -95,5 +117,7 @@ class StochasticSyntheticTarget:
                 "target_name": self.name,
                 "element_count": len(input_case.elements),
                 "underlying_probability": failure_prob,
+                "replicate_index": rep_idx,
+                "crn_mode": self._crn_mode,
             },
         )

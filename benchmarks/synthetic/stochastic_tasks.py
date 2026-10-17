@@ -227,7 +227,7 @@ def create_stochastic_non_monotonic_task(
         trigger_elements=("feature_flag_a",),
         base_probability=p_base,
         trigger_probability=p_trigger,
-        alternative_valid_triggers=(("feature_flag_a", "suppressor_b", "restorer_c"),),
+        alternative_valid_triggers=(),
     )
     return (target, initial_input, ground_truth)
 
