@@ -1,0 +1,62 @@
+{
+  "protocol_version": "Phase_2B.1_v1.0",
+  "document_reference": "docs/research/phase_2b1_confirmatory_protocol_v1.md",
+  "created_at": "2026-10-17T05:00:00Z",
+  "status": "PREREGISTERED_FROZEN",
+  "execution_tier": "LOCAL_MODEL",
+  "target_model": "llama3.2:3b",
+  "target_provider": "ollama",
+  "commercial_spend_cap_usd": 0.0,
+  "instances_count": 16,
+  "active_instances_count": 12,
+  "null_instances_count": 4,
+  "candidate_space_sizes": [4, 8],
+  "task_families": [
+    "TOOL_ARG_SYNTAX",
+    "TOOL_ROUTING_CONFLICT",
+    "TOOL_PARAM_SCHEMA",
+    "NULL_CONTROL"
+  ],
+  "budget_rules": {
+    "max_requests_per_algorithm_k4": 120,
+    "max_requests_per_algorithm_k8": 180,
+    "trials_per_candidate": 5,
+    "calibration_trials_per_subset": 5,
+    "holdout_trials_per_algorithm": 5,
+    "max_total_request_budget": 6000
+  },
+  "stopping_rules": {
+    "active_task_qualification_min_trigger_failure_rate": 0.7,
+    "active_task_qualification_max_absent_failure_rate": 0.2,
+    "null_task_qualification_max_failure_rate": 0.1,
+    "hard_budget_breach_abort": true
+  },
+  "statistical_analysis_plan": {
+    "primary_endpoint": "target_model_requests_paired_difference",
+    "primary_test": "wilcoxon_signed_rank_paired",
+    "primary_estimand": "hodges_lehmann_median_difference",
+    "two_sided_alpha": 0.05,
+    "target_power": 0.8,
+    "non_inferiority_margin_minimality": 0.05,
+    "handling_censored_runs": "worst_rank_assignment",
+    "secondary_multiplicity_correction": "holm_bonferroni"
+  },
+  "instance_ids": [
+    "inst_01_syntax_currency_k4",
+    "inst_02_syntax_currency_k8",
+    "inst_03_syntax_comma_k4",
+    "inst_04_syntax_comma_k8",
+    "inst_05_routing_override_k4",
+    "inst_06_routing_override_k8",
+    "inst_07_routing_prohibition_k4",
+    "inst_08_routing_prohibition_k8",
+    "inst_09_schema_unit_k4",
+    "inst_10_schema_unit_k8",
+    "inst_11_schema_cross_unit_k4",
+    "inst_12_schema_cross_unit_k8",
+    "inst_13_null_calc_k4",
+    "inst_14_null_calc_k8",
+    "inst_15_null_db_k4",
+    "inst_16_null_db_k8"
+  ]
+}
