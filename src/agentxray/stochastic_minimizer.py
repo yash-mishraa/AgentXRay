@@ -25,6 +25,7 @@ from agentxray.runner import BudgetExhaustedError, InterventionRunner, TimeoutEx
 from agentxray.statistics import (
     adjust_p_values_bh,
     compare_proportions,
+    exact_binomial_test,
     wilson_score_interval,
 )
 
@@ -104,6 +105,7 @@ class StochasticDeltaDebugMinimizer:
         runner: InterventionRunner,
         trials_per_candidate: int = 20,
         failure_threshold: float = 0.30,
+        baseline_threshold: float | None = None,
         alpha: float = 0.05,
         confidence: float = 0.95,
         alternative: str = "two-sided",
@@ -111,6 +113,7 @@ class StochasticDeltaDebugMinimizer:
         self.runner = runner
         self.trials_per_candidate = trials_per_candidate
         self.failure_threshold = failure_threshold
+        self.baseline_threshold = baseline_threshold
         self.alpha = alpha
         self.confidence = confidence
         self.alternative = alternative
@@ -337,6 +340,30 @@ class StochasticDeltaDebugMinimizer:
                 f"Missing removal evaluations for elements: {missing_checks}",
             )
 
+        # Check for malformed or incomplete removal evaluations
+        if any(rem.trials == 0 for rem in removal_evals.values()):
+            return (
+                StochasticMinimalityStatus.INCONCLUSIVE,
+                "One or more removal evaluations contain zero completed trials.",
+            )
+
+        # Candidate itself must reproduce failure above threshold with CI lower bound > baseline_threshold
+        if (
+            current_eval.trials == 0
+            or current_eval.failure_rate < self.failure_threshold
+            or (self.baseline_threshold is not None and current_eval.confidence_interval[0] <= self.baseline_threshold)
+        ):
+            ci_msg = (
+                f" with CI lower bound > {self.baseline_threshold:.2f}"
+                if self.baseline_threshold is not None
+                else ""
+            )
+            return (
+                StochasticMinimalityStatus.INCONCLUSIVE,
+                f"Candidate failed to reproduce failure rate >= threshold {self.failure_threshold:.2f}{ci_msg} "
+                f"(observed: {current_eval.failure_rate:.2f}, trials: {current_eval.trials}).",
+            )
+
         # Check if removing any element still met the failure threshold
         still_failing = [
             elem for elem, rem in removal_evals.items()
@@ -352,7 +379,8 @@ class StochasticDeltaDebugMinimizer:
         p1_k = current_eval.failures
         p1_n = current_eval.trials
 
-        p_values: list[float] = []
+        p_values_comp: list[float] = []
+        p_values_thresh: list[float] = []
         observed_drops: list[bool] = []
         diff_summaries: list[str] = []
 
@@ -367,21 +395,36 @@ class StochasticDeltaDebugMinimizer:
                 confidence=self.confidence,
                 alternative=self.alternative,
             )
-            p_values.append(comp.p_value if self.alternative == "two-sided" else comp.p_value_one_sided)
+            # Claim B: Comparative reduction. Use exact Fisher p-value if available, otherwise asymptotic.
+            p_comp = comp.fisher_exact_p_value if comp.fisher_exact_p_value is not None else (
+                comp.p_value if self.alternative == "two-sided" else comp.p_value_one_sided
+            )
+            # Claim A: Exact one-sample binomial test H0: p >= failure_threshold vs H1: p < failure_threshold
+            p_thresh = exact_binomial_test(
+                k=rem_eval.failures,
+                n=rem_eval.trials,
+                p0=self.failure_threshold,
+                alternative="less",
+            )
+            p_values_comp.append(p_comp)
+            p_values_thresh.append(p_thresh)
             observed_drops.append(current_eval.failure_rate > rem_eval.failure_rate)
             diff_summaries.append(
-                f"without '{elem}': diff={comp.difference:+.2f} 95% CI [{comp.difference_ci[0]:.2f}, {comp.difference_ci[1]:.2f}], p={comp.p_value:.4f}"
+                f"without '{elem}': diff={comp.difference:+.2f} 95% CI [{comp.difference_ci[0]:.2f}, {comp.difference_ci[1]:.2f}], "
+                f"p_comp={p_comp:.4f}, p_thresh={p_thresh:.4f}"
             )
 
-        # Benjamini-Hochberg FDR correction across all removal tests
-        adjusted_p_values = adjust_p_values_bh(p_values)
-        all_statistically_significant = all(q < self.alpha for q in adjusted_p_values)
-        all_observed_drops = all(observed_drops)
+        # Intersection-Union Test (IUT) across all removal tests (Berger 1982)
+        # Rejection of composite comparative null H0: Union(p_j >= p_cand) at level alpha requires EVERY p_comp < alpha.
+        all_statistically_significant = all(p < self.alpha for p in p_values_comp) and len(p_values_comp) == len(current_candidate)
+        all_observed_drops = all(observed_drops) and len(observed_drops) == len(current_candidate)
+        all_thresh_supported = all(p < self.alpha for p in p_values_thresh) and len(p_values_thresh) == len(current_candidate)
 
         if all_statistically_significant:
             msg = (
                 f"1-Minimality statistically supported across all {len(current_candidate)} element removals "
-                f"(all BH-adjusted q-values < {self.alpha}; comparisons: {'; '.join(diff_summaries)})."
+                f"under Intersection-Union Test (comparative Fisher all p < {self.alpha}; threshold binomial all p < {self.alpha}: {all_thresh_supported}; "
+                f"comparisons: {'; '.join(diff_summaries)})."
             )
             return (StochasticMinimalityStatus.STATISTICALLY_SUPPORTED, msg)
 
@@ -389,7 +432,8 @@ class StochasticDeltaDebugMinimizer:
             msg = (
                 f"Observed 1-minimality: failure rate dropped upon every element removal, "
                 f"but one or more tests did not achieve statistical significance at alpha={self.alpha} "
-                f"(adjusted q-values: {[round(q, 4) for q in adjusted_p_values]}; comparisons: {'; '.join(diff_summaries)})."
+                f"(comparative p-values: {[round(p, 4) for p in p_values_comp]}, threshold p-values: {[round(p, 4) for p in p_values_thresh]}; "
+                f"comparisons: {'; '.join(diff_summaries)})."
             )
             return (StochasticMinimalityStatus.OBSERVED_ONLY, msg)
 

@@ -15,6 +15,7 @@ from agentxray.runner import BudgetExhaustedError, InterventionRunner, TimeoutEx
 from agentxray.statistics import (
     adjust_p_values_bh,
     compare_proportions,
+    exact_binomial_test,
 )
 from agentxray.stochastic_minimizer import evaluate_candidate_stochastically
 
@@ -24,6 +25,7 @@ def _classify_stochastic_minimality(
     cand_eval: CandidateEvaluation,
     removal_evals: dict[str, CandidateEvaluation],
     failure_threshold: float = 0.30,
+    baseline_threshold: float | None = None,
     alpha: float = 0.05,
     confidence: float = 0.95,
     alternative: str = "two-sided",
@@ -32,15 +34,29 @@ def _classify_stochastic_minimality(
     if not candidate:
         return StochasticMinimalityStatus.NOT_APPLICABLE
 
+    # Missing checks
     missing = set(candidate) - set(removal_evals.keys())
     if missing:
+        return StochasticMinimalityStatus.INCONCLUSIVE
+
+    # Malformed / zero trials removal checks
+    if any(rem.trials == 0 for rem in removal_evals.values()):
+        return StochasticMinimalityStatus.INCONCLUSIVE
+
+    # Candidate itself must reproduce failure above threshold with CI lower bound > baseline_threshold
+    if (
+        cand_eval.trials == 0
+        or cand_eval.failure_rate < failure_threshold
+        or (baseline_threshold is not None and cand_eval.confidence_interval[0] <= baseline_threshold)
+    ):
         return StochasticMinimalityStatus.INCONCLUSIVE
 
     # Check if removing any element still met the failure threshold
     if any(rem.failure_rate >= failure_threshold for rem in removal_evals.values()):
         return StochasticMinimalityStatus.NOT_MINIMAL
 
-    p_values: list[float] = []
+    p_values_comp: list[float] = []
+    p_values_thresh: list[float] = []
     observed_drops: list[bool] = []
 
     for elem in candidate:
@@ -54,13 +70,25 @@ def _classify_stochastic_minimality(
             confidence=confidence,
             alternative=alternative,
         )
-        p_values.append(comp.p_value if alternative == "two-sided" else comp.p_value_one_sided)
+        # Claim B: Comparative reduction using exact Fisher p-value
+        p_comp = comp.fisher_exact_p_value if comp.fisher_exact_p_value is not None else (
+            comp.p_value if alternative == "two-sided" else comp.p_value_one_sided
+        )
+        # Claim A: Threshold test against failure_threshold
+        p_thresh = exact_binomial_test(
+            k=rem_eval.failures,
+            n=rem_eval.trials,
+            p0=failure_threshold,
+            alternative="less",
+        )
+        p_values_comp.append(p_comp)
+        p_values_thresh.append(p_thresh)
         observed_drops.append(cand_eval.failure_rate > rem_eval.failure_rate)
 
-    adjusted = adjust_p_values_bh(p_values)
-    if all(q < alpha for q in adjusted):
+    # Intersection-Union Test (IUT) across all removal tests (Berger 1982)
+    if all(p < alpha for p in p_values_comp) and len(p_values_comp) == len(candidate):
         return StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
-    if all(observed_drops):
+    if all(observed_drops) and len(observed_drops) == len(candidate):
         return StochasticMinimalityStatus.OBSERVED_ONLY
     return StochasticMinimalityStatus.NOT_MINIMAL
 
@@ -70,6 +98,7 @@ def run_stochastic_greedy_ablation(
     runner: InterventionRunner,
     trials_per_candidate: int = 20,
     failure_threshold: float = 0.30,
+    baseline_threshold: float | None = None,
     alpha: float = 0.05,
     confidence: float = 0.95,
     alternative: str = "two-sided",
@@ -174,6 +203,7 @@ def run_stochastic_greedy_ablation(
             cand_eval=current_eval,
             removal_evals=removal_evals,
             failure_threshold=failure_threshold,
+            baseline_threshold=baseline_threshold,
             alpha=alpha,
             confidence=confidence,
             alternative=alternative,
@@ -224,6 +254,7 @@ def run_stochastic_random_search(
     runner: InterventionRunner,
     trials_per_candidate: int = 20,
     failure_threshold: float = 0.30,
+    baseline_threshold: float | None = None,
     alpha: float = 0.05,
     confidence: float = 0.95,
     alternative: str = "two-sided",
@@ -349,6 +380,7 @@ def run_stochastic_random_search(
                 cand_eval=best_eval,
                 removal_evals=removal_evals,
                 failure_threshold=failure_threshold,
+                baseline_threshold=baseline_threshold,
                 alpha=alpha,
                 confidence=confidence,
                 alternative=alternative,

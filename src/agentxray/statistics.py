@@ -204,6 +204,53 @@ def fisher_exact_test(
     return round(min(1.0, max(0.0, p_val)), 5)
 
 
+def exact_binomial_test(
+    k: int,
+    n: int,
+    p0: float = 0.50,
+    alternative: str = "less",
+) -> float:
+    """Perform exact binomial test for a single proportion using standard library math.comb.
+
+    Zero external dependencies.
+
+    Parameters
+    ----------
+    k : int
+        Observed number of successes/failures (0 <= k <= n).
+    n : int
+        Total number of trials (n > 0).
+    p0 : float
+        Hypothesized proportion under H0 (0.0 < p0 < 1.0), default 0.50.
+    alternative : str
+        'less' (H1: p < p0), 'greater' (H1: p > p0), or 'two-sided'.
+
+    Returns
+    -------
+    float
+        Exact p-value in [0.0, 1.0].
+    """
+    if n <= 0:
+        raise ValueError(f"n must be positive, got {n}")
+    if k < 0 or k > n:
+        raise ValueError(f"k must be in [0, n], got k={k}, n={n}")
+    if not (0.0 < p0 < 1.0):
+        raise ValueError(f"p0 must be in (0, 1), got {p0}")
+    if alternative not in ("less", "greater", "two-sided"):
+        raise ValueError(f"alternative must be 'less', 'greater', or 'two-sided', got {alternative!r}")
+
+    if alternative == "less":
+        p_val = sum(math.comb(n, x) * (p0 ** x) * ((1.0 - p0) ** (n - x)) for x in range(k + 1))
+    elif alternative == "greater":
+        p_val = sum(math.comb(n, x) * (p0 ** x) * ((1.0 - p0) ** (n - x)) for x in range(k, n + 1))
+    else:  # two-sided
+        obs_prob = math.comb(n, k) * (p0 ** k) * ((1.0 - p0) ** (n - k))
+        all_probs = [math.comb(n, x) * (p0 ** x) * ((1.0 - p0) ** (n - x)) for x in range(n + 1)]
+        p_val = sum(p for p in all_probs if p <= obs_prob * (1.0 + 1e-9))
+
+    return round(min(1.0, max(0.0, p_val)), 5)
+
+
 def compare_proportions(
     k1: int,
     n1: int,

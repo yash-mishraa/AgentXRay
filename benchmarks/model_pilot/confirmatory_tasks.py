@@ -15,7 +15,7 @@ Epistemic Integrity Guarantees:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Callable, Sequence
 
@@ -58,6 +58,7 @@ class ConfirmatoryTaskSpec:
     required_tool: str | None
     expected_substring: str | None
     expected_failure_classification: str
+    mechanism_id: str = ""
     leakage_protection: str = "Evaluator and minimizers have zero access to planted_trigger_elements."
 
     def create_initial_input(self) -> InputCase:
@@ -442,7 +443,45 @@ def _build_task_registry() -> dict[str, ConfirmatoryTaskSpec]:
         expected_failure_classification="CLEAN_PASS",
     )
 
+    for iid, spec in list(tasks.items()):
+        mech = _INSTANCE_TO_MECHANISM.get(iid, "")
+        tasks[iid] = replace(spec, mechanism_id=mech)
+
     return tasks
+
+
+_INSTANCE_TO_MECHANISM: dict[str, str] = {
+    "inst_01_syntax_currency_k4": "mech_01_syntax_currency",
+    "inst_02_syntax_currency_k8": "mech_01_syntax_currency",
+    "inst_03_syntax_comma_k4": "mech_02_syntax_comma",
+    "inst_04_syntax_comma_k8": "mech_02_syntax_comma",
+    "inst_05_routing_override_k4": "mech_03_routing_override",
+    "inst_06_routing_override_k8": "mech_03_routing_override",
+    "inst_07_routing_prohibition_k4": "mech_04_routing_prohibition",
+    "inst_08_routing_prohibition_k8": "mech_04_routing_prohibition",
+    "inst_09_schema_unit_k4": "mech_05_schema_unit",
+    "inst_10_schema_unit_k8": "mech_05_schema_unit",
+    "inst_11_schema_cross_unit_k4": "mech_06_schema_cross_unit",
+    "inst_12_schema_cross_unit_k8": "mech_06_schema_cross_unit",
+    "inst_13_null_calc_k4": "mech_null_01_calc",
+    "inst_14_null_calc_k8": "mech_null_01_calc",
+    "inst_15_null_db_k4": "mech_null_02_db",
+    "inst_16_null_db_k8": "mech_null_02_db",
+}
+
+MECHANISM_REGISTRY: tuple[str, ...] = (
+    "mech_01_syntax_currency",
+    "mech_02_syntax_comma",
+    "mech_03_routing_override",
+    "mech_04_routing_prohibition",
+    "mech_05_schema_unit",
+    "mech_06_schema_cross_unit",
+    "mech_null_01_calc",
+    "mech_null_02_db",
+)
+
+ACTIVE_MECHANISMS: tuple[str, ...] = MECHANISM_REGISTRY[:6]
+NULL_MECHANISMS: tuple[str, ...] = MECHANISM_REGISTRY[6:]
 
 
 CONFIRMATORY_TASK_REGISTRY: dict[str, ConfirmatoryTaskSpec] = _build_task_registry()
@@ -461,3 +500,11 @@ def get_confirmatory_task(instance_id: str) -> ConfirmatoryTaskSpec:
 def list_confirmatory_tasks() -> list[ConfirmatoryTaskSpec]:
     """Return all 16 registered confirmatory task specifications."""
     return list(CONFIRMATORY_TASK_REGISTRY.values())
+
+
+def get_tasks_by_mechanism() -> dict[str, list[ConfirmatoryTaskSpec]]:
+    """Return task specifications grouped by their stable mechanism_id."""
+    grouped: dict[str, list[ConfirmatoryTaskSpec]] = {}
+    for task in CONFIRMATORY_TASK_REGISTRY.values():
+        grouped.setdefault(task.mechanism_id, []).append(task)
+    return grouped

@@ -36,6 +36,7 @@ class SearchStatus(str, Enum):
     BUDGET_EXHAUSTED = "budget_exhausted"
     TIMEOUT = "timeout"
     ERROR = "error"
+    INFRA_FAILURE = "infra_failure"
 
 
 class ExperimentConfig(BaseModel):
@@ -219,6 +220,12 @@ class StochasticMinimalityStatus(str, Enum):
     INCONCLUSIVE = "inconclusive"
     NOT_MINIMAL = "not_minimal"
     NOT_APPLICABLE = "not_applicable"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    INFRA_FAILURE = "infra_failure"
+
+    # Nomenclature aliases matching Protocol v1.3 definitions
+    SUPPORTED_1_MINIMAL = "statistically_supported"
+    OBSERVED_1_MINIMAL = "observed_only"
 
 
 class CandidateEvaluation(BaseModel):
