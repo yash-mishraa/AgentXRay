@@ -1,0 +1,12 @@
+{
+  "protocol_version": "1.2",
+  "task_id": "pilot_calibrated_currency_v1_2",
+  "true_trigger_elements": [
+    "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+  ],
+  "trigger_cardinality": 1,
+  "is_null_case": false,
+  "expected_failure_classification": "FAIL_TOOL_EXEC",
+  "failure_mechanism": "Strict currency formatting in tool argument causes calculator AST syntax rejection.",
+  "leakage_protection": "Evaluator and Minimizers have no access to this ground-truth definition."
+}

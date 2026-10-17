@@ -1,0 +1,540 @@
+{
+  "milestone": "Phase 2B.0.2 Corrective Local-Model Pilot Calibration Recovery",
+  "protocol_version": "1.2",
+  "timestamp": "2026-10-17T04:51:29.088265+00:00",
+  "execution_tier": "local_model",
+  "provider_type": "ollama",
+  "model_name": "llama3.2:3b",
+  "final_decision": "CONFIRMATORY_READY",
+  "total_wall_clock_seconds": 202.208,
+  "runtime_metadata": {
+    "protocol_version": "1.2",
+    "provider_type": "ollama",
+    "model_name": "llama3.2:3b",
+    "execution_tier": "local_model",
+    "timestamp": "2026-10-17T04:48:06.881141+00:00",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "processor": "arm",
+    "python_version": "3.13.16",
+    "commercial_api_spend_usd": 0.0,
+    "daemon_reachable": true,
+    "base_url": "http://127.0.0.1:11434",
+    "digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "model_size_bytes": 2019393189,
+    "modified_at": "2026-10-16T23:16:43.47392251+05:30",
+    "format": "gguf",
+    "family": "llama",
+    "parameter_size": "3.2B",
+    "quantization_level": "Q4_K_M",
+    "context_length": 131072
+  },
+  "exhaustive_characterization": {
+    "trigger_status": "TRIGGER_CONFIRMED",
+    "power_set_size": 16,
+    "subsets_evaluated": 16,
+    "min_trigger_present_failure_rate": 1.0,
+    "max_trigger_absent_failure_rate": 0.0,
+    "qualification_criteria_met": true,
+    "subsets": [
+      {
+        "subset_index": 1,
+        "case_id": "char_subset_01_len0",
+        "cardinality": 0,
+        "element_ids": [],
+        "contains_trigger": false,
+        "elements": [],
+        "trials": 5,
+        "failures": 0,
+        "successes": 5,
+        "failure_rate": 0.0,
+        "wilson_ci": [
+          0.0,
+          0.4345
+        ],
+        "is_failing": false
+      },
+      {
+        "subset_index": 2,
+        "case_id": "char_subset_02_len1",
+        "cardinality": 1,
+        "element_ids": [
+          "elem_1"
+        ],
+        "contains_trigger": true,
+        "elements": [
+          "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+        ],
+        "trials": 5,
+        "failures": 5,
+        "successes": 0,
+        "failure_rate": 1.0,
+        "wilson_ci": [
+          0.5655,
+          1.0
+        ],
+        "is_failing": true
+      },
+      {
+        "subset_index": 3,
+        "case_id": "char_subset_03_len1",
+        "cardinality": 1,
+        "element_ids": [
+          "elem_2"
+        ],
+        "contains_trigger": false,
+        "elements": [
+          "expense_category: specify expense category as Travel & Subsistence"
+        ],
+        "trials": 5,
+        "failures": 0,
+        "successes": 5,
+        "failure_rate": 0.0,
+        "wilson_ci": [
+          0.0,
+          0.4345
+        ],
+        "is_failing": false
+      },
+      {
+        "subset_index": 4,
+        "case_id": "char_subset_04_len1",
+        "cardinality": 1,
+        "element_ids": [
+          "elem_3"
+        ],
+        "contains_trigger": false,
+        "elements": [
+          "compliance_tag: include audit reference code REF-2026"
+        ],
+        "trials": 5,
+        "failures": 0,
+        "successes": 5,
+        "failure_rate": 0.0,
+        "wilson_ci": [
+          0.0,
+          0.4345
+        ],
+        "is_failing": false
+      },
+      {
+        "subset_index": 5,
+        "case_id": "char_subset_05_len1",
+        "cardinality": 1,
+        "element_ids": [
+          "elem_4"
+        ],
+        "contains_trigger": false,
+        "elements": [
+          "audit_memo: include verification timestamp in final audit notes"
+        ],
+        "trials": 5,
+        "failures": 0,
+        "successes": 5,
+        "failure_rate": 0.0,
+        "wilson_ci": [
+          0.0,
+          0.4345
+        ],
+        "is_failing": false
+      },
+      {
+        "subset_index": 6,
+        "case_id": "char_subset_06_len2",
+        "cardinality": 2,
+        "element_ids": [
+          "elem_1",
+          "elem_2"
+        ],
+        "contains_trigger": true,
+        "elements": [
+          "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")",
+          "expense_category: specify expense category as Travel & Subsistence"
+        ],
+        "trials": 5,
+        "failures": 5,
+        "successes": 0,
+        "failure_rate": 1.0,
+        "wilson_ci": [
+          0.5655,
+          1.0
+        ],
+        "is_failing": true
+      },
+      {
+        "subset_index": 7,
+        "case_id": "char_subset_07_len2",
+        "cardinality": 2,
+        "element_ids": [
+          "elem_1",
+          "elem_3"
+        ],
+        "contains_trigger": true,
+        "elements": [
+          "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")",
+          "compliance_tag: include audit reference code REF-2026"
+        ],
+        "trials": 5,
+        "failures": 5,
+        "successes": 0,
+        "failure_rate": 1.0,
+        "wilson_ci": [
+          0.5655,
+          1.0
+        ],
+        "is_failing": true
+      },
+      {
+        "subset_index": 8,
+        "case_id": "char_subset_08_len2",
+        "cardinality": 2,
+        "element_ids": [
+          "elem_1",
+          "elem_4"
+        ],
+        "contains_trigger": true,
+        "elements": [
+          "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")",
+          "audit_memo: include verification timestamp in final audit notes"
+        ],
+        "trials": 5,
+        "failures": 5,
+        "successes": 0,
+        "failure_rate": 1.0,
+        "wilson_ci": [
+          0.5655,
+          1.0
+        ],
+        "is_failing": true
+      },
+      {
+        "subset_index": 9,
+        "case_id": "char_subset_09_len2",
+        "cardinality": 2,
+        "element_ids": [
+          "elem_2",
+          "elem_3"
+        ],
+        "contains_trigger": false,
+        "elements": [
+          "expense_category: specify expense category as Travel & Subsistence",
+          "compliance_tag: include audit reference code REF-2026"
+        ],
+        "trials": 5,
+        "failures": 0,
+        "successes": 5,
+        "failure_rate": 0.0,
+        "wilson_ci": [
+          0.0,
+          0.4345
+        ],
+        "is_failing": false
+      },
+      {
+        "subset_index": 10,
+        "case_id": "char_subset_10_len2",
+        "cardinality": 2,
+        "element_ids": [
+          "elem_2",
+          "elem_4"
+        ],
+        "contains_trigger": false,
+        "elements": [
+          "expense_category: specify expense category as Travel & Subsistence",
+          "audit_memo: include verification timestamp in final audit notes"
+        ],
+        "trials": 5,
+        "failures": 0,
+        "successes": 5,
+        "failure_rate": 0.0,
+        "wilson_ci": [
+          0.0,
+          0.4345
+        ],
+        "is_failing": false
+      },
+      {
+        "subset_index": 11,
+        "case_id": "char_subset_11_len2",
+        "cardinality": 2,
+        "element_ids": [
+          "elem_3",
+          "elem_4"
+        ],
+        "contains_trigger": false,
+        "elements": [
+          "compliance_tag: include audit reference code REF-2026",
+          "audit_memo: include verification timestamp in final audit notes"
+        ],
+        "trials": 5,
+        "failures": 0,
+        "successes": 5,
+        "failure_rate": 0.0,
+        "wilson_ci": [
+          0.0,
+          0.4345
+        ],
+        "is_failing": false
+      },
+      {
+        "subset_index": 12,
+        "case_id": "char_subset_12_len3",
+        "cardinality": 3,
+        "element_ids": [
+          "elem_1",
+          "elem_2",
+          "elem_3"
+        ],
+        "contains_trigger": true,
+        "elements": [
+          "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")",
+          "expense_category: specify expense category as Travel & Subsistence",
+          "compliance_tag: include audit reference code REF-2026"
+        ],
+        "trials": 5,
+        "failures": 5,
+        "successes": 0,
+        "failure_rate": 1.0,
+        "wilson_ci": [
+          0.5655,
+          1.0
+        ],
+        "is_failing": true
+      },
+      {
+        "subset_index": 13,
+        "case_id": "char_subset_13_len3",
+        "cardinality": 3,
+        "element_ids": [
+          "elem_1",
+          "elem_2",
+          "elem_4"
+        ],
+        "contains_trigger": true,
+        "elements": [
+          "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")",
+          "expense_category: specify expense category as Travel & Subsistence",
+          "audit_memo: include verification timestamp in final audit notes"
+        ],
+        "trials": 5,
+        "failures": 5,
+        "successes": 0,
+        "failure_rate": 1.0,
+        "wilson_ci": [
+          0.5655,
+          1.0
+        ],
+        "is_failing": true
+      },
+      {
+        "subset_index": 14,
+        "case_id": "char_subset_14_len3",
+        "cardinality": 3,
+        "element_ids": [
+          "elem_1",
+          "elem_3",
+          "elem_4"
+        ],
+        "contains_trigger": true,
+        "elements": [
+          "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")",
+          "compliance_tag: include audit reference code REF-2026",
+          "audit_memo: include verification timestamp in final audit notes"
+        ],
+        "trials": 5,
+        "failures": 5,
+        "successes": 0,
+        "failure_rate": 1.0,
+        "wilson_ci": [
+          0.5655,
+          1.0
+        ],
+        "is_failing": true
+      },
+      {
+        "subset_index": 15,
+        "case_id": "char_subset_15_len3",
+        "cardinality": 3,
+        "element_ids": [
+          "elem_2",
+          "elem_3",
+          "elem_4"
+        ],
+        "contains_trigger": false,
+        "elements": [
+          "expense_category: specify expense category as Travel & Subsistence",
+          "compliance_tag: include audit reference code REF-2026",
+          "audit_memo: include verification timestamp in final audit notes"
+        ],
+        "trials": 5,
+        "failures": 0,
+        "successes": 5,
+        "failure_rate": 0.0,
+        "wilson_ci": [
+          0.0,
+          0.4345
+        ],
+        "is_failing": false
+      },
+      {
+        "subset_index": 16,
+        "case_id": "char_subset_16_len4",
+        "cardinality": 4,
+        "element_ids": [
+          "elem_1",
+          "elem_2",
+          "elem_3",
+          "elem_4"
+        ],
+        "contains_trigger": true,
+        "elements": [
+          "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")",
+          "expense_category: specify expense category as Travel & Subsistence",
+          "compliance_tag: include audit reference code REF-2026",
+          "audit_memo: include verification timestamp in final audit notes"
+        ],
+        "trials": 5,
+        "failures": 5,
+        "successes": 0,
+        "failure_rate": 1.0,
+        "wilson_ci": [
+          0.5655,
+          1.0
+        ],
+        "is_failing": true
+      }
+    ],
+    "total_characterization_requests": 160
+  },
+  "minimization_algorithms": {
+    "delta_debugging": {
+      "algorithm": "stochastic_delta_debugging",
+      "model_requests": 40,
+      "agent_executions": 20,
+      "wall_clock_seconds": 21.981,
+      "discovered_elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "discovered_element_ids": [
+        "elem_1"
+      ],
+      "minimality_status": "statistically_supported",
+      "subsets_evaluated": 4,
+      "matches_ground_truth": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "excess_elements": [],
+      "excess_element_ids": [],
+      "missing_elements": [],
+      "missing_element_ids": []
+    },
+    "greedy_ablation": {
+      "algorithm": "stochastic_greedy_ablation",
+      "model_requests": 60,
+      "agent_executions": 30,
+      "wall_clock_seconds": 37.977,
+      "discovered_elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "discovered_element_ids": [
+        "elem_1"
+      ],
+      "minimality_status": "statistically_supported",
+      "subsets_evaluated": 6,
+      "matches_ground_truth": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "excess_elements": [],
+      "excess_element_ids": [],
+      "missing_elements": [],
+      "missing_element_ids": []
+    },
+    "random_search": {
+      "algorithm": "stochastic_random_search",
+      "model_requests": 50,
+      "agent_executions": 25,
+      "wall_clock_seconds": 35.344,
+      "discovered_elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "discovered_element_ids": [
+        "elem_1"
+      ],
+      "minimality_status": "statistically_supported",
+      "subsets_evaluated": 5,
+      "matches_ground_truth": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "excess_elements": [],
+      "excess_element_ids": [],
+      "missing_elements": [],
+      "missing_element_ids": []
+    },
+    "paired_comparison": {
+      "dd_requests": 40,
+      "greedy_requests": 60,
+      "difference_dd_minus_greedy": -20,
+      "dd_efficiency_advantage": true
+    }
+  },
+  "holdout_confirmation": {
+    "delta_debugging": {
+      "algorithm": "delta_debugging",
+      "case_id": "holdout_delta_debugging",
+      "elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "element_ids": [
+        "elem_1"
+      ],
+      "trials": 5,
+      "failures": 5,
+      "successes": 0,
+      "failure_rate": 1.0,
+      "wilson_ci": [
+        0.5655,
+        1.0
+      ],
+      "is_failing": true
+    },
+    "greedy_ablation": {
+      "algorithm": "greedy_ablation",
+      "case_id": "holdout_greedy_ablation",
+      "elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "element_ids": [
+        "elem_1"
+      ],
+      "trials": 5,
+      "failures": 5,
+      "successes": 0,
+      "failure_rate": 1.0,
+      "wilson_ci": [
+        0.5655,
+        1.0
+      ],
+      "is_failing": true
+    },
+    "random_search": {
+      "algorithm": "random_search",
+      "case_id": "holdout_random_search",
+      "elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "element_ids": [
+        "elem_1"
+      ],
+      "trials": 5,
+      "failures": 5,
+      "successes": 0,
+      "failure_rate": 1.0,
+      "wilson_ci": [
+        0.5655,
+        1.0
+      ],
+      "is_failing": true
+    }
+  },
+  "reproducible_command": "./.venv/bin/python -m benchmarks.model_pilot.calibration_runner_v1_2 --provider ollama --model llama3.2:3b"
+}
