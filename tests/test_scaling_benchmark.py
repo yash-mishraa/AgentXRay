@@ -121,22 +121,23 @@ def test_non_monotonic_target_handling():
     target, initial_input, gt = create_scaling_task("non_monotonic", k=6, seed=777)
     a, b, c = "elem_t_nm_trigger", "elem_t_nm_suppressor", "elem_t_nm_restorer"
 
-    # Rule checks
+    # Rule checks via target's internal rule function
     # 1. Trigger alone: P=0.90
-    res_a = target.execute(InputCase(case_id="1", elements=(a,)))
-    assert res_a.metadata["underlying_probability"] == 0.90
+    assert target._rule_fn({a}) == 0.90
 
     # 2. Trigger + Suppressor: P=0.10 (suppressed)
-    res_ab = target.execute(InputCase(case_id="2", elements=(a, b)))
-    assert res_ab.metadata["underlying_probability"] == 0.10
+    assert target._rule_fn({a, b}) == 0.10
 
     # 3. Trigger + Suppressor + Restorer: P=0.90 (restored)
-    res_abc = target.execute(InputCase(case_id="3", elements=(a, b, c)))
-    assert res_abc.metadata["underlying_probability"] == 0.90
+    assert target._rule_fn({a, b, c}) == 0.90
 
     # 4. Suppressor alone: P=0.05 (base)
-    res_b = target.execute(InputCase(case_id="4", elements=(b,)))
-    assert res_b.metadata["underlying_probability"] == 0.05
+    assert target._rule_fn({b}) == 0.05
+
+    # Verify black-box execute() does not expose underlying_probability or P= in message
+    res_a = target.execute(InputCase(case_id="1", elements=(a,)))
+    assert "underlying_probability" not in res_a.metadata
+    assert "P=" not in res_a.output_message
 
 
 def test_equal_budget_enforcement_and_accounting():
@@ -243,15 +244,15 @@ def test_non_monotonic_unique_one_minimality_truth_table():
     target, initial_input, gt = create_scaling_task("non_monotonic", k=6, seed=42)
     a, b, c = "elem_t_nm_trigger", "elem_t_nm_suppressor", "elem_t_nm_restorer"
 
-    # Truth table
+    # Truth table evaluated via target's internal rule function
     # P({A}) = 0.90
-    assert target.execute(InputCase(case_id="1", elements=(a,))).metadata["underlying_probability"] == 0.90
+    assert target._rule_fn({a}) == 0.90
     # P({A, B}) = 0.10
-    assert target.execute(InputCase(case_id="2", elements=(a, b))).metadata["underlying_probability"] == 0.10
+    assert target._rule_fn({a, b}) == 0.10
     # P({A, B, C}) = 0.90
-    assert target.execute(InputCase(case_id="3", elements=(a, b, c))).metadata["underlying_probability"] == 0.90
+    assert target._rule_fn({a, b, c}) == 0.90
     # {A, B, C} \ {B} = {A, C} -> P({A, C}) = 0.90 (since A is present and B is absent)
-    assert target.execute(InputCase(case_id="4", elements=(a, c))).metadata["underlying_probability"] == 0.90
+    assert target._rule_fn({a, c}) == 0.90
 
     # Since removing B from {A, B, C} still produces failure (P=0.90 >= 0.50), {A, B, C} is NOT 1-minimal.
     assert gt.alternative_valid_triggers == ()

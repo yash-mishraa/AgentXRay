@@ -102,9 +102,9 @@ class StochasticSyntheticTarget:
         outcome = TargetOutcome.FAILURE if is_failure else TargetOutcome.SUCCESS
 
         msg = (
-            f"Stochastic execution failed (P={failure_prob:.2f})"
+            "Stochastic execution failed"
             if is_failure
-            else f"Stochastic execution succeeded (P={failure_prob:.2f})"
+            else "Stochastic execution succeeded"
         )
         err = "ERR_STOCHASTIC_FAILURE" if is_failure else None
 
@@ -116,7 +116,6 @@ class StochasticSyntheticTarget:
             metadata={
                 "target_name": self.name,
                 "element_count": len(input_case.elements),
-                "underlying_probability": failure_prob,
                 "replicate_index": rep_idx,
                 "crn_mode": self._crn_mode,
             },
