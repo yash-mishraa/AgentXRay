@@ -1,0 +1,17 @@
+{
+  "experiment_id": "phase_2b1_exploratory_benchmark_v1_4",
+  "protocol_reference": "docs/research/phase_2b1_exploratory_protocol_v1_4.md",
+  "protocol_sha256": "db45f4032f2340a9edc3441bafcb3957895b616d1289c28e85a5cc4671574f62",
+  "config_reference": "benchmarks/configs/phase_2b1_exploratory_config_v1_4.json",
+  "config_sha256": "b3e3b0b8450e325914ea8229faafce90a833eb038b02903bfa48062e8ee0cfb2",
+  "git_head": "62579fba4f4eab47b33e76d4b08454a53aeebb11",
+  "start_time": "2026-10-17T06:25:17.198308+00:00",
+  "end_time": "2026-10-17T06:59:19.839320+00:00",
+  "provider": "ollama",
+  "model": "llama3.2:3b",
+  "python_version": "3.13.16",
+  "os_platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "system_hardware": "arm64",
+  "global_requests_used": 2176,
+  "commercial_spend_usd": 0.0
+}

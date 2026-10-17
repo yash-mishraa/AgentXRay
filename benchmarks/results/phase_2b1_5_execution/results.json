@@ -1,0 +1,1168 @@
+{
+  "manifest": {
+    "experiment_id": "phase_2b1_exploratory_benchmark_v1_4",
+    "protocol_reference": "docs/research/phase_2b1_exploratory_protocol_v1_4.md",
+    "protocol_sha256": "db45f4032f2340a9edc3441bafcb3957895b616d1289c28e85a5cc4671574f62",
+    "config_reference": "benchmarks/configs/phase_2b1_exploratory_config_v1_4.json",
+    "config_sha256": "b3e3b0b8450e325914ea8229faafce90a833eb038b02903bfa48062e8ee0cfb2",
+    "git_head": "62579fba4f4eab47b33e76d4b08454a53aeebb11",
+    "start_time": "2026-10-17T06:25:17.198308+00:00",
+    "end_time": "2026-10-17T06:59:19.839320+00:00",
+    "provider": "ollama",
+    "model": "llama3.2:3b",
+    "python_version": "3.13.16",
+    "os_platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "system_hardware": "arm64",
+    "global_requests_used": 2176,
+    "commercial_spend_usd": 0.0
+  },
+  "preflight": {
+    "git_head": "62579fba4f4eab47b33e76d4b08454a53aeebb11",
+    "protocol_sha256": "db45f4032f2340a9edc3441bafcb3957895b616d1289c28e85a5cc4671574f62",
+    "config_sha256": "b3e3b0b8450e325914ea8229faafce90a833eb038b02903bfa48062e8ee0cfb2",
+    "validator_checks_passed": 35
+  },
+  "calibration": {
+    "inst_01_syntax_currency_k4": {
+      "task_id": "inst_01_syntax_currency_k4",
+      "mechanism_id": "mech_01_syntax_currency",
+      "k": 4,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 5,
+      "trigger_rate": 1.0,
+      "trigger_ci": [
+        0.5655,
+        1.0
+      ],
+      "trigger_qualified": true,
+      "control_trials": 5,
+      "control_failures": 0,
+      "control_rate": 0.0,
+      "control_ci": [
+        0.0,
+        0.4345
+      ],
+      "control_qualified": true,
+      "qualification_status": "QUALIFIED",
+      "disqualification_reason": null
+    },
+    "inst_02_syntax_currency_k8": {
+      "task_id": "inst_02_syntax_currency_k8",
+      "mechanism_id": "mech_01_syntax_currency",
+      "k": 8,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 5,
+      "trigger_rate": 1.0,
+      "trigger_ci": [
+        0.5655,
+        1.0
+      ],
+      "trigger_qualified": true,
+      "control_trials": 5,
+      "control_failures": 0,
+      "control_rate": 0.0,
+      "control_ci": [
+        0.0,
+        0.4345
+      ],
+      "control_qualified": true,
+      "qualification_status": "QUALIFIED",
+      "disqualification_reason": null
+    },
+    "inst_03_syntax_comma_k4": {
+      "task_id": "inst_03_syntax_comma_k4",
+      "mechanism_id": "mech_02_syntax_comma",
+      "k": 4,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 5,
+      "trigger_rate": 1.0,
+      "trigger_ci": [
+        0.5655,
+        1.0
+      ],
+      "trigger_qualified": true,
+      "control_trials": 5,
+      "control_failures": 0,
+      "control_rate": 0.0,
+      "control_ci": [
+        0.0,
+        0.4345
+      ],
+      "control_qualified": true,
+      "qualification_status": "QUALIFIED",
+      "disqualification_reason": null
+    },
+    "inst_04_syntax_comma_k8": {
+      "task_id": "inst_04_syntax_comma_k8",
+      "mechanism_id": "mech_02_syntax_comma",
+      "k": 8,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 5,
+      "trigger_rate": 1.0,
+      "trigger_ci": [
+        0.5655,
+        1.0
+      ],
+      "trigger_qualified": true,
+      "control_trials": 5,
+      "control_failures": 0,
+      "control_rate": 0.0,
+      "control_ci": [
+        0.0,
+        0.4345
+      ],
+      "control_qualified": true,
+      "qualification_status": "QUALIFIED",
+      "disqualification_reason": null
+    },
+    "inst_05_routing_override_k4": {
+      "task_id": "inst_05_routing_override_k4",
+      "mechanism_id": "mech_03_routing_override",
+      "k": 4,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 5,
+      "trigger_rate": 1.0,
+      "trigger_ci": [
+        0.5655,
+        1.0
+      ],
+      "trigger_qualified": true,
+      "control_trials": 5,
+      "control_failures": 5,
+      "control_rate": 1.0,
+      "control_ci": [
+        0.5655,
+        1.0
+      ],
+      "control_qualified": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "disqualification_reason": "Control failure rate excessive"
+    },
+    "inst_06_routing_override_k8": {
+      "task_id": "inst_06_routing_override_k8",
+      "mechanism_id": "mech_03_routing_override",
+      "k": 8,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 5,
+      "trigger_rate": 1.0,
+      "trigger_ci": [
+        0.5655,
+        1.0
+      ],
+      "trigger_qualified": true,
+      "control_trials": 5,
+      "control_failures": 5,
+      "control_rate": 1.0,
+      "control_ci": [
+        0.5655,
+        1.0
+      ],
+      "control_qualified": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "disqualification_reason": "Control failure rate excessive"
+    },
+    "inst_07_routing_prohibition_k4": {
+      "task_id": "inst_07_routing_prohibition_k4",
+      "mechanism_id": "mech_04_routing_prohibition",
+      "k": 4,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 0,
+      "trigger_rate": 0.0,
+      "trigger_ci": [
+        0.0,
+        0.4345
+      ],
+      "trigger_qualified": false,
+      "control_trials": 5,
+      "control_failures": 0,
+      "control_rate": 0.0,
+      "control_ci": [
+        0.0,
+        0.4345
+      ],
+      "control_qualified": true,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "disqualification_reason": "Trigger failure rate insufficient"
+    },
+    "inst_08_routing_prohibition_k8": {
+      "task_id": "inst_08_routing_prohibition_k8",
+      "mechanism_id": "mech_04_routing_prohibition",
+      "k": 8,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 0,
+      "trigger_rate": 0.0,
+      "trigger_ci": [
+        0.0,
+        0.4345
+      ],
+      "trigger_qualified": false,
+      "control_trials": 5,
+      "control_failures": 0,
+      "control_rate": 0.0,
+      "control_ci": [
+        0.0,
+        0.4345
+      ],
+      "control_qualified": true,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "disqualification_reason": "Trigger failure rate insufficient"
+    },
+    "inst_09_schema_unit_k4": {
+      "task_id": "inst_09_schema_unit_k4",
+      "mechanism_id": "mech_05_schema_unit",
+      "k": 4,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 5,
+      "trigger_rate": 1.0,
+      "trigger_ci": [
+        0.5655,
+        1.0
+      ],
+      "trigger_qualified": true,
+      "control_trials": 5,
+      "control_failures": 0,
+      "control_rate": 0.0,
+      "control_ci": [
+        0.0,
+        0.4345
+      ],
+      "control_qualified": true,
+      "qualification_status": "QUALIFIED",
+      "disqualification_reason": null
+    },
+    "inst_10_schema_unit_k8": {
+      "task_id": "inst_10_schema_unit_k8",
+      "mechanism_id": "mech_05_schema_unit",
+      "k": 8,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 0,
+      "trigger_rate": 0.0,
+      "trigger_ci": [
+        0.0,
+        0.4345
+      ],
+      "trigger_qualified": false,
+      "control_trials": 5,
+      "control_failures": 0,
+      "control_rate": 0.0,
+      "control_ci": [
+        0.0,
+        0.4345
+      ],
+      "control_qualified": true,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "disqualification_reason": "Trigger failure rate insufficient"
+    },
+    "inst_11_schema_cross_unit_k4": {
+      "task_id": "inst_11_schema_cross_unit_k4",
+      "mechanism_id": "mech_06_schema_cross_unit",
+      "k": 4,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 5,
+      "trigger_rate": 1.0,
+      "trigger_ci": [
+        0.5655,
+        1.0
+      ],
+      "trigger_qualified": true,
+      "control_trials": 5,
+      "control_failures": 5,
+      "control_rate": 1.0,
+      "control_ci": [
+        0.5655,
+        1.0
+      ],
+      "control_qualified": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "disqualification_reason": "Control failure rate excessive"
+    },
+    "inst_12_schema_cross_unit_k8": {
+      "task_id": "inst_12_schema_cross_unit_k8",
+      "mechanism_id": "mech_06_schema_cross_unit",
+      "k": 8,
+      "is_null_case": false,
+      "trigger_trials": 5,
+      "trigger_failures": 5,
+      "trigger_rate": 1.0,
+      "trigger_ci": [
+        0.5655,
+        1.0
+      ],
+      "trigger_qualified": true,
+      "control_trials": 5,
+      "control_failures": 5,
+      "control_rate": 1.0,
+      "control_ci": [
+        0.5655,
+        1.0
+      ],
+      "control_qualified": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "disqualification_reason": "Control failure rate excessive"
+    },
+    "inst_13_null_calc_k4": {
+      "task_id": "inst_13_null_calc_k4",
+      "mechanism_id": "mech_null_01_calc",
+      "k": 4,
+      "is_null_case": true,
+      "clean_trials": 5,
+      "clean_failures": 0,
+      "clean_rate": 0.0,
+      "clean_ci": [
+        0.0,
+        0.4345
+      ],
+      "qualification_status": "QUALIFIED",
+      "disqualification_reason": null
+    },
+    "inst_14_null_calc_k8": {
+      "task_id": "inst_14_null_calc_k8",
+      "mechanism_id": "mech_null_01_calc",
+      "k": 8,
+      "is_null_case": true,
+      "clean_trials": 5,
+      "clean_failures": 0,
+      "clean_rate": 0.0,
+      "clean_ci": [
+        0.0,
+        0.4345
+      ],
+      "qualification_status": "QUALIFIED",
+      "disqualification_reason": null
+    },
+    "inst_15_null_db_k4": {
+      "task_id": "inst_15_null_db_k4",
+      "mechanism_id": "mech_null_02_db",
+      "k": 4,
+      "is_null_case": true,
+      "clean_trials": 5,
+      "clean_failures": 0,
+      "clean_rate": 0.0,
+      "clean_ci": [
+        0.0,
+        0.4345
+      ],
+      "qualification_status": "QUALIFIED",
+      "disqualification_reason": null
+    },
+    "inst_16_null_db_k8": {
+      "task_id": "inst_16_null_db_k8",
+      "mechanism_id": "mech_null_02_db",
+      "k": 8,
+      "is_null_case": true,
+      "clean_trials": 5,
+      "clean_failures": 0,
+      "clean_rate": 0.0,
+      "clean_ci": [
+        0.0,
+        0.4345
+      ],
+      "qualification_status": "QUALIFIED",
+      "disqualification_reason": null
+    }
+  },
+  "search": {
+    "inst_01_syntax_currency_k4": {
+      "task_id": "inst_01_syntax_currency_k4",
+      "mechanism_id": "mech_01_syntax_currency",
+      "k": 4,
+      "is_null_case": false,
+      "qualification_status": "QUALIFIED",
+      "algorithms": {
+        "stochastic_delta_debugging": {
+          "algorithm": "stochastic_delta_debugging",
+          "status": "complete",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+          ],
+          "target_calls_used": 20,
+          "search_target_calls": 15,
+          "verification_target_calls": 5,
+          "model_requests_used": 40,
+          "cap_utilized_pct": 33.3,
+          "status_message": "1-Minimality statistically supported across all 1 element removals under Intersection-Union Test (comparative Fisher all p < 0.05; threshold binomial all p < 0.05: True; comparisons: without 'strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")': diff=+1.00 95% CI [0.39, 1.00], p_comp=0.0040, p_thresh=0.0312).",
+          "matches_ground_truth": true
+        },
+        "stochastic_greedy_ablation": {
+          "algorithm": "stochastic_greedy_ablation",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+          ],
+          "target_calls_used": 30,
+          "search_target_calls": 25,
+          "verification_target_calls": 5,
+          "model_requests_used": 60,
+          "cap_utilized_pct": 50.0,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        },
+        "stochastic_seeded_random": {
+          "algorithm": "stochastic_seeded_random",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+          ],
+          "target_calls_used": 25,
+          "search_target_calls": 20,
+          "verification_target_calls": 5,
+          "model_requests_used": 50,
+          "cap_utilized_pct": 41.7,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        }
+      }
+    },
+    "inst_02_syntax_currency_k8": {
+      "task_id": "inst_02_syntax_currency_k8",
+      "mechanism_id": "mech_01_syntax_currency",
+      "k": 8,
+      "is_null_case": false,
+      "qualification_status": "QUALIFIED",
+      "algorithms": {
+        "stochastic_delta_debugging": {
+          "algorithm": "stochastic_delta_debugging",
+          "status": "complete",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+          ],
+          "target_calls_used": 25,
+          "search_target_calls": 20,
+          "verification_target_calls": 5,
+          "model_requests_used": 50,
+          "cap_utilized_pct": 27.8,
+          "status_message": "1-Minimality statistically supported across all 1 element removals under Intersection-Union Test (comparative Fisher all p < 0.05; threshold binomial all p < 0.05: True; comparisons: without 'strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")': diff=+1.00 95% CI [0.39, 1.00], p_comp=0.0040, p_thresh=0.0312).",
+          "matches_ground_truth": true
+        },
+        "stochastic_greedy_ablation": {
+          "algorithm": "stochastic_greedy_ablation",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+          ],
+          "target_calls_used": 50,
+          "search_target_calls": 45,
+          "verification_target_calls": 5,
+          "model_requests_used": 100,
+          "cap_utilized_pct": 55.6,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        },
+        "stochastic_seeded_random": {
+          "algorithm": "stochastic_seeded_random",
+          "minimality_status": "inconclusive",
+          "discovered_elements": [
+            "expense_category: specify expense category as Travel & Subsistence",
+            "reviewer_initials: append compliance reviewer initials CR-ADM",
+            "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+          ],
+          "target_calls_used": 89,
+          "search_target_calls": 89,
+          "verification_target_calls": 0,
+          "model_requests_used": 180,
+          "cap_utilized_pct": 100.0,
+          "budget_exhausted": true,
+          "matches_ground_truth": false
+        }
+      }
+    },
+    "inst_03_syntax_comma_k4": {
+      "task_id": "inst_03_syntax_comma_k4",
+      "mechanism_id": "mech_02_syntax_comma",
+      "k": 4,
+      "is_null_case": false,
+      "qualification_status": "QUALIFIED",
+      "algorithms": {
+        "stochastic_delta_debugging": {
+          "algorithm": "stochastic_delta_debugging",
+          "status": "complete",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "thousands_separator: format all numbers inside arithmetic expressions with comma thousands separators (e.g. \"1,500 + 2,500\")"
+          ],
+          "target_calls_used": 20,
+          "search_target_calls": 15,
+          "verification_target_calls": 5,
+          "model_requests_used": 40,
+          "cap_utilized_pct": 33.3,
+          "status_message": "1-Minimality statistically supported across all 1 element removals under Intersection-Union Test (comparative Fisher all p < 0.05; threshold binomial all p < 0.05: True; comparisons: without 'thousands_separator: format all numbers inside arithmetic expressions with comma thousands separators (e.g. \"1,500 + 2,500\")': diff=+1.00 95% CI [0.39, 1.00], p_comp=0.0040, p_thresh=0.0312).",
+          "matches_ground_truth": true
+        },
+        "stochastic_greedy_ablation": {
+          "algorithm": "stochastic_greedy_ablation",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "thousands_separator: format all numbers inside arithmetic expressions with comma thousands separators (e.g. \"1,500 + 2,500\")"
+          ],
+          "target_calls_used": 30,
+          "search_target_calls": 25,
+          "verification_target_calls": 5,
+          "model_requests_used": 60,
+          "cap_utilized_pct": 50.0,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        },
+        "stochastic_seeded_random": {
+          "algorithm": "stochastic_seeded_random",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "thousands_separator: format all numbers inside arithmetic expressions with comma thousands separators (e.g. \"1,500 + 2,500\")"
+          ],
+          "target_calls_used": 25,
+          "search_target_calls": 20,
+          "verification_target_calls": 5,
+          "model_requests_used": 50,
+          "cap_utilized_pct": 41.7,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        }
+      }
+    },
+    "inst_04_syntax_comma_k8": {
+      "task_id": "inst_04_syntax_comma_k8",
+      "mechanism_id": "mech_02_syntax_comma",
+      "k": 8,
+      "is_null_case": false,
+      "qualification_status": "QUALIFIED",
+      "algorithms": {
+        "stochastic_delta_debugging": {
+          "algorithm": "stochastic_delta_debugging",
+          "status": "complete",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "thousands_separator: format all numbers inside arithmetic expressions with comma thousands separators (e.g. \"1,500 + 2,500\")"
+          ],
+          "target_calls_used": 25,
+          "search_target_calls": 20,
+          "verification_target_calls": 5,
+          "model_requests_used": 50,
+          "cap_utilized_pct": 27.8,
+          "status_message": "1-Minimality statistically supported across all 1 element removals under Intersection-Union Test (comparative Fisher all p < 0.05; threshold binomial all p < 0.05: True; comparisons: without 'thousands_separator: format all numbers inside arithmetic expressions with comma thousands separators (e.g. \"1,500 + 2,500\")': diff=+1.00 95% CI [0.39, 1.00], p_comp=0.0040, p_thresh=0.0312).",
+          "matches_ground_truth": true
+        },
+        "stochastic_greedy_ablation": {
+          "algorithm": "stochastic_greedy_ablation",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "thousands_separator: format all numbers inside arithmetic expressions with comma thousands separators (e.g. \"1,500 + 2,500\")"
+          ],
+          "target_calls_used": 50,
+          "search_target_calls": 45,
+          "verification_target_calls": 5,
+          "model_requests_used": 100,
+          "cap_utilized_pct": 55.6,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        },
+        "stochastic_seeded_random": {
+          "algorithm": "stochastic_seeded_random",
+          "minimality_status": "inconclusive",
+          "discovered_elements": [
+            "expense_category: specify expense category as Travel & Subsistence",
+            "reviewer_initials: append compliance reviewer initials CR-ADM",
+            "thousands_separator: format all numbers inside arithmetic expressions with comma thousands separators (e.g. \"1,500 + 2,500\")"
+          ],
+          "target_calls_used": 89,
+          "search_target_calls": 89,
+          "verification_target_calls": 0,
+          "model_requests_used": 180,
+          "cap_utilized_pct": 100.0,
+          "budget_exhausted": true,
+          "matches_ground_truth": false
+        }
+      }
+    },
+    "inst_05_routing_override_k4": {
+      "task_id": "inst_05_routing_override_k4",
+      "mechanism_id": "mech_03_routing_override",
+      "k": 4,
+      "is_null_case": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "algorithms": {}
+    },
+    "inst_06_routing_override_k8": {
+      "task_id": "inst_06_routing_override_k8",
+      "mechanism_id": "mech_03_routing_override",
+      "k": 8,
+      "is_null_case": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "algorithms": {}
+    },
+    "inst_07_routing_prohibition_k4": {
+      "task_id": "inst_07_routing_prohibition_k4",
+      "mechanism_id": "mech_04_routing_prohibition",
+      "k": 4,
+      "is_null_case": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "algorithms": {}
+    },
+    "inst_08_routing_prohibition_k8": {
+      "task_id": "inst_08_routing_prohibition_k8",
+      "mechanism_id": "mech_04_routing_prohibition",
+      "k": 8,
+      "is_null_case": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "algorithms": {}
+    },
+    "inst_09_schema_unit_k4": {
+      "task_id": "inst_09_schema_unit_k4",
+      "mechanism_id": "mech_05_schema_unit",
+      "k": 4,
+      "is_null_case": false,
+      "qualification_status": "QUALIFIED",
+      "algorithms": {
+        "stochastic_delta_debugging": {
+          "algorithm": "stochastic_delta_debugging",
+          "status": "complete",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "incompatible_unit: specify target unit to_unit as light_years",
+            "expense_category: specify expense category as Travel & Subsistence"
+          ],
+          "target_calls_used": 40,
+          "search_target_calls": 30,
+          "verification_target_calls": 10,
+          "model_requests_used": 80,
+          "cap_utilized_pct": 66.7,
+          "status_message": "1-Minimality statistically supported across all 2 element removals under Intersection-Union Test (comparative Fisher all p < 0.05; threshold binomial all p < 0.05: True; comparisons: without 'incompatible_unit: specify target unit to_unit as light_years': diff=+1.00 95% CI [0.39, 1.00], p_comp=0.0040, p_thresh=0.0312; without 'expense_category: specify expense category as Travel & Subsistence': diff=+1.00 95% CI [0.39, 1.00], p_comp=0.0040, p_thresh=0.0312).",
+          "matches_ground_truth": false
+        },
+        "stochastic_greedy_ablation": {
+          "algorithm": "stochastic_greedy_ablation",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "incompatible_unit: specify target unit to_unit as light_years",
+            "archival_flag: flag session for standard 7-year records retention"
+          ],
+          "target_calls_used": 35,
+          "search_target_calls": 25,
+          "verification_target_calls": 10,
+          "model_requests_used": 70,
+          "cap_utilized_pct": 58.3,
+          "budget_exhausted": false,
+          "matches_ground_truth": false
+        },
+        "stochastic_seeded_random": {
+          "algorithm": "stochastic_seeded_random",
+          "minimality_status": "inconclusive",
+          "discovered_elements": [
+            "archival_flag: flag session for standard 7-year records retention",
+            "expense_category: specify expense category as Travel & Subsistence",
+            "incompatible_unit: specify target unit to_unit as light_years"
+          ],
+          "target_calls_used": 59,
+          "search_target_calls": 59,
+          "verification_target_calls": 0,
+          "model_requests_used": 120,
+          "cap_utilized_pct": 100.0,
+          "budget_exhausted": true,
+          "matches_ground_truth": false
+        }
+      }
+    },
+    "inst_10_schema_unit_k8": {
+      "task_id": "inst_10_schema_unit_k8",
+      "mechanism_id": "mech_05_schema_unit",
+      "k": 8,
+      "is_null_case": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "algorithms": {}
+    },
+    "inst_11_schema_cross_unit_k4": {
+      "task_id": "inst_11_schema_cross_unit_k4",
+      "mechanism_id": "mech_06_schema_cross_unit",
+      "k": 4,
+      "is_null_case": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "algorithms": {}
+    },
+    "inst_12_schema_cross_unit_k8": {
+      "task_id": "inst_12_schema_cross_unit_k8",
+      "mechanism_id": "mech_06_schema_cross_unit",
+      "k": 8,
+      "is_null_case": false,
+      "qualification_status": "DISQUALIFIED_TASK",
+      "algorithms": {}
+    },
+    "inst_13_null_calc_k4": {
+      "task_id": "inst_13_null_calc_k4",
+      "mechanism_id": "mech_null_01_calc",
+      "k": 4,
+      "is_null_case": true,
+      "qualification_status": "QUALIFIED",
+      "algorithms": {
+        "stochastic_delta_debugging": {
+          "algorithm": "stochastic_delta_debugging",
+          "status": "no_trigger_found",
+          "minimality_status": "not_applicable",
+          "discovered_elements": [],
+          "target_calls_used": 5,
+          "search_target_calls": 5,
+          "verification_target_calls": 0,
+          "model_requests_used": 10,
+          "cap_utilized_pct": 8.3,
+          "status_message": "Initial input failure rate 0.00 did not meet threshold 0.50; no failure trigger detected.",
+          "matches_ground_truth": true
+        },
+        "stochastic_greedy_ablation": {
+          "algorithm": "stochastic_greedy_ablation",
+          "minimality_status": "not_applicable",
+          "discovered_elements": [],
+          "target_calls_used": 5,
+          "search_target_calls": 5,
+          "verification_target_calls": 0,
+          "model_requests_used": 10,
+          "cap_utilized_pct": 8.3,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        },
+        "stochastic_seeded_random": {
+          "algorithm": "stochastic_seeded_random",
+          "minimality_status": "not_applicable",
+          "discovered_elements": [],
+          "target_calls_used": 5,
+          "search_target_calls": 5,
+          "verification_target_calls": 0,
+          "model_requests_used": 10,
+          "cap_utilized_pct": 8.3,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        }
+      }
+    },
+    "inst_14_null_calc_k8": {
+      "task_id": "inst_14_null_calc_k8",
+      "mechanism_id": "mech_null_01_calc",
+      "k": 8,
+      "is_null_case": true,
+      "qualification_status": "QUALIFIED",
+      "algorithms": {
+        "stochastic_delta_debugging": {
+          "algorithm": "stochastic_delta_debugging",
+          "status": "no_trigger_found",
+          "minimality_status": "not_applicable",
+          "discovered_elements": [],
+          "target_calls_used": 5,
+          "search_target_calls": 5,
+          "verification_target_calls": 0,
+          "model_requests_used": 10,
+          "cap_utilized_pct": 5.6,
+          "status_message": "Initial input failure rate 0.00 did not meet threshold 0.50; no failure trigger detected.",
+          "matches_ground_truth": true
+        },
+        "stochastic_greedy_ablation": {
+          "algorithm": "stochastic_greedy_ablation",
+          "minimality_status": "not_applicable",
+          "discovered_elements": [],
+          "target_calls_used": 5,
+          "search_target_calls": 5,
+          "verification_target_calls": 0,
+          "model_requests_used": 10,
+          "cap_utilized_pct": 5.6,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        },
+        "stochastic_seeded_random": {
+          "algorithm": "stochastic_seeded_random",
+          "minimality_status": "not_applicable",
+          "discovered_elements": [],
+          "target_calls_used": 5,
+          "search_target_calls": 5,
+          "verification_target_calls": 0,
+          "model_requests_used": 10,
+          "cap_utilized_pct": 5.6,
+          "budget_exhausted": false,
+          "matches_ground_truth": true
+        }
+      }
+    },
+    "inst_15_null_db_k4": {
+      "task_id": "inst_15_null_db_k4",
+      "mechanism_id": "mech_null_02_db",
+      "k": 4,
+      "is_null_case": true,
+      "qualification_status": "QUALIFIED",
+      "algorithms": {
+        "stochastic_delta_debugging": {
+          "algorithm": "stochastic_delta_debugging",
+          "status": "complete",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "department_code: assign to department code DEPT-FIN-01"
+          ],
+          "target_calls_used": 20,
+          "search_target_calls": 15,
+          "verification_target_calls": 5,
+          "model_requests_used": 40,
+          "cap_utilized_pct": 33.3,
+          "status_message": "1-Minimality statistically supported across all 1 element removals under Intersection-Union Test (comparative Fisher all p < 0.05; threshold binomial all p < 0.05: True; comparisons: without 'department_code: assign to department code DEPT-FIN-01': diff=+1.00 95% CI [0.39, 1.00], p_comp=0.0040, p_thresh=0.0312).",
+          "matches_ground_truth": false
+        },
+        "stochastic_greedy_ablation": {
+          "algorithm": "stochastic_greedy_ablation",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "department_code: assign to department code DEPT-FIN-01"
+          ],
+          "target_calls_used": 30,
+          "search_target_calls": 25,
+          "verification_target_calls": 5,
+          "model_requests_used": 60,
+          "cap_utilized_pct": 50.0,
+          "budget_exhausted": false,
+          "matches_ground_truth": false
+        },
+        "stochastic_seeded_random": {
+          "algorithm": "stochastic_seeded_random",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "department_code: assign to department code DEPT-FIN-01"
+          ],
+          "target_calls_used": 25,
+          "search_target_calls": 20,
+          "verification_target_calls": 5,
+          "model_requests_used": 50,
+          "cap_utilized_pct": 41.7,
+          "budget_exhausted": false,
+          "matches_ground_truth": false
+        }
+      }
+    },
+    "inst_16_null_db_k8": {
+      "task_id": "inst_16_null_db_k8",
+      "mechanism_id": "mech_null_02_db",
+      "k": 8,
+      "is_null_case": true,
+      "qualification_status": "QUALIFIED",
+      "algorithms": {
+        "stochastic_delta_debugging": {
+          "algorithm": "stochastic_delta_debugging",
+          "status": "complete",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "department_code: assign to department code DEPT-FIN-01"
+          ],
+          "target_calls_used": 30,
+          "search_target_calls": 25,
+          "verification_target_calls": 5,
+          "model_requests_used": 60,
+          "cap_utilized_pct": 33.3,
+          "status_message": "1-Minimality statistically supported across all 1 element removals under Intersection-Union Test (comparative Fisher all p < 0.05; threshold binomial all p < 0.05: True; comparisons: without 'department_code: assign to department code DEPT-FIN-01': diff=+1.00 95% CI [0.39, 1.00], p_comp=0.0040, p_thresh=0.0312).",
+          "matches_ground_truth": false
+        },
+        "stochastic_greedy_ablation": {
+          "algorithm": "stochastic_greedy_ablation",
+          "minimality_status": "statistically_supported",
+          "discovered_elements": [
+            "department_code: assign to department code DEPT-FIN-01"
+          ],
+          "target_calls_used": 50,
+          "search_target_calls": 45,
+          "verification_target_calls": 5,
+          "model_requests_used": 100,
+          "cap_utilized_pct": 55.6,
+          "budget_exhausted": false,
+          "matches_ground_truth": false
+        },
+        "stochastic_seeded_random": {
+          "algorithm": "stochastic_seeded_random",
+          "minimality_status": "inconclusive",
+          "discovered_elements": [
+            "currency_label: mention USD currency denomination in final remarks",
+            "department_code: assign to department code DEPT-FIN-01"
+          ],
+          "target_calls_used": 89,
+          "search_target_calls": 89,
+          "verification_target_calls": 0,
+          "model_requests_used": 180,
+          "cap_utilized_pct": 100.0,
+          "budget_exhausted": true,
+          "matches_ground_truth": false
+        }
+      }
+    }
+  },
+  "holdout": {
+    "inst_01_syntax_currency_k4": {
+      "stochastic_delta_debugging": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      },
+      "stochastic_greedy_ablation": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      },
+      "stochastic_seeded_random": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      }
+    },
+    "inst_02_syntax_currency_k8": {
+      "stochastic_delta_debugging": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      },
+      "stochastic_greedy_ablation": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      }
+    },
+    "inst_03_syntax_comma_k4": {
+      "stochastic_delta_debugging": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      },
+      "stochastic_greedy_ablation": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      },
+      "stochastic_seeded_random": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      }
+    },
+    "inst_04_syntax_comma_k8": {
+      "stochastic_delta_debugging": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      },
+      "stochastic_greedy_ablation": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      }
+    },
+    "inst_09_schema_unit_k4": {
+      "stochastic_delta_debugging": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      },
+      "stochastic_greedy_ablation": {
+        "holdout_trials": 5,
+        "holdout_failures": 5,
+        "holdout_rate": 1.0,
+        "holdout_ci": [
+          0.5655,
+          1.0
+        ],
+        "reproduced_in_holdout": true
+      }
+    }
+  },
+  "statistics": {
+    "recovery_summary": {
+      "total_active_tasks": 12,
+      "dd_recovered_count": 4,
+      "greedy_recovered_count": 4,
+      "random_recovered_count": 2,
+      "contingency_table": {
+        "both_recovered": 4,
+        "dd_only": 0,
+        "greedy_only": 0,
+        "neither_recovered": 8
+      },
+      "mcnemar_exact_p_value": 1.0
+    },
+    "resource_burden_stratified": {
+      "k4": {
+        "tasks": [
+          "inst_01_syntax_currency_k4",
+          "inst_03_syntax_comma_k4",
+          "inst_05_routing_override_k4",
+          "inst_07_routing_prohibition_k4",
+          "inst_09_schema_unit_k4",
+          "inst_11_schema_cross_unit_k4"
+        ],
+        "cap": 120,
+        "dd_requests": {
+          "inst_01_syntax_currency_k4": 40,
+          "inst_03_syntax_comma_k4": 40,
+          "inst_05_routing_override_k4": 120,
+          "inst_07_routing_prohibition_k4": 120,
+          "inst_09_schema_unit_k4": 80,
+          "inst_11_schema_cross_unit_k4": 120
+        },
+        "greedy_requests": {
+          "inst_01_syntax_currency_k4": 60,
+          "inst_03_syntax_comma_k4": 60,
+          "inst_05_routing_override_k4": 120,
+          "inst_07_routing_prohibition_k4": 120,
+          "inst_09_schema_unit_k4": 70,
+          "inst_11_schema_cross_unit_k4": 120
+        },
+        "random_requests": {
+          "inst_01_syntax_currency_k4": 50,
+          "inst_03_syntax_comma_k4": 50,
+          "inst_05_routing_override_k4": 120,
+          "inst_07_routing_prohibition_k4": 120,
+          "inst_09_schema_unit_k4": 120,
+          "inst_11_schema_cross_unit_k4": 120
+        },
+        "mean_dd_requests": 86.7,
+        "mean_greedy_requests": 91.7
+      },
+      "k8": {
+        "tasks": [
+          "inst_02_syntax_currency_k8",
+          "inst_04_syntax_comma_k8",
+          "inst_06_routing_override_k8",
+          "inst_08_routing_prohibition_k8",
+          "inst_10_schema_unit_k8",
+          "inst_12_schema_cross_unit_k8"
+        ],
+        "cap": 180,
+        "dd_requests": {
+          "inst_02_syntax_currency_k8": 50,
+          "inst_04_syntax_comma_k8": 50,
+          "inst_06_routing_override_k8": 180,
+          "inst_08_routing_prohibition_k8": 180,
+          "inst_10_schema_unit_k8": 180,
+          "inst_12_schema_cross_unit_k8": 180
+        },
+        "greedy_requests": {
+          "inst_02_syntax_currency_k8": 100,
+          "inst_04_syntax_comma_k8": 100,
+          "inst_06_routing_override_k8": 180,
+          "inst_08_routing_prohibition_k8": 180,
+          "inst_10_schema_unit_k8": 180,
+          "inst_12_schema_cross_unit_k8": 180
+        },
+        "random_requests": {
+          "inst_02_syntax_currency_k8": 180,
+          "inst_04_syntax_comma_k8": 180,
+          "inst_06_routing_override_k8": 180,
+          "inst_08_routing_prohibition_k8": 180,
+          "inst_10_schema_unit_k8": 180,
+          "inst_12_schema_cross_unit_k8": 180
+        },
+        "mean_dd_requests": 136.7,
+        "mean_greedy_requests": 153.3
+      }
+    },
+    "mechanism_level_burden": {
+      "independent_mechanisms_count": 6,
+      "differences_normalized": {
+        "mech_01_syntax_currency": 0.2222,
+        "mech_02_syntax_comma": 0.2222,
+        "mech_03_routing_override": 0.0,
+        "mech_04_routing_prohibition": 0.0,
+        "mech_05_schema_unit": -0.0417,
+        "mech_06_schema_cross_unit": 0.0
+      },
+      "wilcoxon_exact_permutation_p_value": 0.5,
+      "wilcoxon_rejects_at_0_05": false
+    },
+    "null_control_summary": {
+      "total_null_tasks": 4,
+      "evaluations": {
+        "inst_13_null_calc_k4": {
+          "dd_false_discovery": false,
+          "greedy_false_discovery": false,
+          "random_false_discovery": false
+        },
+        "inst_14_null_calc_k8": {
+          "dd_false_discovery": false,
+          "greedy_false_discovery": false,
+          "random_false_discovery": false
+        },
+        "inst_15_null_db_k4": {
+          "dd_false_discovery": true,
+          "greedy_false_discovery": true,
+          "random_false_discovery": true
+        },
+        "inst_16_null_db_k8": {
+          "dd_false_discovery": true,
+          "greedy_false_discovery": true,
+          "random_false_discovery": false
+        }
+      },
+      "dd_false_discoveries_count": 2,
+      "greedy_false_discoveries_count": 2,
+      "random_false_discoveries_count": 1
+    },
+    "global_budget_accounting": {
+      "total_model_requests_expended": 2176,
+      "max_budget_limit": 7500,
+      "commercial_spend_usd": 0.0,
+      "budget_hard_cap_breached": false
+    }
+  }
+}

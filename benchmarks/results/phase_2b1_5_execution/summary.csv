@@ -1,0 +1,17 @@
+task_id,mechanism_id,k,is_null,qualification,dd_status,dd_requests,dd_match_gt,greedy_status,greedy_requests,greedy_match_gt,random_status,random_requests,random_match_gt
+inst_01_syntax_currency_k4,mech_01_syntax_currency,4,False,QUALIFIED,statistically_supported,40,True,statistically_supported,60,True,statistically_supported,50,True
+inst_02_syntax_currency_k8,mech_01_syntax_currency,8,False,QUALIFIED,statistically_supported,50,True,statistically_supported,100,True,inconclusive,180,False
+inst_03_syntax_comma_k4,mech_02_syntax_comma,4,False,QUALIFIED,statistically_supported,40,True,statistically_supported,60,True,statistically_supported,50,True
+inst_04_syntax_comma_k8,mech_02_syntax_comma,8,False,QUALIFIED,statistically_supported,50,True,statistically_supported,100,True,inconclusive,180,False
+inst_05_routing_override_k4,mech_03_routing_override,4,False,DISQUALIFIED_TASK,N/A,120,False,N/A,120,False,N/A,120,False
+inst_06_routing_override_k8,mech_03_routing_override,8,False,DISQUALIFIED_TASK,N/A,180,False,N/A,180,False,N/A,180,False
+inst_07_routing_prohibition_k4,mech_04_routing_prohibition,4,False,DISQUALIFIED_TASK,N/A,120,False,N/A,120,False,N/A,120,False
+inst_08_routing_prohibition_k8,mech_04_routing_prohibition,8,False,DISQUALIFIED_TASK,N/A,180,False,N/A,180,False,N/A,180,False
+inst_09_schema_unit_k4,mech_05_schema_unit,4,False,QUALIFIED,statistically_supported,80,False,statistically_supported,70,False,inconclusive,120,False
+inst_10_schema_unit_k8,mech_05_schema_unit,8,False,DISQUALIFIED_TASK,N/A,180,False,N/A,180,False,N/A,180,False
+inst_11_schema_cross_unit_k4,mech_06_schema_cross_unit,4,False,DISQUALIFIED_TASK,N/A,120,False,N/A,120,False,N/A,120,False
+inst_12_schema_cross_unit_k8,mech_06_schema_cross_unit,8,False,DISQUALIFIED_TASK,N/A,180,False,N/A,180,False,N/A,180,False
+inst_13_null_calc_k4,mech_null_01_calc,4,True,QUALIFIED,not_applicable,10,True,not_applicable,10,True,not_applicable,10,True
+inst_14_null_calc_k8,mech_null_01_calc,8,True,QUALIFIED,not_applicable,10,True,not_applicable,10,True,not_applicable,10,True
+inst_15_null_db_k4,mech_null_02_db,4,True,QUALIFIED,statistically_supported,40,False,statistically_supported,60,False,statistically_supported,50,False
+inst_16_null_db_k8,mech_null_02_db,8,True,QUALIFIED,statistically_supported,60,False,statistically_supported,100,False,inconclusive,180,False
