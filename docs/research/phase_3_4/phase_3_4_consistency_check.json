@@ -1,0 +1,125 @@
+{
+  "audit_metadata": {
+    "document_reference": "docs/research/phase_3_4/phase_3_4_consistency_check.json",
+    "date": "2026-10-17",
+    "phase": "3.4",
+    "mission": "Post-Release Documentation Integrity and Errata Audit",
+    "target_repository": "/Users/yashmishra14/Personal projects/AgentXRay",
+    "git_checkpoint": "HEAD at commit 62579fb on branch main",
+    "final_disposition": "DOCUMENTATION_READY_WITH_DISCLOSED_LIMITATIONS"
+  },
+  "cryptographic_hashes": {
+    "protocol_v1_4": {
+      "path": "docs/research/phase_2b1_exploratory_protocol_v1_4.md",
+      "sha256": "db45f4032f2340a9edc3441bafcb3957895b616d1289c28e85a5cc4671574f62",
+      "status": "VERIFIED_BIT_FOR_BIT"
+    },
+    "config_v1_4": {
+      "path": "benchmarks/configs/phase_2b1_exploratory_config_v1_4.json",
+      "sha256": "b3e3b0b8450e325914ea8229faafce90a833eb038b02903bfa48062e8ee0cfb2",
+      "status": "VERIFIED_BIT_FOR_BIT"
+    },
+    "executing_runner": {
+      "path": "benchmarks/model_pilot/exploratory_runner_v1_4.py",
+      "sha256": "69b03d52b198bff5f23e86894041e810e36c75d052753620e3872d56342d7b27",
+      "status": "VERIFIED_BIT_FOR_BIT"
+    },
+    "raw_manifest": {
+      "path": "benchmarks/results/phase_2b1_5_execution/manifest.json",
+      "sha256": "349c9b97a0ee76cded3770828029f897d101414d8917b9743930f08f23ea830f",
+      "status": "VERIFIED_BIT_FOR_BIT"
+    },
+    "raw_results": {
+      "path": "benchmarks/results/phase_2b1_5_execution/results.json",
+      "sha256": "5f9606d9dad39f6a1f3eea39fdfd140f56dffaec99f8516ec7ecfa66303f26b9",
+      "status": "VERIFIED_BIT_FOR_BIT"
+    },
+    "raw_trials": {
+      "path": "benchmarks/results/phase_2b1_5_execution/trials.jsonl",
+      "sha256": "82905d2200b88c242f11499e6a927e75c38fe1e8bdf142b498dc28c9f80b86f0",
+      "status": "VERIFIED_BIT_FOR_BIT"
+    },
+    "raw_summary": {
+      "path": "benchmarks/results/phase_2b1_5_execution/summary.csv",
+      "sha256": "6e521487357bf176fab79d3a20c3f7e61657909a8132e6d5dab6f084dae71902",
+      "status": "VERIFIED_BIT_FOR_BIT"
+    }
+  },
+  "claims_ledger_audit": {
+    "total_claims": 32,
+    "json_path": "docs/research/phase_3_3/phase_3_3_claims_ledger.json",
+    "markdown_path": "docs/research/phase_3_3/phase_3_3_claims_ledger.md",
+    "status_breakdown": {
+      "VERIFIED": 30,
+      "CORRECTED": 2,
+      "REPORTED_NOT_REPRODUCED": 0,
+      "UNRESOLVED": 0
+    },
+    "json_markdown_synchronized": true,
+    "financial_spend_claim": {
+      "claim_id": "CLAIM-FINANCIAL-SPEND",
+      "claim_text": "Total commercial API spend across the entire benchmark execution was strictly $0.0000 USD (100% local inference on Ollama llama3.2:3b).",
+      "reproduced_value": 0.0,
+      "zsh_expansion_present": false,
+      "status": "VERIFIED",
+      "notes": "Typo zsh.0000 corrected to $0.0000 USD; distinction between zero commercial API expenditure and local hardware compute/electricity costs explicitly disclosed."
+    },
+    "aborted_payloads_claim": {
+      "claim_id": "CLAIM-REQ-ABORTED-PAYLOADS",
+      "status": "VERIFIED",
+      "reproduced_value": "UNRECOVERABLE_OFFLINE",
+      "semantics_clarification": "The status VERIFIED applies to the limitation statement itself (confirming offline records lack Turn 1 payloads). The conversational payloads themselves remain missing and unrecovered offline without model re-execution."
+    }
+  },
+  "verification_check_count_reconciliation": {
+    "named_test_functions_in_test_script": 9,
+    "test_script_path": "tests/test_phase_3_3_reproducibility.py",
+    "named_test_functions": [
+      "test_reproduce_01_cryptographic_hashes",
+      "test_reproduce_02_request_ledger_and_trial_accounting",
+      "test_reproduce_03_task_configuration_and_mechanism_counts",
+      "test_reproduce_04_qualification_and_candidate_discovery",
+      "test_reproduce_05_holdout_replication",
+      "test_reproduce_06_ground_truth_recovery_and_mcnemar",
+      "test_reproduce_07_mechanism_level_wilcoxon",
+      "test_reproduce_08_null_control_outcomes",
+      "test_reproduce_09_wilson_lower_bound_invariance"
+    ],
+    "prose_discrepancy_resolved": "Prose in docs/research/phase_3_3/phase_3_3_reproducibility_guide.md referring to 10 core claims reconciled to 9 core empirical and statistical verification check suites."
+  },
+  "reproducibility_language_audit": {
+    "absolute_language_removed": true,
+    "former_wording": "100% deterministically verifiable",
+    "replacement_wording": "deterministically verifiable offline from preserved primary raw artifacts without model inference or external network connectivity, with explicit disclosure of unrecoverable offline execution details",
+    "unrecoverable_details_disclosed": [
+      "Turn 1 conversational payloads of the 4 budget-aborted trials",
+      "Intermediate uncommitted historical runner diffs between runner draft 03ff8262... and executing runner 69b03d52..."
+    ]
+  },
+  "statistical_power_basis": {
+    "statement_audited": "power bounded by <= 37.1% for large effects (d=1.25)",
+    "source_document": "Protocol v1.4 Section 9.2 (Table line 208) and Section 9.3 (item 1)",
+    "source_code": "benchmarks/model_pilot/power_and_budget_analysis.py:simulate_wilcoxon_power",
+    "parameters": {
+      "n_mechanisms": 6,
+      "cohen_d": 1.25,
+      "mean_difference": 15.0,
+      "standard_deviation": 12.0,
+      "monte_carlo_replications": 2000,
+      "p_tie": 0.05,
+      "distribution": "normal",
+      "significance_level_alpha": 0.05
+    },
+    "simulated_power_exact_perm_n6": 0.3715,
+    "simulated_power_exact_perm_n12": 0.9485,
+    "mathematical_basis": "At n=6 mechanisms, the signed-rank permutation space has 2^6 = 64 outcomes. Under a two-sided test, only the extreme outcome (W=0) yields p = 2/64 = 0.03125 < 0.05, while W=1 yields p = 4/64 = 0.0625 > 0.05. Furthermore, any tie reduces non-zero differences to m <= 5, where 2^5 = 32 and the minimum possible p-value is 2/32 = 0.0625 > 0.05, making rejection of H0 impossible. This bounds statistical power at <= 37.1% at the mechanism level, even though instance-level power (N=12) is 94.8%."
+  },
+  "test_suite_status": {
+    "total_pytest_tests": 247,
+    "passed": 247,
+    "failed": 0,
+    "duration_seconds": 0.41,
+    "model_calls": 0,
+    "commercial_spend_usd": 0.0
+  }
+}

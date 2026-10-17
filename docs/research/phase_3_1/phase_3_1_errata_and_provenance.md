@@ -1,0 +1,224 @@
+# AgentXRay — Phase 3.1: Errata, Artifact Provenance, and Forensic Audit Reconciliation
+
+**Document Reference:** `docs/research/phase_3_1/phase_3_1_errata_and_provenance.md`  
+**Date:** 2026-10-17  
+**Version:** Phase 3.1 Corrected Successor Document  
+**Target Repository:** `/Users/yashmishra14/Personal projects/AgentXRay`  
+**Git Checkpoint:** HEAD at commit `62579fb` on branch `main`  
+**Primary Historical Reports Covered:**
+- `docs/research/phase_2b1_5_exploratory_execution_report.md` (Execution Report)
+- `benchmarks/results/phase_2b1_6_audit/phase_2b1_6_independent_post_execution_audit.md` (Forensic Audit Report)
+- `docs/research/phase_3_1/phase_3_1_scientific_integrity_audit.md` (Phase 3.1 Integrity Audit)
+**Primary Data Artifacts Covered:**
+- `benchmarks/results/phase_2b1_5_execution/manifest.json`
+- `benchmarks/results/phase_2b1_5_execution/results.json`
+- `benchmarks/results/phase_2b1_5_execution/trials.jsonl`
+- `benchmarks/results/phase_2b1_5_execution/summary.csv`
+
+---
+
+## 1. Purpose and Scope
+
+This document establishes the official, immutable errata record for Project AgentXRay. Its purpose is to reconcile observed discrepancies between raw evidence, execution reports, audit findings, and synthesis documents with strict scientific honesty.
+
+In adherence to research integrity standards:
+- Historical execution outputs, raw JSONL event streams, and previous audit reports remain **unmodified and unoverwritten**.
+- Explanations of forensic findings are explicitly distinguished from raw recorded facts.
+- Gaps in telemetry or documentation are acknowledged rather than retrospectively simulated or repaired.
+
+---
+
+## 2. Erratum A (ERR-01): Four-Request Discrepancy Between Ledger and Event Stream
+
+### 2.1 What the Execution Report Stated
+In Section 1.1 (Item 3) and Section 7.1 of [`docs/research/phase_2b1_5_exploratory_execution_report.md`](file:///Users/yashmishra14/Personal%20projects/AgentXRay/docs/research/phase_2b1_5_exploratory_execution_report.md), the report recorded:
+- **Total Model Requests Consumed:** `2,176 requests`
+- **Total Probe Trials:** `1,086 trials`
+- **Stage 2 Search Breakdown:** `886 trials` and `1,776 requests`
+- **Reconciliation Claim:** *"Every model request logged in trials.jsonl reconciles with the dual-cost budget tracker (2,176 requests)."*
+
+### 2.2 What the Forensic Audit Found
+Direct parsing and summation of [`benchmarks/results/phase_2b1_5_execution/trials.jsonl`](file:///Users/yashmishra14/Personal%20projects/AgentXRay/benchmarks/results/phase_2b1_5_execution/trials.jsonl) revealed:
+- Total completed trials logged: **1,086 lines**.
+- Every single recorded trial consumed exactly **2 requests** (Turn 1 tool execution + Turn 2 final answer).
+- Total requests recorded in `trials.jsonl`: $1,086 \times 2 = \mathbf{2,172\text{ requests}}$.
+- There is a discrepancy of exactly **$+4\text{ requests}$** between the request tracker in `manifest.json` / `results.json` (`2,176`) and the completed-trial stream `trials.jsonl` (`2,172`).
+
+Tracing the execution harness revealed the root cause:
+- On four separate search runs, the Seeded Random Search baseline reached its per-task request cap:
+  1. `inst_02_syntax_currency_k8` (cap = 180 requests)
+  2. `inst_04_syntax_comma_k8` (cap = 180 requests)
+  3. `inst_09_schema_unit_k4` (cap = 120 requests)
+  4. `inst_16_null_db_k8` (cap = 180 requests)
+- In `src/agentxray/agent_harness/target.py` and `base_target.py`, `check_budget_before_request()` is evaluated before every individual model request.
+- On the final attempted trial of each capped run, Turn 1 passed budget verification and executed against local Ollama, incrementing the in-memory request counter to the exact ceiling (180 or 120).
+- When Turn 2 commenced, `check_budget_before_request()` raised a `CostBudgetExceededError` before Turn 2 could be dispatched to the model.
+- Because `log_trial_event()` was positioned at the conclusion of completed trials, the interrupted trial was never serialized to `trials.jsonl`.
+- Consequently, Turn 1 was physically issued to the model and recorded in the in-memory counter, but the enclosing trial was omitted from the event log.
+
+### 2.3 What Can Be Concluded from Existing Evidence
+1. Exactly **1,086 fully completed trials** (2,172 requests) were recorded with complete multi-turn conversational payloads, tool calls, tool responses, and final answers in `trials.jsonl`.
+2. The in-memory budget tracker accurately tracked **2,176 total HTTP requests** issued to the local Ollama instance.
+3. The original claim in the execution report that all 2,176 requests were logged in `trials.jsonl` was **factually inaccurate**; exactly 4 requests are absent from `trials.jsonl`.
+4. The event log `trials.jsonl` is incomplete for those four interrupted trials.
+
+### 2.4 What Remains Uncertain
+Because trial serialization was bypassed upon exception raising, the exact prompt string and tool-call payload generated by Turn 1 on those four interrupted trials were not persisted to disk. No attempt has been made to fabricate synthetic trial records for those interrupted turns.
+
+---
+
+## 3. Erratum B (ERR-02): Runner Checksum Mismatch and Provenance Tracking
+
+### 3.1 What the Execution Report Stated
+Section 2 of [`docs/research/phase_2b1_5_exploratory_execution_report.md`](file:///Users/yashmishra14/Personal%20projects/AgentXRay/docs/research/phase_2b1_5_exploratory_execution_report.md) recorded the following cryptographic hash for the test runner script:
+- `benchmarks/model_pilot/exploratory_runner_v1_4.py`: `03ff8262b9f68800b3e6488a09ee2ba5eb7ae2f588aa4da541249339a3f2db7b`
+
+### 3.2 What the Forensic Audit Found
+Direct SHA-256 computation of [`benchmarks/model_pilot/exploratory_runner_v1_4.py`](file:///Users/yashmishra14/Personal%20projects/AgentXRay/benchmarks/model_pilot/exploratory_runner_v1_4.py) on disk yielded:
+- `69b03d52b198bff5f23e86894041e810e36c75d052753620e3872d56342d7b27`
+
+Git diff and commit history analysis revealed:
+- Immediately prior to authorized benchmark execution in Phase 2B.1.5, a bugfix was applied to `exploratory_runner_v1_4.py` to ensure `task_tracker` was correctly passed into the inner search orchestration loops.
+- The execution report was initialized with the pre-patch draft checksum (`03ff8262...`) and was not updated with the post-patch checksum (`69b03d52...`) prior to final freeze.
+
+### 3.3 What Can Be Concluded from Existing Evidence
+1. The script that actually executed the Phase 2B.1.5 benchmark and generated the raw artifacts was the version on disk hashing to `69b03d52b198bff5f23e86894041e810e36c75d052753620e3872d56342d7b27`.
+2. The hash printed in the execution report (`03ff8262...`) is a documentation erratum representing a stale pre-execution draft.
+3. The frozen protocol (`db45f403...`) and configuration (`b3e3b0b8...`) hashes remain 100% verified matches.
+
+### 3.4 What Remains Uncertain
+Because the pre-patch file was modified in place in the unstaged working tree rather than committed as a distinct Git commit prior to execution, the diff between `03ff8262...` and `69b03d52...` exists only in memory and audit notes. Provenance claims must strictly cite `69b03d52...` as the true executing code.
+
+---
+
+## 4. Erratum C (ERR-03): Holdout Presentation and Reconciliation
+
+### 4.1 What the Execution Report Stated
+In Section 6 of [`docs/research/phase_2b1_5_exploratory_execution_report.md`](file:///Users/yashmishra14/Personal%20projects/AgentXRay/docs/research/phase_2b1_5_exploratory_execution_report.md), the report bulleted five task instances:
+- `inst_01`: 5/5 failures
+- `inst_02`: 5/5 failures
+- `inst_03`: 5/5 failures
+- `inst_04`: 5/5 failures
+- `inst_09`: 5/5 failures
+The section summary then stated: *"Holdout Pass Rate: 100% (12 / 12 holdout evaluations reproduced failure rate $\ge 0.50$)"*, while Section 7.1 listed `60 trials | 120 requests`.
+
+### 4.2 What the Forensic Audit Found
+This created an apparent numerical discrepancy: five bulleted tasks with five trials each suggests 25 trials, not 60 trials or 12 evaluations.
+
+Forensic reconstruction of `trials.jsonl` and `results.json` confirmed:
+- Holdout evaluation was performed on **every isolated candidate subset discovered by an algorithm on an active task**.
+- Across the five resolved tasks, exactly 12 algorithm-task candidates were discovered:
+  - `inst_01` ($K=4$): DD, Greedy, Random (3 candidates)
+  - `inst_02` ($K=8$): DD, Greedy (2 candidates; Random hit budget cap)
+  - `inst_03` ($K=4$): DD, Greedy, Random (3 candidates)
+  - `inst_04` ($K=8$): DD, Greedy (2 candidates; Random hit budget cap)
+  - `inst_09` ($K=4$): DD, Greedy (2 candidates; Random hit budget cap)
+  - Total candidates = $3 + 2 + 3 + 2 + 2 = \mathbf{12\text{ candidates}}$.
+- Each candidate subset was evaluated on $n_{\text{holdout}} = 5$ independent trials.
+- Total holdout trials = $12 \times 5 = \mathbf{60\text{ trials}}$ ($120\text{ model requests}$).
+
+### 4.3 What Can Be Concluded from Existing Evidence
+1. Exactly 60 holdout trials were physically executed and are fully recorded in `trials.jsonl`.
+2. All 12 candidate subsets exhibited 5/5 failures (100% holdout failure rate, 95% Wilson CI $[0.5655, 1.0000]$).
+3. The discrepancy was entirely a **presentation ambiguity**: Section 6 grouped evaluations by task instance rather than explicitly enumerating the 12 algorithm-specific candidate subsets.
+
+### 4.4 What Remains Uncertain
+None. The holdout dataset is 100% reconciled between the raw logs, JSON results, and ledger.
+
+---
+
+## 5. Erratum D (ERR-04): Intention-to-Treat (ITT) Resource-Burden Table Labeling
+
+### 5.1 What the Execution Report Stated
+In Section 5.1 of [`docs/research/phase_2b1_5_exploratory_execution_report.md`](file:///Users/yashmishra14/Personal%20projects/AgentXRay/docs/research/phase_2b1_5_exploratory_execution_report.md), the resource burden tables listed:
+- Disqualified tasks (`inst_05`, `inst_06`, `inst_07`, `inst_08`, `inst_10`, `inst_11`, `inst_12`) with entries `120 requests (C)` and `180 requests (C)`.
+- Table footers reported: *"Mean Expended Requests (K = 4): 86.7 requests"* and *"Mean Expended Requests (K = 8): 136.7 requests"*.
+
+### 5.2 What the Forensic Audit Found
+- In reality, zero search trials were executed on those seven disqualified tasks (per Protocol v1.4 §5.4).
+- The values 120 and 180 were **imputed penalty caps** mandated by the preregistered All-Assigned Tasks (Intention-to-Treat) estimand (Protocol v1.4 §3.2).
+- The table header "Expended Requests" conflated physical inference expenditure with mathematical imputation under right-censoring.
+- In contrast, Section 7.1 accurately reported physical inference calls: 1,776 search requests.
+
+### 5.3 What Can Be Concluded from Existing Evidence
+1. The ITT normalized burden scores ($\bar{D}_i$) and stratum averages are mathematically correct under the preregistered ITT protocol rules.
+2. Labeling imputed caps as "Expended Requests" was a **misleading column title**.
+3. Physical execution requests must always be reported separately from ITT-imputed penalty metrics.
+
+### 5.4 What Remains Uncertain
+None. The distinction between physical requests (1,776) and ITT imputed values is fully resolved.
+
+---
+
+## 6. Erratum E (ERR-05 & ERR-06): Discovered Candidate Sets on Schema Units and Null Controls
+
+### 6.1 Discovered Subset Identification on `inst_09_schema_unit_k4` (ERR-05)
+#### What the Execution Report Stated
+Section 4.1 of the execution report claimed that on `inst_09`, DD and Greedy discovered `compliance_tag (Distractor)`.
+#### What Independent Reconstruction Found
+Direct inspection of `results.json` and `trials.jsonl` revealed:
+- Planted ground truth: `incompatible_unit: specify target unit to_unit as light_years`
+- Stochastic Delta Debugging discovered:
+  `['incompatible_unit: specify target unit to_unit as light_years', 'expense_category: specify expense category as Travel & Subsistence']`
+- Stochastic Greedy Ablation discovered:
+  `['incompatible_unit: specify target unit to_unit as light_years', 'archival_flag: flag session for standard 7-year records retention']`
+- Both algorithms discovered a **2-element interacting subset** containing the planted trigger plus an interacting distractor.
+- Neither algorithm discovered a single-element candidate.
+- Because `llama3.2:3b` required both the unit parameter and additional prompt text context to trigger the syntax conversion error, removing either element caused failures to drop from 5/5 to 0/5.
+- Therefore, the 2-element subsets satisfied the operational definition of statistical 1-minimality under the Intersection–Union Test ($p < 0.05$), but failed ground-truth recovery (`matches_ground_truth: False`).
+- The execution report narrative naming `compliance_tag` was a transcription erratum; the true discovered distractor elements were `expense_category` (DD) and `archival_flag` (Greedy).
+
+### 6.2 Discovered Elements on Database Null Controls (`inst_15`, `inst_16`) (ERR-06)
+#### What the Execution Report Stated
+Section 4.2 of the execution report stated that on database null tasks, both DD and Greedy isolated `expense_category (FP)`.
+#### What Independent Reconstruction Found
+Direct inspection of `results.json` and `trials.jsonl` revealed:
+- Candidates available on `inst_15`: `department_code`, `reviewer_initials`, `urgency_level`, `archival_flag`. (`expense_category` was not even a candidate on `inst_15`).
+- Stochastic Delta Debugging discovered: `department_code` (on both `inst_15` and `inst_16`).
+- Stochastic Greedy Ablation discovered: `department_code` (on both `inst_15` and `inst_16`).
+- Seeded Random Search discovered: `department_code` on `inst_15`, and exhausted its budget on `inst_16`.
+- The execution report text naming `expense_category` was a transcription erratum; the actual isolated false-discovery element was `department_code`.
+
+---
+
+## 7. Erratum F (ERR-07): Conflation of Intersection–Union Testing with Benjamini–Hochberg FDR Control
+
+### 7.1 What the Phase 3.0 Documents Stated
+In `phase_3_0_agentxray_research_report.md` (Abstract, §6.3, §15) and `phase_3_0_research_summary.md` (§2), the texts asserted that candidate 1-minimality was determined using an Intersection–Union Test (IUT) *with Benjamini–Hochberg False Discovery Rate control ($q \le 0.05$)*.
+
+### 7.2 What the Forensic Audit Found
+- Protocol v1.4 §6.2 and the actual minimizer code (`src/agentxray/stochastic_minimizer.py`, lines 399–411) evaluate candidate 1-minimality using the **Intersection–Union Principle (Berger 1982)**: every single-element deletion must individually achieve one-sided Fisher exact significance ($\alpha = 0.05$) alongside an empirical non-failure guard ($\hat{p} < 0.50$).
+- Under IUT theory, rejecting the composite null requires every component test to reject at level $\alpha$, which mathematically bounds the family-wise Type I error rate at $\le \alpha$ without any multiplicity correction.
+- While `adjust_p_values_bh` is implemented in `statistics.py` for exploratory testing of families of hypotheses, it was never called or applied to the operational 1-minimality decision in `stochastic_minimizer.py`.
+- Applying BH to an IUT is mathematically inconsistent.
+
+### 7.3 What Can Be Concluded from Existing Evidence
+1. The operational candidate-minimality decision in AgentXRay is an **Intersection–Union Test (Berger 1982)** combining one-sided exact Fisher tests on each deletion.
+2. The claim that Benjamini–Hochberg FDR control was applied to the operational minimality decision was an erroneous textual holdover from earlier Phase 1/2A design drafts.
+3. The Phase 3.1 successor package removes all erroneous references to BH FDR control in the minimality definition.
+
+---
+
+## 8. Comprehensive Errata Summary Table
+
+| Identifier | Subject | Report Narrative Claim | Actual Evidence / Forensic Finding | Severity | Resolution Status |
+| :--- | :--- | :--- | :--- | :---: | :---: |
+| **ERR-01** | Total Request Count | `trials.jsonl` accounts for all 2,176 requests | `trials.jsonl` logs 2,172 requests across 1,086 completed trials; 4 requests occurred on aborted Turn 1s | Low | Fully reconciled via error-trace forensics |
+| **ERR-02** | Runner Checksum | Runner script SHA-256 is `03ff8262...` | Disk script SHA-256 is `69b03d52...` (report cited pre-patch draft hash) | Medium | Provenance updated to `69b03d52...` |
+| **ERR-03** | Holdout Evaluation Count | Ambiguous listing of 5 tasks in Section 6 | 12 algorithm candidates across 5 tasks $\times 5$ trials = 60 trials (120 requests) | Low | Reconciled and documented in Section 4 |
+| **ERR-04** | ITT Resource Table | Disqualified tasks labeled as "Expended Requests" | Values are imputed penalty caps under preregistered ITT protocol (0 search trials run) | Low | Documented as labeling ambiguity in Section 5 |
+| **ERR-05** | Discovered Distractor on `inst_09` | Discovered element was `compliance_tag` | Raw results record 2-element interactions: `incompatible_unit + expense_category` (DD) and `incompatible_unit + archival_flag` (Greedy) | Low | Reconciled from `results.json` in Section 6 |
+| **ERR-06** | False Discovery Element on Null DB | Isolated false-discovery element was `expense_category` | Discovered element was `department_code` on both `inst_15` and `inst_16` | Low | Reconciled from `results.json` in Section 6 |
+| **ERR-07** | Minimality Multiplicity Procedure | Minimality decision used Benjamini-Hochberg FDR control | Pure Intersection-Union Test (Berger 1982); BH is not applied to IUT | High | Corrected in Phase 3.1 documents |
+
+---
+
+## 9. Epistemic Limitations and Archival Certification
+
+The revisions documented herein represent forensic clarifications and errata corrections derived exclusively from offline analysis of existing, immutable Phase 2B.1.5 raw artifacts.
+- No model inference was executed.
+- No historical data files were rewritten or deleted.
+- Missing telemetry from the four aborted trials remains unrecorded.
+- Future phases must adopt `try...finally` logging to guarantee that partial multi-turn executions are persisted to disk.
+
+This errata record is certified as authoritative for Project AgentXRay Phase 3.1.

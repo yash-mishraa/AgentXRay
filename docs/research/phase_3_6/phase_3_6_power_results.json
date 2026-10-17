@@ -1,0 +1,348 @@
+{
+  "audit_metadata": {
+    "document_reference": "docs/research/phase_3_6/phase_3_6_power_results.json",
+    "date": "2026-10-17",
+    "phase": "3.6",
+    "mission": "Final Statistical Conformance and Research-Release Audit",
+    "target_repository": "/Users/yashmishra14/Personal projects/AgentXRay",
+    "git_checkpoint": "HEAD at commit 62579fb on branch main",
+    "final_disposition": "STATISTICAL_CONFORMANCE_VERIFIED_WITH_LIMITATIONS"
+  },
+  "provenance_and_immutability": {
+    "protocol_v1_4_path": "docs/research/phase_2b1_exploratory_protocol_v1_4.md",
+    "protocol_v1_4_sha256": "db45f4032f2340a9edc3441bafcb3957895b616d1289c28e85a5cc4671574f62",
+    "raw_results_path": "benchmarks/results/phase_2b1_5_execution/results.json",
+    "raw_results_sha256": "5f9606d9dad39f6a1f3eea39fdfd140f56dffaec99f8516ec7ecfa66303f26b9",
+    "executing_runner_path": "benchmarks/model_pilot/exploratory_runner_v1_4.py",
+    "executing_runner_sha256": "69b03d52b198bff5f23e86894041e810e36c75d052753620e3872d56342d7b27"
+  },
+  "implementation_conformance_audit": {
+    "zero_handling_method": {
+      "code_location": "benchmarks/model_pilot/power_and_budget_analysis.py:154-155, exploratory_runner_v1_4.py:723",
+      "implemented_procedure": "Zero differences are discarded before ranking; non-zeros are ranked from 1 to m.",
+      "accurate_statistical_designation": "Wilcoxon (1945) zero-discard / reduced-sample method.",
+      "misnomer_in_prior_reports": "Previously labeled as Pratt filtering in code comments and audit reports. Pratt (1959) includes zeros in ranking before dropping them.",
+      "mathematical_effect": "A single zero difference reduces sample size to m <= 5, where min p-value is >= 2/32 = 0.0625 > 0.05, making rejection impossible."
+    },
+    "tie_handling_method": {
+      "power_simulation": "Mid-ranks (average ranks) assigned to tied non-zero absolute differences (avg_r = (i + 1 + j) / 2.0).",
+      "exploratory_runner": "Ordinal integer ranks assigned by Python stable sort. On historical benchmark data ([0.0417, 0.2222, 0.2222]), both ordinal and mid-ranks yield identical W=1 and p=0.50.",
+      "rejection_region_invariance": "For m=6, W=0 is the ONLY rejection state at alpha=0.05, even in the presence of tied absolute ranks."
+    },
+    "p_value_and_decision_rule": {
+      "p_value_type": "Two-sided exact permutation p-value via subset-sum dynamic programming (exact_wilcoxon_permutation_p_value).",
+      "decision_rule_in_simulation": "p < 0.05 and w_plus > w_minus (directional rejection favoring Delta Debugging).",
+      "directional_vs_twosided_distinction": "Simulation measures directional power under a two-sided test, which matches Protocol v1.4 line 85 requirement that DD beats Greedy on all mechanisms."
+    }
+  },
+  "theoretical_vs_simulated_power_d125": {
+    "model_parameters": {
+      "distribution": "Normal(mu=15.0, sigma=12.0)",
+      "cohen_d": 1.25,
+      "sample_size_mechanisms": 6,
+      "tie_probability_per_mechanism": 0.05,
+      "significance_level_alpha": 0.05,
+      "monte_carlo_replications": 2000,
+      "seed": 525
+    },
+    "analytical_derivation": {
+      "p_pos_conditional": 0.89435023,
+      "p_neg_conditional": 0.10564977,
+      "p_zero_ties_in_6_pairs": 0.73509189,
+      "theoretical_directional_power": 0.37617277,
+      "theoretical_directional_power_pct": "37.6173%",
+      "theoretical_opposite_rejection_power": 1.02e-06,
+      "theoretical_opposite_rejection_power_pct": "0.000102%",
+      "theoretical_conventional_twosided_power": 0.3761738,
+      "theoretical_conventional_twosided_power_pct": "37.6174%",
+      "absolute_difference": 1.02e-06
+    },
+    "monte_carlo_simulation_result": {
+      "rejections_directional_observed": 743,
+      "rejections_twosided_observed": 743,
+      "estimated_directional_power": 0.3715,
+      "estimated_twosided_power": 0.3715,
+      "mcse": 0.0108,
+      "ci_95_wald": [
+        0.3503,
+        0.3927
+      ]
+    },
+    "synthesis": "Directional and conventional two-sided rejection counts are identical in 2,000 replications because opposite-direction rejection probability is ~10^-6. Conceptually, the metric is directional power."
+  },
+  "sensitivity_table_reproduction": [
+    {
+      "cohen_d": 0.4,
+      "mean_diff_requests": 4.8,
+      "sigma_requests": 12.0,
+      "primary_mechanism_level_n6": {
+        "sample_size": 6,
+        "experimental_unit": "independent_mechanism",
+        "is_primary_design": true,
+        "seed": 440,
+        "replications": 2000,
+        "directional_rejections_count": 106,
+        "estimated_directional_power": 0.053,
+        "mcse": 0.005,
+        "ci_95_wald": [
+          0.0432,
+          0.0628
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Valid independent experimental units; within-mechanism K=4/8 strata averaged."
+      },
+      "hypothetical_instance_level_n12": {
+        "sample_size": 12,
+        "experimental_unit": "task_configuration (pseudoreplicated)",
+        "is_primary_design": false,
+        "seed": 140,
+        "replications": 2000,
+        "directional_rejections_count": 401,
+        "estimated_directional_power": 0.2005,
+        "mcse": 0.009,
+        "ci_95_wald": [
+          0.183,
+          0.218
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Hypothetical sensitivity analysis assuming 12 independent mechanisms. Invalid for primary inference."
+      }
+    },
+    {
+      "cohen_d": 0.5,
+      "mean_diff_requests": 6.0,
+      "sigma_requests": 12.0,
+      "primary_mechanism_level_n6": {
+        "sample_size": 6,
+        "experimental_unit": "independent_mechanism",
+        "is_primary_design": true,
+        "seed": 450,
+        "replications": 2000,
+        "directional_rejections_count": 142,
+        "estimated_directional_power": 0.071,
+        "mcse": 0.0057,
+        "ci_95_wald": [
+          0.0597,
+          0.0823
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Valid independent experimental units; within-mechanism K=4/8 strata averaged."
+      },
+      "hypothetical_instance_level_n12": {
+        "sample_size": 12,
+        "experimental_unit": "task_configuration (pseudoreplicated)",
+        "is_primary_design": false,
+        "seed": 150,
+        "replications": 2000,
+        "directional_rejections_count": 608,
+        "estimated_directional_power": 0.304,
+        "mcse": 0.0103,
+        "ci_95_wald": [
+          0.2838,
+          0.3242
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Hypothetical sensitivity analysis assuming 12 independent mechanisms. Invalid for primary inference."
+      }
+    },
+    {
+      "cohen_d": 0.6,
+      "mean_diff_requests": 7.2,
+      "sigma_requests": 12.0,
+      "primary_mechanism_level_n6": {
+        "sample_size": 6,
+        "experimental_unit": "independent_mechanism",
+        "is_primary_design": true,
+        "seed": 460,
+        "replications": 2000,
+        "directional_rejections_count": 209,
+        "estimated_directional_power": 0.1045,
+        "mcse": 0.0068,
+        "ci_95_wald": [
+          0.0911,
+          0.1179
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Valid independent experimental units; within-mechanism K=4/8 strata averaged."
+      },
+      "hypothetical_instance_level_n12": {
+        "sample_size": 12,
+        "experimental_unit": "task_configuration (pseudoreplicated)",
+        "is_primary_design": false,
+        "seed": 160,
+        "replications": 2000,
+        "directional_rejections_count": 859,
+        "estimated_directional_power": 0.4295,
+        "mcse": 0.0111,
+        "ci_95_wald": [
+          0.4078,
+          0.4512
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Hypothetical sensitivity analysis assuming 12 independent mechanisms. Invalid for primary inference."
+      }
+    },
+    {
+      "cohen_d": 0.7,
+      "mean_diff_requests": 8.4,
+      "sigma_requests": 12.0,
+      "primary_mechanism_level_n6": {
+        "sample_size": 6,
+        "experimental_unit": "independent_mechanism",
+        "is_primary_design": true,
+        "seed": 470,
+        "replications": 2000,
+        "directional_rejections_count": 303,
+        "estimated_directional_power": 0.1515,
+        "mcse": 0.008,
+        "ci_95_wald": [
+          0.1358,
+          0.1672
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Valid independent experimental units; within-mechanism K=4/8 strata averaged."
+      },
+      "hypothetical_instance_level_n12": {
+        "sample_size": 12,
+        "experimental_unit": "task_configuration (pseudoreplicated)",
+        "is_primary_design": false,
+        "seed": 170,
+        "replications": 2000,
+        "directional_rejections_count": 1068,
+        "estimated_directional_power": 0.534,
+        "mcse": 0.0112,
+        "ci_95_wald": [
+          0.5121,
+          0.5559
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Hypothetical sensitivity analysis assuming 12 independent mechanisms. Invalid for primary inference."
+      }
+    },
+    {
+      "cohen_d": 0.8,
+      "mean_diff_requests": 9.6,
+      "sigma_requests": 12.0,
+      "primary_mechanism_level_n6": {
+        "sample_size": 6,
+        "experimental_unit": "independent_mechanism",
+        "is_primary_design": true,
+        "seed": 480,
+        "replications": 2000,
+        "directional_rejections_count": 329,
+        "estimated_directional_power": 0.1645,
+        "mcse": 0.0083,
+        "ci_95_wald": [
+          0.1483,
+          0.1807
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Valid independent experimental units; within-mechanism K=4/8 strata averaged."
+      },
+      "hypothetical_instance_level_n12": {
+        "sample_size": 12,
+        "experimental_unit": "task_configuration (pseudoreplicated)",
+        "is_primary_design": false,
+        "seed": 180,
+        "replications": 2000,
+        "directional_rejections_count": 1280,
+        "estimated_directional_power": 0.64,
+        "mcse": 0.0107,
+        "ci_95_wald": [
+          0.619,
+          0.661
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Hypothetical sensitivity analysis assuming 12 independent mechanisms. Invalid for primary inference."
+      }
+    },
+    {
+      "cohen_d": 1.0,
+      "mean_diff_requests": 12.0,
+      "sigma_requests": 12.0,
+      "primary_mechanism_level_n6": {
+        "sample_size": 6,
+        "experimental_unit": "independent_mechanism",
+        "is_primary_design": true,
+        "seed": 500,
+        "replications": 2000,
+        "directional_rejections_count": 497,
+        "estimated_directional_power": 0.2485,
+        "mcse": 0.0097,
+        "ci_95_wald": [
+          0.2296,
+          0.2674
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Valid independent experimental units; within-mechanism K=4/8 strata averaged."
+      },
+      "hypothetical_instance_level_n12": {
+        "sample_size": 12,
+        "experimental_unit": "task_configuration (pseudoreplicated)",
+        "is_primary_design": false,
+        "seed": 200,
+        "replications": 2000,
+        "directional_rejections_count": 1660,
+        "estimated_directional_power": 0.83,
+        "mcse": 0.0084,
+        "ci_95_wald": [
+          0.8135,
+          0.8465
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Hypothetical sensitivity analysis assuming 12 independent mechanisms. Invalid for primary inference."
+      }
+    },
+    {
+      "cohen_d": 1.25,
+      "mean_diff_requests": 15.0,
+      "sigma_requests": 12.0,
+      "primary_mechanism_level_n6": {
+        "sample_size": 6,
+        "experimental_unit": "independent_mechanism",
+        "is_primary_design": true,
+        "seed": 525,
+        "replications": 2000,
+        "directional_rejections_count": 743,
+        "estimated_directional_power": 0.3715,
+        "mcse": 0.0108,
+        "ci_95_wald": [
+          0.3503,
+          0.3927
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Valid independent experimental units; within-mechanism K=4/8 strata averaged."
+      },
+      "hypothetical_instance_level_n12": {
+        "sample_size": 12,
+        "experimental_unit": "task_configuration (pseudoreplicated)",
+        "is_primary_design": false,
+        "seed": 225,
+        "replications": 2000,
+        "directional_rejections_count": 1897,
+        "estimated_directional_power": 0.9485,
+        "mcse": 0.0049,
+        "ci_95_wald": [
+          0.9388,
+          0.9582
+        ],
+        "rejection_decision_rule": "two_sided_p < 0.05 and w_plus > w_minus",
+        "notes": "Hypothetical sensitivity analysis assuming 12 independent mechanisms. Invalid for primary inference."
+      }
+    }
+  ],
+  "experimental_unit_structure": {
+    "total_task_configurations": 16,
+    "total_underlying_mechanisms": 8,
+    "active_mechanisms_count": 6,
+    "null_mechanisms_count": 2,
+    "active_configurations_count": 12,
+    "strata_per_mechanism": "K=4 (cap 120) and K=8 (cap 180)",
+    "primary_estimand": "Mechanism-level normalized burden difference D_bar_i averaged across K=4 and K=8",
+    "evaluable_mechanisms_in_benchmark": 3,
+    "disqualified_tasks_in_benchmark": 7,
+    "realized_test_statistic": "W = 1",
+    "realized_exact_p_value": 0.5,
+    "inferential_conclusion": "Fails to reject H0; does not demonstrate algorithmic equivalence."
+  }
+}

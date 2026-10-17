@@ -1,0 +1,265 @@
+{
+  "audit_metadata": {
+    "document_reference": "docs/research/phase_3_5/phase_3_5_power_results.json",
+    "date": "2026-10-17",
+    "phase": "3.5",
+    "mission": "Independent Statistical Power and Experimental-Unit Audit",
+    "target_repository": "/Users/yashmishra14/Personal projects/AgentXRay",
+    "git_checkpoint": "HEAD at commit 62579fb on branch main",
+    "final_disposition": "POWER_CLAIMS_REQUIRE_CORRECTION"
+  },
+  "provenance_and_specifications": {
+    "protocol_v1_4_path": "docs/research/phase_2b1_exploratory_protocol_v1_4.md",
+    "protocol_v1_4_sha256": "db45f4032f2340a9edc3441bafcb3957895b616d1289c28e85a5cc4671574f62",
+    "power_analysis_code_path": "benchmarks/model_pilot/power_and_budget_analysis.py",
+    "runner_code_path": "benchmarks/model_pilot/exploratory_runner_v1_4.py",
+    "raw_results_path": "benchmarks/results/phase_2b1_5_execution/results.json",
+    "raw_results_sha256": "5f9606d9dad39f6a1f3eea39fdfd140f56dffaec99f8516ec7ecfa66303f26b9"
+  },
+  "audited_claims": [
+    {
+      "claim_id": "CLAIM-POWER-N6-BOUND",
+      "statement": "Statistical power at n=6 is bounded by <= 37.1% for large effects (d=1.25).",
+      "consistency_status": "CORRECTED",
+      "mathematical_classification": "SIMULATION_ESTIMATE_CONFLATED_AS_BOUND",
+      "original_reported_value": "<= 37.1%",
+      "audited_value": "Point simulation estimate 0.3715 (37.15%, MCSE 1.08%, 95% CI [35.03%, 39.27%]) conditional on mu=15, sigma=12, p_tie=0.05, n=6.",
+      "rationale": "37.1% is not a mathematical upper bound on power. If ties are zero (p_tie=0.0), power under d=1.25 is 51.9%; for larger effects (d=2.5), power is 70.5%. The figure 37.1% is an empirical Monte Carlo point estimate under specific distributional assumptions."
+    },
+    {
+      "claim_id": "CLAIM-POWER-N12-INTERPRETABILITY",
+      "statement": "Instance-level power calculation at N=12 is 94.8% for d=1.25.",
+      "consistency_status": "CORRECTED",
+      "mathematical_classification": "PSEUDOREPLICATED_SENSITIVITY_CALCULATION",
+      "original_reported_value": "94.8% (MCSE 0.49%)",
+      "audited_value": "Hypothetical sensitivity calculation only; invalid for primary inference.",
+      "rationale": "The 12 active tasks consist of 6 mechanisms evaluated at K=4 and K=8. Because pairs of configurations share the same planted failure trigger and prompt structure, treating them as N=12 independent pairs constitutes pseudoreplication. Primary inference must be conducted at the mechanism level (n=6)."
+    },
+    {
+      "claim_id": "CLAIM-REJECTION-CONSTRAINT-N6",
+      "statement": "Under two-sided alpha=0.05, the exact signed-rank test on n=6 pairs can reject H0 if and only if W=0 and m=6.",
+      "consistency_status": "VERIFIED",
+      "mathematical_classification": "MATHEMATICAL_THEOREM",
+      "original_reported_value": "W=0 gives p=0.03125 < 0.05; W=1 gives p=0.0625 > 0.05",
+      "audited_value": "VERIFIED_EXACT",
+      "rationale": "With 2^6 = 64 permutation outcomes, two-sided p-value for W=0 is 2/64 = 0.03125. For W=1, p-value is 4/64 = 0.06250 > 0.05. Thus, W=0 is the only state in the rejection region."
+    },
+    {
+      "claim_id": "CLAIM-TIE-ZERO-POWER",
+      "statement": "A single tie (zero difference) among the 6 mechanisms makes rejection impossible at two-sided alpha=0.05 under Pratt filtering.",
+      "consistency_status": "VERIFIED",
+      "mathematical_classification": "MATHEMATICAL_THEOREM",
+      "original_reported_value": "Ties reduce n to m <= 5, where min p-value is 2/32 = 0.0625 > 0.05",
+      "audited_value": "VERIFIED_EXACT",
+      "rationale": "Pratt filtering drops zero differences. If m <= 5, total permutations <= 32, so min two-sided p-value >= 2/32 = 0.06250 > 0.05. Rejection power is identically 0.0%."
+    },
+    {
+      "claim_id": "CLAIM-OBSERVED-BENCHMARK-WILCOXON",
+      "statement": "Observed mechanism-level Wilcoxon signed-rank test yielded W=1, p=0.50 on m=3 non-zero mechanisms.",
+      "consistency_status": "VERIFIED",
+      "mathematical_classification": "OBSERVED_EMPIRICAL_TEST",
+      "original_reported_value": "p = 0.50",
+      "audited_value": "0.50 (exact subset-sum DP permutation test)",
+      "rationale": "Three mechanisms had zero differences (disqualified). Three had non-zero differences (+0.2222, +0.2222, -0.0417). For m=3, 2^3=8 perms; W=1 yields p = 4/8 = 0.50."
+    }
+  ],
+  "discrete_permutation_rejection_table": {
+    "m_1": {
+      "non_zero_pairs": 1,
+      "total_permutations": 2,
+      "min_possible_two_sided_p": 1.0,
+      "can_reject_at_alpha_0_05": false,
+      "rejection_region_w_values": []
+    },
+    "m_2": {
+      "non_zero_pairs": 2,
+      "total_permutations": 4,
+      "min_possible_two_sided_p": 0.5,
+      "can_reject_at_alpha_0_05": false,
+      "rejection_region_w_values": []
+    },
+    "m_3": {
+      "non_zero_pairs": 3,
+      "total_permutations": 8,
+      "min_possible_two_sided_p": 0.25,
+      "can_reject_at_alpha_0_05": false,
+      "rejection_region_w_values": []
+    },
+    "m_4": {
+      "non_zero_pairs": 4,
+      "total_permutations": 16,
+      "min_possible_two_sided_p": 0.125,
+      "can_reject_at_alpha_0_05": false,
+      "rejection_region_w_values": []
+    },
+    "m_5": {
+      "non_zero_pairs": 5,
+      "total_permutations": 32,
+      "min_possible_two_sided_p": 0.0625,
+      "can_reject_at_alpha_0_05": false,
+      "rejection_region_w_values": []
+    },
+    "m_6": {
+      "non_zero_pairs": 6,
+      "total_permutations": 64,
+      "min_possible_two_sided_p": 0.03125,
+      "can_reject_at_alpha_0_05": true,
+      "rejection_region_w_values": [
+        0
+      ]
+    }
+  },
+  "theoretical_model_based_calculation": {
+    "assumptions": {
+      "distribution": "Normal(mu=15.0, sigma=12.0)",
+      "effect_size_cohen_d": 1.25,
+      "tie_probability_per_mechanism": 0.05,
+      "sample_size_mechanisms": 6,
+      "significance_level_alpha": 0.05,
+      "alternative": "two-sided, directional rejection in favor of DD (W+ > W-)"
+    },
+    "step_by_step_derivation": {
+      "p_single_diff_positive": 0.89435,
+      "p_zero_ties_in_6_pairs": 0.73509,
+      "p_all_6_diffs_positive": 0.51174,
+      "theoretical_power_formula": "(1 - p_tie)^6 * [P(D_i > 0)]^6",
+      "exact_theoretical_power": 0.37617,
+      "exact_theoretical_power_percentage": "37.62%"
+    }
+  },
+  "reproduced_sensitivity_table": [
+    {
+      "cohen_d": 0.4,
+      "mean_diff_requests": 4.8,
+      "sigma_requests": 12.0,
+      "n12_power_estimate": 0.2005,
+      "n12_mcse": 0.009,
+      "n12_ci_95": [
+        0.183,
+        0.218
+      ],
+      "n12_seed": 140,
+      "n6_power_estimate": 0.053,
+      "n6_mcse": 0.005,
+      "n6_ci_95": [
+        0.0432,
+        0.0628
+      ],
+      "n6_seed": 440
+    },
+    {
+      "cohen_d": 0.5,
+      "mean_diff_requests": 6.0,
+      "sigma_requests": 12.0,
+      "n12_power_estimate": 0.304,
+      "n12_mcse": 0.0103,
+      "n12_ci_95": [
+        0.2838,
+        0.3242
+      ],
+      "n12_seed": 150,
+      "n6_power_estimate": 0.071,
+      "n6_mcse": 0.0057,
+      "n6_ci_95": [
+        0.0597,
+        0.0823
+      ],
+      "n6_seed": 450
+    },
+    {
+      "cohen_d": 0.6,
+      "mean_diff_requests": 7.2,
+      "sigma_requests": 12.0,
+      "n12_power_estimate": 0.4295,
+      "n12_mcse": 0.0111,
+      "n12_ci_95": [
+        0.4078,
+        0.4512
+      ],
+      "n12_seed": 160,
+      "n6_power_estimate": 0.1045,
+      "n6_mcse": 0.0068,
+      "n6_ci_95": [
+        0.0911,
+        0.1179
+      ],
+      "n6_seed": 460
+    },
+    {
+      "cohen_d": 0.7,
+      "mean_diff_requests": 8.4,
+      "sigma_requests": 12.0,
+      "n12_power_estimate": 0.534,
+      "n12_mcse": 0.0112,
+      "n12_ci_95": [
+        0.5121,
+        0.5559
+      ],
+      "n12_seed": 170,
+      "n6_power_estimate": 0.1515,
+      "n6_mcse": 0.008,
+      "n6_ci_95": [
+        0.1358,
+        0.1672
+      ],
+      "n6_seed": 470
+    },
+    {
+      "cohen_d": 0.8,
+      "mean_diff_requests": 9.6,
+      "sigma_requests": 12.0,
+      "n12_power_estimate": 0.64,
+      "n12_mcse": 0.0107,
+      "n12_ci_95": [
+        0.619,
+        0.661
+      ],
+      "n12_seed": 180,
+      "n6_power_estimate": 0.1645,
+      "n6_mcse": 0.0083,
+      "n6_ci_95": [
+        0.1483,
+        0.1807
+      ],
+      "n6_seed": 480
+    },
+    {
+      "cohen_d": 1.0,
+      "mean_diff_requests": 12.0,
+      "sigma_requests": 12.0,
+      "n12_power_estimate": 0.83,
+      "n12_mcse": 0.0084,
+      "n12_ci_95": [
+        0.8135,
+        0.8465
+      ],
+      "n12_seed": 200,
+      "n6_power_estimate": 0.2485,
+      "n6_mcse": 0.0097,
+      "n6_ci_95": [
+        0.2296,
+        0.2674
+      ],
+      "n6_seed": 500
+    },
+    {
+      "cohen_d": 1.25,
+      "mean_diff_requests": 15.0,
+      "sigma_requests": 12.0,
+      "n12_power_estimate": 0.9485,
+      "n12_mcse": 0.0049,
+      "n12_ci_95": [
+        0.9388,
+        0.9582
+      ],
+      "n12_seed": 225,
+      "n6_power_estimate": 0.3715,
+      "n6_mcse": 0.0108,
+      "n6_ci_95": [
+        0.3503,
+        0.3927
+      ],
+      "n6_seed": 525
+    }
+  ]
+}
