@@ -41,6 +41,7 @@ def dry_run_model_pilot(
     max_trials: int = 50,
     max_model_requests: int = 150,
     max_spend_usd: float = 1.00,
+    seed: int = 42,
 ) -> dict[str, Any]:
     """Inspect and validate experiment parameters and estimate costs without contacting any provider."""
     # Check credentials
@@ -138,6 +139,7 @@ def dry_run_model_pilot(
         "max_trials_per_algorithm": max_trials,
         "cost_estimation": cost_est,
         "status": status,
+        "seed": seed,
     }
 
 
@@ -155,6 +157,7 @@ def run_model_pilot_benchmark(
     confidence: float = 0.95,
     timeout_seconds: float = 60.0,
     output_dir: Path | str = ".",
+    seed: int = 42,
 ) -> ModelPilotExperimentReport:
     """Execute the model-backed agent pilot across the selected pilot task(s).
 
@@ -186,6 +189,8 @@ def run_model_pilot_benchmark(
         Wall-clock timeout in seconds.
     output_dir : Path | str
         Directory to write output JSON and Markdown reports.
+    seed : int
+        RNG seed for random baselines and local model generation reproducibility.
 
     Returns
     -------
@@ -226,7 +231,7 @@ def run_model_pilot_benchmark(
         tier = ExecutionTier.LIVE_MODEL
     elif provider_type == "ollama":
         resolved_model = model_name or "llama3.2:3b"
-        provider = OllamaProvider(model_name=resolved_model, timeout_seconds=timeout_seconds)
+        provider = OllamaProvider(model_name=resolved_model, timeout_seconds=timeout_seconds, seed=seed)
         provider.validate_configuration()
         tier = ExecutionTier.LOCAL_MODEL
     elif provider_type == "fake":
@@ -255,6 +260,7 @@ def run_model_pilot_benchmark(
         experiment_name=f"ModelPilot_{tier.value}_{resolved_model}",
         max_trials=max_trials,
         timeout_seconds=timeout_seconds,
+        seed=seed,
         mode=AccessMode.CONTROLLED_TESTBED,
         metadata={
             "tier": tier.value,
@@ -263,6 +269,7 @@ def run_model_pilot_benchmark(
             "task_filter": task_filter,
             "trials_per_candidate": trials_per_candidate,
             "failure_threshold": failure_threshold,
+            "seed": seed,
         },
     )
 
@@ -315,7 +322,7 @@ def run_model_pilot_benchmark(
             failure_threshold=failure_threshold,
             alpha=alpha,
             confidence=confidence,
-            seed=42,
+            seed=seed,
         )
         total_calls += runner_random.trial_count
         r_matches, _, _, r_excess, _ = evaluate_model_pilot_ground_truth(ground_truth, random_comp)

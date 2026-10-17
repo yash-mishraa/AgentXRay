@@ -659,6 +659,133 @@ def test_agent_retries_bounded_by_budget_headroom():
     assert tracker.total_requests == 2  # exactly at limit, not exceeded
 
 
+def test_model_pilot_benchmark_seed_propagation(tmp_path: Path):
+    """Verify run_model_pilot_benchmark records seed in config/metadata and seeds random search baseline."""
+    report_a1 = run_model_pilot_benchmark(
+        provider_type="fake",
+        task_filter="distractor_override",
+        max_trials=25,
+        trials_per_candidate=2,
+        seed=101,
+        output_dir=tmp_path / "run_a1",
+    )
+    report_a2 = run_model_pilot_benchmark(
+        provider_type="fake",
+        task_filter="distractor_override",
+        max_trials=25,
+        trials_per_candidate=2,
+        seed=101,
+        output_dir=tmp_path / "run_a2",
+    )
+    report_b = run_model_pilot_benchmark(
+        provider_type="fake",
+        task_filter="distractor_override",
+        max_trials=25,
+        trials_per_candidate=2,
+        seed=999,
+        output_dir=tmp_path / "run_b",
+    )
+
+    # 1. Config and metadata check
+    assert report_a1.config.seed == 101
+    assert report_a1.config.metadata["seed"] == 101
+    assert report_b.config.seed == 999
+    assert report_b.config.metadata["seed"] == 999
+
+    # 2. Baseline seeded random search determinism: identical seeds yield identical sampling
+    rand_a1 = report_a1.evaluations[0].baseline_comparisons[1]
+    rand_a2 = report_a2.evaluations[0].baseline_comparisons[1]
+    rand_b = report_b.evaluations[0].baseline_comparisons[1]
+
+    assert rand_a1.baseline_name == "stochastic_seeded_random"
+    assert rand_a1.target_calls == rand_a2.target_calls
+    assert rand_a1.subsets_examined == rand_a2.subsets_examined
+    assert rand_a1.discovered_elements == rand_a2.discovered_elements
+
+    # 3. Explicit check that configured non-default seed reaches run_stochastic_random_search
+    from unittest.mock import patch
+    import benchmarks.model_pilot.runner as runner_mod
+
+    captured_random_search_seeds: list[int] = []
+    orig_random_search = runner_mod.run_stochastic_random_search
+
+    def spy_random_search(*args, **kwargs):
+        if "seed" in kwargs:
+            captured_random_search_seeds.append(kwargs["seed"])
+        return orig_random_search(*args, **kwargs)
+
+    with patch.object(runner_mod, "run_stochastic_random_search", side_effect=spy_random_search):
+        run_model_pilot_benchmark(
+            provider_type="fake",
+            task_filter="distractor_override",
+            max_trials=10,
+            trials_per_candidate=1,
+            seed=777,
+            output_dir=None,
+        )
+
+    assert 777 in captured_random_search_seeds
 
 
+def test_model_pilot_benchmark_ollama_receives_seed(monkeypatch: pytest.MonkeyPatch):
+    """Verify run_model_pilot_benchmark passes seed to OllamaProvider constructor."""
+    from agentxray.providers.ollama_adapter import OllamaProvider
 
+    class MockInitStop(Exception):
+        pass
+
+    captured_init_kwargs: dict = {}
+
+    def mock_init(self, *args, **kwargs):
+        captured_init_kwargs.update(kwargs)
+        raise MockInitStop("Provider instantiated with seed")
+
+    monkeypatch.setattr(OllamaProvider, "__init__", mock_init)
+
+    with pytest.raises(MockInitStop):
+        run_model_pilot_benchmark(
+            provider_type="ollama",
+            model_name="llama3.2:3b",
+            task_filter="calibrated_currency",
+            max_trials=10,
+            max_model_requests=50,
+            seed=4321,
+            output_dir=None,
+        )
+
+    assert captured_init_kwargs.get("seed") == 4321
+
+
+def test_dry_run_model_pilot_seed():
+    """Verify dry_run_model_pilot accepts and returns the specified seed."""
+    res_default = dry_run_model_pilot()
+    assert res_default["seed"] == 42
+
+    res_custom = dry_run_model_pilot(seed=789)
+    assert res_custom["seed"] == 789
+
+
+def test_cli_model_pilot_seed_forwarding(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    """Verify CLI forwards seed to dry-run banner and benchmark runner."""
+    from agentxray.__main__ import main
+    import agentxray.__main__ as main_mod
+
+    # 1. Dry run CLI includes seed in stdout
+    monkeypatch.setattr("sys.argv", ["agentxray", "--mode", "model", "--dry-run", "--seed", "31415"])
+    main()
+    out = capsys.readouterr().out
+    assert "Random Seed: `31415`" in out
+
+    # 2. Execution CLI forwards seed to run_model_pilot_benchmark
+    captured_args = {}
+
+    def mock_run_pilot(**kwargs):
+        captured_args.update(kwargs)
+        raise RuntimeError("Stop after capturing kwargs")
+
+    monkeypatch.setattr(main_mod, "run_model_pilot_benchmark", mock_run_pilot)
+    monkeypatch.setattr("sys.argv", ["agentxray", "--mode", "model", "--provider", "fake", "--seed", "9876"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    assert captured_args.get("seed") == 9876

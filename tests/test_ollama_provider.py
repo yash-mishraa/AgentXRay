@@ -451,3 +451,52 @@ def test_dry_run_model_pilot_with_ollama() -> None:
     assert result["status"] == "VALID"
     assert result["can_execute_live"] is True
     assert result["cost_estimation"]["estimated_spend_usd"] == 0.0
+
+
+def test_ollama_request_payload_includes_configured_seed() -> None:
+    """Verify that configured seed reaches the outgoing HTTP request options payload."""
+    provider_seeded = OllamaProvider(model_name="llama3.2:3b", seed=4321)
+    captured_requests: list[urllib.request.Request] = []
+
+    mock_resp = {
+        "model": "llama3.2:3b",
+        "message": {"role": "assistant", "content": "Seeded response"},
+        "done": True,
+        "prompt_eval_count": 10,
+        "eval_count": 5,
+    }
+
+    def fake_urlopen(req: urllib.request.Request, *args: Any, **kwargs: Any) -> MockHTTPResponse:
+        captured_requests.append(req)
+        return MockHTTPResponse(mock_resp)
+
+    # 1. When seed is provided, options["seed"] must equal configured seed
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        resp = provider_seeded.generate(
+            messages=[Message(role="user", content="Calculate sum")],
+            temperature=0.0,
+            max_tokens=128,
+        )
+
+    assert isinstance(resp, ModelResponse)
+    assert len(captured_requests) == 1
+    req = captured_requests[0]
+    payload = json.loads(req.data.decode("utf-8"))
+    assert "options" in payload
+    assert payload["options"]["seed"] == 4321
+    assert payload["options"]["temperature"] == 0.0
+    assert payload["options"]["num_predict"] == 128
+
+    # 2. When seed is None, options should not contain "seed"
+    provider_unseeded = OllamaProvider(model_name="llama3.2:3b", seed=None)
+    captured_requests.clear()
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        resp_unseeded = provider_unseeded.generate(
+            messages=[Message(role="user", content="Calculate sum")]
+        )
+
+    assert isinstance(resp_unseeded, ModelResponse)
+    assert len(captured_requests) == 1
+    payload_unseeded = json.loads(captured_requests[0].data.decode("utf-8"))
+    assert "options" in payload_unseeded
+    assert "seed" not in payload_unseeded["options"]

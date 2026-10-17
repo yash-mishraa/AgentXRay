@@ -551,9 +551,11 @@ def main() -> None:
                 max_trials=pilot_max_trials,
                 max_model_requests=effective_max_requests,
                 max_spend_usd=args.max_spend,
+                seed=args.seed,
             )
             print("\nPre-Flight Configuration & Cost Validation:")
             print(f"- Provider Type: `{dry_info['provider_type']}` | Model: `{dry_info['model_name']}`")
+            print(f"- Random Seed: `{dry_info['seed']}`")
             print(f"- Live API Calls Authorized (--live): `{dry_info['live_requested']}`")
             print(f"- API Key Present in Environment: `{dry_info['api_key_configured']}`")
             print("- Endpoint Connectivity: NOT CHECKED (offline dry-run makes zero network requests)")
@@ -595,6 +597,7 @@ def main() -> None:
                     confidence=args.confidence,
                     timeout_seconds=args.timeout,
                     output_dir=args.output_dir,
+                    seed=args.seed,
                 )
                 print(format_model_pilot_markdown_report(pilot_report))
             except RuntimeError as exc:
