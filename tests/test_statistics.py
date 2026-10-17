@@ -247,4 +247,77 @@ def test_compare_paired_differences_exact_student_t_and_wilcoxon_precision():
     assert 0.0 < summary.paired_t_p_value < 0.001
     # Wilcoxon p-value must be positive float and not truncated to 0.0
     assert 0.0 < summary.wilcoxon_p_value < 0.001
+    assert summary.wilcoxon_p_value_is_asymptotic is True
+
+
+def test_wilcoxon_asymptotic_vs_exact_small_sample():
+    """Verify exact combinatorial Wilcoxon p-value vs asymptotic normal approximation for small N."""
+    from agentxray.statistics import (
+        wilcoxon_exact_p_value_small_sample,
+        wilcoxon_signed_rank_test,
+    )
+
+    # N=10, all strictly positive differences: W+ = 55
+    # Exact combinatorial p = 2 / 2^10 = 2 / 1024 = 0.001953125
+    p_exact = wilcoxon_exact_p_value_small_sample(55.0, n_r=10)
+    assert math.isclose(p_exact, 2.0 / 1024.0, abs_tol=1e-9)
+
+    # Symmetric W+ = 27.5 (expectation for N=10): exact p = 1.0
+    p_exact_null = wilcoxon_exact_p_value_small_sample(27.0, n_r=10)
+    assert math.isclose(p_exact_null, 1.0, abs_tol=1e-2)
+
+    # Edge cases
+    with pytest.raises(ValueError, match="n_r must be positive"):
+        wilcoxon_exact_p_value_small_sample(10.0, n_r=0)
+    with pytest.raises(ValueError, match="restricted to n_r <= 25"):
+        wilcoxon_exact_p_value_small_sample(10.0, n_r=30)
+
+    # Asymptotic test for N=10 all positive
+    x = list(range(1, 11))
+    y = [0] * 10
+    w_stat, p_asymptotic = wilcoxon_signed_rank_test(x, y)
+    assert w_stat == 55.0
+    # Asymptotic approximation with continuity correction yields p ≈ 0.0051 < 0.01
+    assert 0.001 < p_asymptotic < 0.01
+
+
+def test_wilcoxon_zero_differences_and_ties():
+    """Verify Pratt zero-drop and tie-adjusted variance in Wilcoxon signed-rank test."""
+    from agentxray.statistics import wilcoxon_signed_rank_test
+
+    # All differences zero: must return W=0, p=1.0
+    w_stat, p_val = wilcoxon_signed_rank_test([5.0, 5.0, 5.0], [5.0, 5.0, 5.0])
+    assert w_stat == 0.0
+    assert p_val == 1.0
+
+    # Half differences zero: Pratt zero drop reduces effective sample size
+    x = [10.0, 10.0, 5.0, 5.0]
+    y = [8.0, 8.0, 5.0, 5.0]
+    # Non-zero diffs are [+2, +2], n_r = 2, tied at rank 1.5
+    w_stat, p_val = wilcoxon_signed_rank_test(x, y)
+    assert w_stat == 3.0  # 1.5 + 1.5
+    assert 0.0 < p_val <= 1.0
+
+    # Tied absolute differences with mixed signs
+    x_tied = [10.0, 10.0, 5.0, 5.0]
+    y_tied = [8.0, 12.0, 3.0, 7.0]  # diffs: +2, -2, +2, -2 (all |d|=2, 4-way tie)
+    w_tied, p_tied = wilcoxon_signed_rank_test(x_tied, y_tied)
+    # Ranks are all 2.5. Positive diffs: 2.5 + 2.5 = 5.0. Null expectation is 5.0
+    assert w_tied == 5.0
+    assert p_tied == 1.0
+
+
+def test_wilcoxon_extreme_statistics_precision():
+    """Verify extreme Wilcoxon statistics do not underflow or round to zero."""
+    from agentxray.statistics import wilcoxon_signed_rank_test
+
+    # N=60 strictly positive paired differences: W+ = 1830, W- = 0
+    x = [float(i + 10) for i in range(60)]
+    y = [float(i) for i in range(60)]
+    w_stat, p_val = wilcoxon_signed_rank_test(x, y)
+
+    assert w_stat == 60 * 61 / 2  # 1830.0
+    # Extreme p-value should be non-zero scientific float: ~ 1e-11
+    assert 0.0 < p_val < 1e-9
+
 

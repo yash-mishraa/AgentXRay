@@ -1,0 +1,225 @@
+{
+  "milestone": "Phase 2B.0 Local-Model Pilot Calibration",
+  "timestamp": "2026-10-17T04:20:11.000776+00:00",
+  "execution_tier": "local_model",
+  "provider_type": "ollama",
+  "model_name": "llama3.2:3b",
+  "final_decision": "CONFIRMATORY_READY",
+  "total_wall_clock_seconds": 126.212,
+  "runtime_metadata": {
+    "provider_type": "ollama",
+    "model_name": "llama3.2:3b",
+    "execution_tier": "local_model",
+    "timestamp": "2026-10-17T04:18:04.788958+00:00",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "processor": "arm",
+    "python_version": "3.13.16",
+    "commercial_api_spend_usd": 0.0,
+    "daemon_reachable": true,
+    "base_url": "http://127.0.0.1:11434",
+    "digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "model_size_bytes": 2019393189,
+    "modified_at": "2026-10-16T23:16:43.47392251+05:30",
+    "format": "gguf",
+    "family": "llama",
+    "parameter_size": "3.2B",
+    "quantization_level": "Q4_K_M",
+    "context_length": 131072
+  },
+  "controls_calibration": {
+    "trigger_status": "TRIGGER_CONFIRMED",
+    "qualification_checks": {
+      "baseline_clean_lte_0_20": true,
+      "positive_trigger_gte_0_70": true,
+      "null_distractors_lte_0_20": true,
+      "full_intervention_gte_0_70": true,
+      "all_checks_passed": true
+    },
+    "negative_control_baseline": {
+      "case_id": "ctrl_negative_baseline",
+      "elements": [],
+      "trials": 5,
+      "failures": 0,
+      "successes": 5,
+      "failure_rate": 0.0,
+      "wilson_ci": [
+        0.0,
+        0.4345
+      ],
+      "requests_consumed": 10,
+      "tokens_consumed": 1830,
+      "is_failing": false
+    },
+    "positive_control_trigger": {
+      "case_id": "ctrl_positive_trigger",
+      "elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "trials": 5,
+      "failures": 5,
+      "successes": 0,
+      "failure_rate": 1.0,
+      "wilson_ci": [
+        0.5655,
+        1.0
+      ],
+      "requests_consumed": 10,
+      "tokens_consumed": 2250,
+      "is_failing": true
+    },
+    "null_control_distractors": {
+      "case_id": "ctrl_null_distractors",
+      "elements": [
+        "concise_summary: provide clear one-line reimbursement statement",
+        "compliance_tag: include audit reference code REF-2026",
+        "audit_memo: append verification timestamp to final answer"
+      ],
+      "trials": 5,
+      "failures": 0,
+      "successes": 5,
+      "failure_rate": 0.0,
+      "wilson_ci": [
+        0.0,
+        0.4345
+      ],
+      "requests_consumed": 10,
+      "tokens_consumed": 2335,
+      "is_failing": false
+    },
+    "full_intervention": {
+      "case_id": "ctrl_full_intervention",
+      "elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")",
+        "concise_summary: provide clear one-line reimbursement statement",
+        "compliance_tag: include audit reference code REF-2026",
+        "audit_memo: append verification timestamp to final answer"
+      ],
+      "trials": 5,
+      "failures": 5,
+      "successes": 0,
+      "failure_rate": 1.0,
+      "wilson_ci": [
+        0.5655,
+        1.0
+      ],
+      "requests_consumed": 10,
+      "tokens_consumed": 2730,
+      "is_failing": true
+    },
+    "statistical_contrasts": {
+      "positive_vs_baseline": {
+        "risk_difference": 1.0,
+        "newcombe_ci": [
+          0.3855,
+          1.0
+        ],
+        "fisher_exact_p_value": 0.00794,
+        "statistically_significant": true
+      },
+      "positive_vs_null": {
+        "risk_difference": 1.0,
+        "newcombe_ci": [
+          0.3855,
+          1.0
+        ],
+        "fisher_exact_p_value": 0.00794,
+        "statistically_significant": true
+      }
+    },
+    "total_requests_used": 40
+  },
+  "minimization_algorithms": {
+    "delta_debugging": {
+      "algorithm": "stochastic_delta_debugging",
+      "model_requests": 40,
+      "agent_executions": 20,
+      "wall_clock_seconds": 21.237,
+      "discovered_elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "matches_ground_truth": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "excess_elements": [],
+      "missing_elements": [],
+      "minimality_status": "statistically_supported",
+      "subsets_evaluated": 4
+    },
+    "greedy_ablation": {
+      "algorithm": "stochastic_greedy_ablation",
+      "model_requests": 60,
+      "agent_executions": 30,
+      "wall_clock_seconds": 37.122,
+      "discovered_elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "matches_ground_truth": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "excess_elements": [],
+      "missing_elements": [],
+      "minimality_status": "statistically_supported",
+      "subsets_evaluated": 6
+    },
+    "random_search": {
+      "algorithm": "stochastic_random_search",
+      "model_requests": 50,
+      "agent_executions": 25,
+      "wall_clock_seconds": 31.137,
+      "discovered_elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "matches_ground_truth": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "excess_elements": [],
+      "missing_elements": [],
+      "minimality_status": "statistically_supported",
+      "subsets_evaluated": 5
+    },
+    "paired_comparison": {
+      "dd_requests": 40,
+      "greedy_requests": 60,
+      "difference_dd_minus_greedy": -20,
+      "dd_efficiency_advantage": true
+    }
+  },
+  "holdout_confirmation": {
+    "delta_debugging": {
+      "case_id": "holdout_delta_debugging",
+      "elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "trials": 5,
+      "failures": 5,
+      "successes": 0,
+      "failure_rate": 1.0,
+      "wilson_ci": [
+        0.5655,
+        1.0
+      ],
+      "requests_consumed": 10,
+      "tokens_consumed": 2250,
+      "is_failing": true
+    },
+    "greedy_ablation": {
+      "case_id": "holdout_greedy_ablation",
+      "elements": [
+        "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. \"$150\" or \"$250\")"
+      ],
+      "trials": 5,
+      "failures": 5,
+      "successes": 0,
+      "failure_rate": 1.0,
+      "wilson_ci": [
+        0.5655,
+        1.0
+      ],
+      "requests_consumed": 10,
+      "tokens_consumed": 2250,
+      "is_failing": true
+    }
+  },
+  "reproducible_command": "./.venv/bin/python -m benchmarks.model_pilot.calibration_runner --provider ollama --model llama3.2:3b"
+}

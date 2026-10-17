@@ -1,21 +1,25 @@
-"""Phase 2A.2 Deterministic Reproduction and Validation Script.
+"""Phase 2A.2 Deterministic Reproduction and Rigorous Validation Script.
 
 Audits Phase 2A.1 benchmark artifacts end-to-end:
-1. Validates all 31,483 records in phase_2a1_event_log.jsonl.
+1. Validates all records in phase_2a1_event_log.jsonl with dynamic error detection.
 2. Reconciles event log with phase_2a1_scaling_results.json and phase_2a1_scaling_summary.csv.
 3. Computes exact sample and population standard deviations, medians, and means.
-4. Performs exact Student's t-test and Wilcoxon signed-rank tests for paired differences.
+4. Performs exact Student's t-test and Wilcoxon signed-rank asymptotic tests for paired differences.
 5. Emits three versioned machine-readable artifacts:
    - benchmarks/results/phase_2a2_corrected_metrics.csv
    - benchmarks/results/phase_2a2_statistical_tests.json
    - benchmarks/results/phase_2a2_event_log_validation.json
+
+Validation status is strictly derived from actual checks; fails with nonzero exit code on discrepancies.
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import math
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +40,43 @@ SUMMARY_CSV_PATH = REPO_ROOT / "benchmarks" / "results" / "phase_2a1_scaling_sum
 OUT_METRICS_CSV = REPO_ROOT / "benchmarks" / "results" / "phase_2a2_corrected_metrics.csv"
 OUT_STAT_JSON = REPO_ROOT / "benchmarks" / "results" / "phase_2a2_statistical_tests.json"
 OUT_LOG_VAL_JSON = REPO_ROOT / "benchmarks" / "results" / "phase_2a2_event_log_validation.json"
+
+VALID_FAMILIES = {
+    "single_trigger",
+    "conjunctive_trigger",
+    "multiple_independent",
+    "distractor_heavy",
+    "null_target",
+    "non_monotonic",
+    "stochastic_target",
+    "weak_signal",
+}
+VALID_CANDIDATE_SIZES = {4, 8, 12, 16, 20}
+VALID_ALGORITHMS = {
+    "stochastic_delta_debugging",
+    "stochastic_greedy_ablation",
+    "stochastic_seeded_random",
+}
+VALID_PHASES = {"search", "minimality_verification"}
+
+REQUIRED_EVENT_FIELDS = {
+    "benchmark_version": str,
+    "target_family": str,
+    "k": int,
+    "seed": int,
+    "algorithm": str,
+    "step_index": int,
+    "phase": str,
+    "candidate_elements": list,
+    "candidate_size": int,
+    "trials_requested": int,
+    "failures_observed": int,
+    "failure_rate": (float, int),
+    "ci_lower": (float, int),
+    "ci_upper": (float, int),
+    "cumulative_target_calls": int,
+    "elapsed_ms": (float, int),
+}
 
 
 def sample_std(values: list[float]) -> float:
@@ -72,23 +113,66 @@ def median(values: list[float]) -> float:
 def validate_event_log(
     event_log_path: Path,
     results_json_path: Path,
+    summary_csv_path: Path,
 ) -> dict[str, Any]:
-    """Execute rigorous 12-check validation of the event log."""
+    """Execute dynamic, non-hardcoded 18-check validation of event log and related artifacts."""
     print("Validating event log:", event_log_path)
-    
+
+    # Check 1: File existence
+    file_missing_errors = 0
+    if not event_log_path.exists():
+        print(f"ERROR: Missing event log file: {event_log_path}")
+        file_missing_errors += 1
+    if not results_json_path.exists():
+        print(f"ERROR: Missing results JSON file: {results_json_path}")
+        file_missing_errors += 1
+    if not summary_csv_path.exists():
+        print(f"ERROR: Missing summary CSV file: {summary_csv_path}")
+        file_missing_errors += 1
+
+    if file_missing_errors > 0:
+        return {
+            "status": "VALIDATION_FAILED",
+            "all_checks_passed": False,
+            "error": "Required input artifacts do not exist on disk",
+            "checks": {"check_01_file_existence": file_missing_errors},
+        }
+
+    # Load results JSON to establish dynamic instance ground-truth mapping
+    with open(results_json_path, "r", encoding="utf-8") as f:
+        results_data = json.load(f)
+
+    instances = results_data.get("instances", [])
+    expected_instance_count = len(instances)
+    expected_run_count = expected_instance_count * len(VALID_ALGORITHMS)
+
+    initial_candidate_spaces: dict[tuple[str, int, int], set[str]] = {}
+    json_instance_runs: set[tuple[str, int, int, str]] = set()
+    for inst in instances:
+        key_inst = (inst["family"], inst["k"], inst["seed"])
+        initial_candidate_spaces[key_inst] = set(inst["initial_elements"])
+        for alg in VALID_ALGORITHMS:
+            json_instance_runs.add((inst["family"], inst["k"], inst["seed"], alg))
+
+    # Event log tracking
     total_records = 0
     total_trials = 0
     parse_errors = 0
+    field_schema_errors = 0
+    enum_errors = 0
     candidate_size_mismatches = 0
-    invalid_counts = 0
+    elements_out_of_space_errors = 0
     trials_out_of_range = 0
     failures_exceed_trials = 0
     wilson_ci_discrepancies = 0
+    phase_violations = 0
     monotonicity_violations = 0
     step_index_violations = 0
-    phase_violations = 0
-    
-    runs: set[tuple[str, int, int, str]] = set()
+    cumulative_arithmetic_violations = 0
+    duplicate_records = 0
+
+    seen_record_keys: set[tuple[str, int, int, str, int]] = set()
+    runs_observed: set[tuple[str, int, int, str]] = set()
     run_cum_calls: dict[tuple[str, int, int, str], int] = {}
     run_last_step: dict[tuple[str, int, int, str], int] = {}
     run_aggregated: dict[tuple[str, int, int, str], dict[str, Any]] = {}
@@ -105,6 +189,13 @@ def validate_event_log(
                 parse_errors += 1
                 continue
 
+            # Check required fields and data types
+            for field, expected_type in REQUIRED_EVENT_FIELDS.items():
+                if field not in record:
+                    field_schema_errors += 1
+                elif not isinstance(record[field], expected_type):
+                    field_schema_errors += 1
+
             fam = record.get("target_family")
             k = record.get("k")
             seed = record.get("seed")
@@ -115,46 +206,64 @@ def validate_event_log(
             cand_size = record.get("candidate_size")
             trials = record.get("trials_requested", 0)
             failures = record.get("failures_observed", 0)
+            failure_rate = record.get("failure_rate", 0.0)
             ci_low = record.get("ci_lower")
             ci_high = record.get("ci_upper")
             cum_calls = record.get("cumulative_target_calls", 0)
 
             total_trials += trials
 
-            # Check 1: Candidate size matches element length
+            # Check valid enums
+            if fam not in VALID_FAMILIES or k not in VALID_CANDIDATE_SIZES or alg not in VALID_ALGORITHMS:
+                enum_errors += 1
+            if phase not in VALID_PHASES:
+                phase_violations += 1
+
+            # Candidate size matches elements length
             if cand_size != len(cand_elems):
                 candidate_size_mismatches += 1
 
-            # Check 2: Valid trial counts
+            # Candidate elements are strictly a subset of the instance initial space
+            space = initial_candidate_spaces.get((fam, k, seed))
+            if space is None or not set(cand_elems).issubset(space):
+                elements_out_of_space_errors += 1
+
+            # Trial and failure bounds
             if trials <= 0:
                 trials_out_of_range += 1
             if failures < 0 or failures > trials:
                 failures_exceed_trials += 1
+            if trials > 0 and not math.isclose(failure_rate, failures / trials, abs_tol=1e-5):
+                failures_exceed_trials += 1
 
-            # Check 3: Wilson score CI accuracy
+            # Wilson score interval validation
             exp_ci = wilson_score_interval(failures, trials, confidence=0.95)
             if abs(ci_low - exp_ci[0]) > 1e-4 or abs(ci_high - exp_ci[1]) > 1e-4:
                 wilson_ci_discrepancies += 1
 
-            # Check 4: Phase validity
-            if phase not in ("search", "minimality_verification"):
-                phase_violations += 1
+            # Duplicate record check
+            rec_key = (fam, k, seed, alg, step)
+            if rec_key in seen_record_keys:
+                duplicate_records += 1
+            seen_record_keys.add(rec_key)
 
-            # Check 5: Monotonic cumulative target calls and step index
+            # Monotonic step and cumulative calls check
             run_key = (fam, k, seed, alg)
-            runs.add(run_key)
+            runs_observed.add(run_key)
 
             prev_cum = run_cum_calls.get(run_key, 0)
             if cum_calls <= prev_cum:
                 monotonicity_violations += 1
+            if cum_calls != prev_cum + trials:
+                cumulative_arithmetic_violations += 1
             run_cum_calls[run_key] = cum_calls
 
             prev_step = run_last_step.get(run_key, 0)
-            if step <= prev_step:
+            if step != prev_step + 1:
                 step_index_violations += 1
             run_last_step[run_key] = step
 
-            # Aggregate per run for reconciliation
+            # Aggregation for reconciliation
             if run_key not in run_aggregated:
                 run_aggregated[run_key] = {
                     "total_calls": 0,
@@ -169,78 +278,108 @@ def validate_event_log(
                 run_aggregated[run_key]["verif_calls"] += trials
             run_aggregated[run_key]["distinct_subsets"].add(tuple(sorted(cand_elems)))
 
-    # Reconcile with results JSON
-    with open(results_json_path, "r", encoding="utf-8") as f:
-        results_data = json.load(f)
+    # Reconcile against JSON results
+    target_call_mismatches_json = 0
+    search_call_mismatches_json = 0
+    verif_call_mismatches_json = 0
+    subset_mismatches_json = 0
 
-    target_call_mismatches = 0
-    search_call_mismatches = 0
-    verif_call_mismatches = 0
-    subset_mismatches = 0
+    alg_map = {
+        "stochastic_delta_debugging": "dd_result",
+        "stochastic_greedy_ablation": "greedy_result",
+        "stochastic_seeded_random": "random_result",
+    }
 
-    instances = results_data["instances"]
     for inst in instances:
         fam = inst["family"]
         k = inst["k"]
         seed = inst["seed"]
-        for alg_name, res_key in [
-            ("stochastic_delta_debugging", "dd_result"),
-            ("stochastic_greedy_ablation", "greedy_result"),
-            ("stochastic_seeded_random", "random_result"),
-        ]:
+        for alg_name, res_key in alg_map.items():
             res = inst[res_key]
             run_key = (fam, k, seed, alg_name)
             aggr = run_aggregated.get(run_key)
             if aggr is None:
-                target_call_mismatches += 1
+                target_call_mismatches_json += 1
                 continue
             if aggr["total_calls"] != res["target_calls"]:
-                target_call_mismatches += 1
+                target_call_mismatches_json += 1
             if aggr["search_calls"] != res["search_target_calls"]:
-                search_call_mismatches += 1
+                search_call_mismatches_json += 1
             if aggr["verif_calls"] != res["verification_target_calls"]:
-                verif_call_mismatches += 1
+                verif_call_mismatches_json += 1
             if len(aggr["distinct_subsets"]) != res["subsets_examined"]:
-                subset_mismatches += 1
+                subset_mismatches_json += 1
+
+    # Reconcile against CSV summary
+    csv_rows_count = 0
+    csv_reconciliation_mismatches = 0
+    with open(summary_csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            csv_rows_count += 1
+            key = (row["family"], int(row["k"]), int(row["seed"]), row["algorithm"])
+            aggr = run_aggregated.get(key)
+            if aggr is None:
+                csv_reconciliation_mismatches += 1
+                continue
+            if aggr["total_calls"] != int(row["target_calls"]):
+                csv_reconciliation_mismatches += 1
+            if aggr["search_calls"] != int(row["search_target_calls"]):
+                csv_reconciliation_mismatches += 1
+            if aggr["verif_calls"] != int(row["verification_target_calls"]):
+                csv_reconciliation_mismatches += 1
+            if len(aggr["distinct_subsets"]) != int(row["subsets_examined"]):
+                csv_reconciliation_mismatches += 1
+
+    # Discrepancies between expected runs and observed runs
+    missing_runs = len(json_instance_runs - runs_observed)
+    unexpected_runs = len(runs_observed - json_instance_runs)
+
+    checks = {
+        "check_01_file_existence": file_missing_errors,
+        "check_02_json_parse_errors": parse_errors,
+        "check_03_field_schema_errors": field_schema_errors,
+        "check_04_enum_errors": enum_errors,
+        "check_05_candidate_size_mismatches": candidate_size_mismatches,
+        "check_06_elements_outside_initial_space": elements_out_of_space_errors,
+        "check_07_trials_out_of_range": trials_out_of_range,
+        "check_08_failures_exceed_trials": failures_exceed_trials,
+        "check_09_wilson_ci_discrepancies": wilson_ci_discrepancies,
+        "check_10_phase_violations": phase_violations,
+        "check_11_step_index_sequence_violations": step_index_violations,
+        "check_12_cumulative_calls_monotonicity_violations": monotonicity_violations,
+        "check_13_cumulative_calls_arithmetic_violations": cumulative_arithmetic_violations,
+        "check_14_duplicate_records": duplicate_records,
+        "check_15_missing_runs": missing_runs,
+        "check_16_unexpected_runs": unexpected_runs,
+        "check_17_reconciliation_json_target_calls": target_call_mismatches_json,
+        "check_18_reconciliation_json_search_calls": search_call_mismatches_json,
+        "check_19_reconciliation_json_verif_calls": verif_call_mismatches_json,
+        "check_20_reconciliation_json_distinct_subsets": subset_mismatches_json,
+        "check_21_reconciliation_csv_mismatches": csv_reconciliation_mismatches,
+    }
+
+    total_discrepancies = sum(checks.values())
+    all_checks_passed = (total_discrepancies == 0 and len(runs_observed) == expected_run_count)
+    status = "VALIDATION_PASSED" if all_checks_passed else "VALIDATION_FAILED"
 
     validation_summary = {
+        "status": status,
+        "all_checks_passed": all_checks_passed,
         "event_log_file": str(event_log_path.name),
         "results_json_file": str(results_json_path.name),
+        "summary_csv_file": str(summary_csv_path.name),
         "total_event_records": total_records,
         "total_target_trials": total_trials,
-        "distinct_runs": len(runs),
-        "checks": {
-            "check_01_json_parse_errors": parse_errors,
-            "check_02_candidate_size_mismatches": candidate_size_mismatches,
-            "check_03_trials_out_of_range": trials_out_of_range,
-            "check_04_failures_exceed_trials": failures_exceed_trials,
-            "check_05_wilson_ci_discrepancies": wilson_ci_discrepancies,
-            "check_06_phase_violations": phase_violations,
-            "check_07_cumulative_calls_monotonicity_violations": monotonicity_violations,
-            "check_08_step_index_sequence_violations": step_index_violations,
-            "check_09_reconciliation_target_call_mismatches": target_call_mismatches,
-            "check_10_reconciliation_search_call_mismatches": search_call_mismatches,
-            "check_11_reconciliation_verif_call_mismatches": verif_call_mismatches,
-            "check_12_reconciliation_distinct_subset_mismatches": subset_mismatches,
-        },
-        "all_checks_passed": (
-            parse_errors == 0
-            and candidate_size_mismatches == 0
-            and trials_out_of_range == 0
-            and failures_exceed_trials == 0
-            and wilson_ci_discrepancies == 0
-            and phase_violations == 0
-            and monotonicity_violations == 0
-            and step_index_violations == 0
-            and target_call_mismatches == 0
-            and search_call_mismatches == 0
-            and verif_call_mismatches == 0
-            and subset_mismatches == 0
-            and total_records == 31483
-            and total_trials == 314830
-            and len(runs) == 1200
-        ),
-        "status": "VERIFIED_100_PERCENT_REPRODUCIBLE",
+        "distinct_runs": len(runs_observed),
+        "observed_event_records": total_records,
+        "observed_target_trials": total_trials,
+        "expected_instances": expected_instance_count,
+        "expected_runs": expected_run_count,
+        "observed_runs": len(runs_observed),
+        "observed_csv_rows": csv_rows_count,
+        "total_discrepancies": total_discrepancies,
+        "checks": checks,
     }
     return validation_summary
 
@@ -261,7 +400,6 @@ def compute_comprehensive_metrics(
         "stochastic_seeded_random": "random_result",
     }
 
-    # Algorithm level containers
     calls_by_alg: dict[str, list[float]] = {k: [] for k in alg_map}
     search_calls_by_alg: dict[str, list[float]] = {k: [] for k in alg_map}
     verif_calls_by_alg: dict[str, list[float]] = {k: [] for k in alg_map}
@@ -304,7 +442,6 @@ def compute_comprehensive_metrics(
                 prec_non_null[alg].append(res["precision"])
                 rec_non_null[alg].append(res["recall"])
 
-    # Overall Summary
     alg_summaries: dict[str, Any] = {}
     for alg in alg_map:
         c = calls_by_alg[alg]
@@ -313,7 +450,7 @@ def compute_comprehensive_metrics(
         sub = subsets_by_alg[alg]
         gt_count = gt_recovery_non_null[alg]
         min_count = one_min_non_null[alg]
-        
+
         gt_ci = wilson_score_interval(gt_count, n_non_null, 0.95)
         min_ci = wilson_score_interval(min_count, n_non_null, 0.95)
 
@@ -360,14 +497,12 @@ def compute_comprehensive_metrics(
         p_t_norm = math.erfc(abs(t_stat) / math.sqrt(2.0))
         w_plus, w_p = wilcoxon_signed_rank_test(x, y)
 
-        # compute W- and z-statistic explicitly
         nonzero = [d for d in diffs if d != 0.0]
         nr = len(nonzero)
         total_w = nr * (nr + 1.0) / 2.0
         w_minus = total_w - w_plus
         mean_w = nr * (nr + 1.0) / 4.0
         abs_diffs = sorted((abs(d), d > 0) for d in nonzero)
-        # tie lengths for variance
         i = 0
         tie_lens = []
         while i < nr:
@@ -398,7 +533,9 @@ def compute_comprehensive_metrics(
             "wilcoxon_w_plus": round(w_plus, 4),
             "wilcoxon_w_minus": round(w_minus, 4),
             "wilcoxon_z_statistic": round(z_stat, 4),
-            "wilcoxon_p_value_exact": w_p,
+            "wilcoxon_p_value_asymptotic": w_p,
+            "wilcoxon_p_value_exact": w_p,  # alias for backwards compatibility
+            "wilcoxon_p_value_is_asymptotic": True,
         }
 
     paired_overall = {
@@ -407,7 +544,6 @@ def compute_comprehensive_metrics(
         "greedy_vs_random": paired_full_analysis(greedy_c, random_c, "Greedy Ablation", "Random Search"),
     }
 
-    # Scaling by K in {4, 8, 12, 16, 20}
     k_scaling: dict[str, Any] = {}
     for k_val in (4, 8, 12, 16, 20):
         k_insts = [inst for inst in instances if inst["k"] == k_val]
@@ -428,7 +564,6 @@ def compute_comprehensive_metrics(
                 "non_null_1_minimality_rate": round(min_k / n_k_non_null, 4),
             }
 
-    # Performance by family (50 instances each)
     families = sorted(list({inst["family"] for inst in instances}))
     family_stats: dict[str, Any] = {}
     family_p_vals = []
@@ -438,8 +573,7 @@ def compute_comprehensive_metrics(
         f_dd_c = [float(inst["dd_result"]["target_calls"]) for inst in f_insts]
         f_gr_c = [float(inst["greedy_result"]["target_calls"]) for inst in f_insts]
         f_ra_c = [float(inst["random_result"]["target_calls"]) for inst in f_insts]
-        
-        diff = [d - g for d, g in zip(f_dd_c, f_gr_c)]
+
         f_comp = compare_paired_differences(f_dd_c, f_gr_c)
         family_p_vals.append(f_comp.wilcoxon_p_value)
 
@@ -472,7 +606,8 @@ def compute_comprehensive_metrics(
                 "median_difference": f_comp.median_difference,
                 "std_difference": f_comp.std_difference,
                 "wilcoxon_w": f_comp.wilcoxon_w,
-                "wilcoxon_raw_p": f_comp.wilcoxon_p_value,
+                "wilcoxon_asymptotic_p": f_comp.wilcoxon_p_value,
+                "wilcoxon_p_is_asymptotic": True,
             },
         }
 
@@ -497,9 +632,7 @@ def compute_comprehensive_metrics(
         "performance_by_family": family_stats,
     }
 
-    # Build flat CSV rows for metrics comparison
     csv_rows: list[dict[str, Any]] = [
-        # Discrepancy resolutions
         {
             "category": "headline_discrepancy_resolution",
             "group": "all_instances",
@@ -531,10 +664,10 @@ def compute_comprehensive_metrics(
             "category": "headline_discrepancy_resolution",
             "group": "paired_difference_dd_vs_greedy",
             "algorithm": "dd_minus_greedy",
-            "metric_name": "wilcoxon_p_value",
+            "metric_name": "wilcoxon_asymptotic_p_value",
             "reported_phase_2a1": "0.00017",
-            "audited_phase_2a2": f"{paired_overall['dd_vs_greedy']['wilcoxon_p_value_exact']:.2e}",
-            "discrepancy_note": "Phase 2A.1 report narrative conflated the paired t-test p-value (0.00017) with the Wilcoxon p-value. True Wilcoxon p is 1.78e-14.",
+            "audited_phase_2a2": f"{paired_overall['dd_vs_greedy']['wilcoxon_p_value_asymptotic']:.2e}",
+            "discrepancy_note": "Phase 2A.1 narrative conflated paired t p-value (0.00017) with Wilcoxon. Wilcoxon asymptotic normal approximation p-value is 1.78e-14.",
         },
         {
             "category": "headline_discrepancy_resolution",
@@ -543,11 +676,10 @@ def compute_comprehensive_metrics(
             "metric_name": "paired_t_p_value",
             "reported_phase_2a1": "0.00017",
             "audited_phase_2a2": f"{paired_overall['dd_vs_greedy']['paired_t_p_value_exact_student_t']:.6f}",
-            "discrepancy_note": "0.00017 was the normal Gaussian approximation (erfc(3.7649/sqrt(2))). Exact Student's t (df=399) is 0.000192.",
+            "discrepancy_note": "0.00017 was normal approximation (erfc(3.7649/sqrt(2))). Exact Student's t (df=399) is 0.000192.",
         },
     ]
 
-    # Add overall metrics
     for alg in alg_map:
         s = alg_summaries[alg]
         csv_rows.extend([
@@ -565,24 +697,46 @@ def compute_comprehensive_metrics(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Reproduce Phase 2A.1 scaling benchmark results and validate event logs.")
+    parser.add_argument("--event-log", type=str, default=str(EVENT_LOG_PATH), help="Path to event log JSONL file")
+    parser.add_argument("--results-json", type=str, default=str(RESULTS_JSON_PATH), help="Path to scaling results JSON file")
+    parser.add_argument("--summary-csv", type=str, default=str(SUMMARY_CSV_PATH), help="Path to scaling summary CSV file")
+    parser.add_argument("--validate-only", action="store_true", help="Run only artifact validation checks and exit with status code")
+    args = parser.parse_args()
+
+    event_log_p = Path(args.event_log)
+    results_json_p = Path(args.results_json)
+    summary_csv_p = Path(args.summary_csv)
+
     print("=" * 70)
     print("AgentXRay Phase 2A.2 — Deterministic Reproduction & Forensic Audit")
     print("=" * 70)
 
-    # 1. Validate event log
-    val_summary = validate_event_log(EVENT_LOG_PATH, RESULTS_JSON_PATH)
+    # 1. Dynamically validate event log and reconcile artifacts
+    val_summary = validate_event_log(event_log_p, results_json_p, summary_csv_p)
     print(f"Event Log Validation Status: {val_summary['status']}")
-    print(f"Total Records: {val_summary['total_event_records']}, Total Trials: {val_summary['total_target_trials']}")
-    print(f"All 12 checks passed: {val_summary['all_checks_passed']}")
+    print(f"Total Discrepancies: {val_summary.get('total_discrepancies', 0)}")
+    print(f"All Checks Passed: {val_summary['all_checks_passed']}")
 
-    # 2. Compute comprehensive metrics
-    full_stats, csv_rows = compute_comprehensive_metrics(RESULTS_JSON_PATH)
-
-    # 3. Export machine-readable artifacts
-    print(f"Writing {OUT_LOG_VAL_JSON}")
+    # Write event log validation artifact
     with open(OUT_LOG_VAL_JSON, "w", encoding="utf-8") as f:
         json.dump(val_summary, f, indent=2)
 
+    if not val_summary["all_checks_passed"]:
+        print("\nFATAL: Validation failed. Reported checks:")
+        for check, count in val_summary.get("checks", {}).items():
+            if count > 0:
+                print(f"  {check}: {count} discrepancies")
+        sys.exit(1)
+
+    if args.validate_only:
+        print("Validation only mode requested. Validation succeeded.")
+        sys.exit(0)
+
+    # 2. Compute comprehensive metrics
+    full_stats, csv_rows = compute_comprehensive_metrics(results_json_p)
+
+    # 3. Export machine-readable artifacts
     print(f"Writing {OUT_STAT_JSON}")
     with open(OUT_STAT_JSON, "w", encoding="utf-8") as f:
         json.dump(full_stats, f, indent=2)
@@ -611,7 +765,7 @@ def main() -> None:
     print(f"  Paired t-statistic = {dd_vs_gr['paired_t_statistic']:.4f}, df = {dd_vs_gr['degrees_of_freedom']}")
     print(f"  Exact Student's t p-value = {dd_vs_gr['paired_t_p_value_exact_student_t']:.6f} (Gaussian approx: {dd_vs_gr['paired_t_p_value_gaussian_approx']:.6f})")
     print(f"  Wilcoxon W+ = {dd_vs_gr['wilcoxon_w_plus']}, W- = {dd_vs_gr['wilcoxon_w_minus']}, z = {dd_vs_gr['wilcoxon_z_statistic']:.4f}")
-    print(f"  Exact Wilcoxon p-value = {dd_vs_gr['wilcoxon_p_value_exact']:.2e}")
+    print(f"  Wilcoxon asymptotic p-value = {dd_vs_gr['wilcoxon_p_value_asymptotic']:.2e}")
     print("=" * 70)
 
 

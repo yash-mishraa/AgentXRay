@@ -2,8 +2,8 @@ category,group,algorithm,metric_name,reported_phase_2a1,audited_phase_2a2,discre
 headline_discrepancy_resolution,all_instances,stochastic_delta_debugging,target_calls_std,111.4,121.39,Phase 2A.1 text omitted individual algorithm sample std; 111.4 was erroneous borrowing. True sample std is 121.39.
 headline_discrepancy_resolution,all_instances,stochastic_greedy_ablation,target_calls_std,45.4,73.30,Phase 2A.1 text omitted individual algorithm sample std; 45.4 was erroneous borrowing. True sample std is 73.30.
 headline_discrepancy_resolution,all_instances,stochastic_seeded_random,target_calls_std,391.8,438.37,Phase 2A.1 text borrowed paired difference std (391.8 ~ DD vs Random diff std). True sample std is 438.37.
-headline_discrepancy_resolution,paired_difference_dd_vs_greedy,dd_minus_greedy,wilcoxon_p_value,0.00017,1.78e-14,Phase 2A.1 report narrative conflated the paired t-test p-value (0.00017) with the Wilcoxon p-value. True Wilcoxon p is 1.78e-14.
-headline_discrepancy_resolution,paired_difference_dd_vs_greedy,dd_minus_greedy,paired_t_p_value,0.00017,0.000192,0.00017 was the normal Gaussian approximation (erfc(3.7649/sqrt(2))). Exact Student's t (df=399) is 0.000192.
+headline_discrepancy_resolution,paired_difference_dd_vs_greedy,dd_minus_greedy,wilcoxon_asymptotic_p_value,0.00017,1.78e-14,Phase 2A.1 narrative conflated paired t p-value (0.00017) with Wilcoxon. Wilcoxon asymptotic normal approximation p-value is 1.78e-14.
+headline_discrepancy_resolution,paired_difference_dd_vs_greedy,dd_minus_greedy,paired_t_p_value,0.00017,0.000192,0.00017 was normal approximation (erfc(3.7649/sqrt(2))). Exact Student's t (df=399) is 0.000192.
 overall_metric,all_instances,stochastic_delta_debugging,mean_target_calls,104.1,104.12,Verified exact match.
 overall_metric,all_instances,stochastic_delta_debugging,median_target_calls,70.0,70.0,Verified exact match.
 overall_metric,all_instances,stochastic_delta_debugging,sample_std_target_calls,N/A,121.39,Audited sample standard deviation (ddof=1).

@@ -302,14 +302,22 @@ def compare_proportions(
 
 
 def adjust_p_values_bh(p_values: Sequence[float]) -> list[float]:
-    """Adjust a sequence of p-values using the Benjamini-Hochberg (BH) FDR procedure.
+    """Adjust a sequence of p-values using the Benjamini-Hochberg (BH) FDR step-up procedure.
 
-    Controls the False Discovery Rate across a family of m hypothesis tests.
+    Controls the False Discovery Rate (FDR = E[V / max(R, 1)]) across a family of m hypothesis tests.
+
+    IMPORTANT STATISTICAL DESIGNATION:
+    The Benjamini-Hochberg procedure controls the False Discovery Rate (FDR) under independent
+    or positive regression dependent (PRDS) test statistics. It does NOT control the Family-Wise
+    Error Rate (FWER = P(V >= 1)). FWER is controlled by Bonferroni or Holm-Bonferroni procedures.
+    A rejection at FDR threshold alpha guarantees that the expected proportion of false discoveries
+    among all rejected hypotheses does not exceed alpha.
 
     Parameters
     ----------
     p_values : Sequence[float]
-        Raw p-values to adjust. Values outside [0.0, 1.0] are clamped to [0.0, 1.0].
+        Raw p-values to adjust across the family of m hypotheses.
+        Values outside [0.0, 1.0] are clamped to [0.0, 1.0].
 
     Returns
     -------
@@ -423,9 +431,23 @@ class PairedDifferenceSummary(BaseModel):
     std_difference: float = Field(..., ge=0.0, description="Standard deviation of differences.")
     median_difference: float = Field(..., description="Median of paired differences.")
     wilcoxon_w: float = Field(..., description="Wilcoxon signed-rank W+ statistic.")
-    wilcoxon_p_value: float = Field(..., ge=0.0, le=1.0, description="Two-sided Wilcoxon p-value.")
+    wilcoxon_p_value: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Two-sided Wilcoxon asymptotic p-value (normal approximation with continuity and tie corrections).",
+    )
+    wilcoxon_p_value_is_asymptotic: bool = Field(
+        default=True,
+        description="Explicit indicator that the Wilcoxon p-value is computed via asymptotic normal approximation, not exact combinatorial distribution.",
+    )
     paired_t_statistic: float = Field(..., description="Paired t-statistic.")
-    paired_t_p_value: float = Field(..., ge=0.0, le=1.0, description="Two-sided paired t-test p-value.")
+    paired_t_p_value: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Two-sided paired t-test exact Student's t distribution p-value (via regularized incomplete beta).",
+    )
 
 
 def regularized_incomplete_beta(
@@ -555,11 +577,70 @@ def student_t_distribution_p_value(
         return p_two_sided / 2.0 if t_stat < 0 else 1.0 - p_two_sided / 2.0
 
 
+def wilcoxon_exact_p_value_small_sample(
+    w_plus: float,
+    n_r: int,
+) -> float:
+    """Compute exact two-sided combinatorial p-value for Wilcoxon signed-rank test without ties.
+
+    Uses dynamic programming over subset sums of {1, ..., n_r} under the null hypothesis
+    that all 2^{n_r} sign configurations are equally likely.
+
+    Applicable strictly when there are no ties and n_r <= 25.
+
+    Parameters
+    ----------
+    w_plus : float
+        Observed Wilcoxon W+ statistic (sum of positive ranks).
+    n_r : int
+        Number of non-zero paired differences (1 <= n_r <= 25).
+
+    Returns
+    -------
+    float
+        Exact two-sided p-value in [0.0, 1.0].
+    """
+    if n_r < 1:
+        raise ValueError(f"n_r must be positive integer, got {n_r}")
+    if n_r > 25:
+        raise ValueError(f"Exact combinatorial calculation restricted to n_r <= 25, got {n_r}")
+
+    max_w = n_r * (n_r + 1) // 2
+    w_int = int(round(w_plus))
+    if w_int < 0 or w_int > max_w:
+        raise ValueError(f"w_plus must be in [0, {max_w}], got {w_plus}")
+
+    dp = [0] * (max_w + 1)
+    dp[0] = 1
+    for i in range(1, n_r + 1):
+        for s in range(max_w, i - 1, -1):
+            dp[s] += dp[s - i]
+
+    w_min = min(w_int, max_w - w_int)
+    tail_sum = sum(dp[: w_min + 1])
+    total_permutations = 1 << n_r
+    return min(1.0, max(0.0, 2.0 * tail_sum / total_permutations))
+
+
 def wilcoxon_signed_rank_test(
     x: Sequence[float],
     y: Sequence[float],
 ) -> tuple[float, float]:
     """Perform Wilcoxon signed-rank test for paired continuous/discrete observations.
+
+    IMPORTANT STATISTICAL DESIGNATION:
+    The p-value returned is an ASYMPTOTIC NORMAL APPROXIMATION with Pratt zero-drop,
+    average-rank tie correction, and Yates-style continuity correction (+-0.5).
+    It is NOT an exact combinatorial distribution result.
+    For large paired samples (such as N=400, n_r=340), exact combinatorial enumeration over
+    2^340 combinations is computationally intractable, making the continuity-corrected
+    asymptotic normal approximation the standard analytical procedure.
+
+    Treatment of edge cases:
+    - Zero differences (d_i == 0): discarded, reducing sample size to n_r.
+    - Tied absolute differences: assigned average ranks, and null variance is adjusted
+      by subtracting sum(t_i^3 - t_i) / 48.
+    - Continuity correction: numerator shifted +-0.5 toward the null mean n_r(n_r+1)/4.
 
     Parameters
     ----------
@@ -569,7 +650,7 @@ def wilcoxon_signed_rank_test(
     Returns
     -------
     tuple[float, float]
-        (W_statistic, two_sided_p_value)
+        (W_plus_statistic, two_sided_asymptotic_p_value)
     """
     if len(x) != len(y):
         raise ValueError(f"Sample lengths must match: len(x)={len(x)}, len(y)={len(y)}")

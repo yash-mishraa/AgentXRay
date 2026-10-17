@@ -134,7 +134,9 @@
       "wilcoxon_w_plus": 15089.5,
       "wilcoxon_w_minus": 42880.5,
       "wilcoxon_z_statistic": -7.6655,
-      "wilcoxon_p_value_exact": 1.781410415934839e-14
+      "wilcoxon_p_value_asymptotic": 1.781410415934839e-14,
+      "wilcoxon_p_value_exact": 1.781410415934839e-14,
+      "wilcoxon_p_value_is_asymptotic": true
     },
     "dd_vs_random": {
       "comparison": "Delta Debugging vs Random Search",
@@ -150,7 +152,9 @@
       "wilcoxon_w_plus": 1002.5,
       "wilcoxon_w_minus": 54608.5,
       "wilcoxon_z_statistic": -15.2531,
-      "wilcoxon_p_value_exact": 1.5702935756752625e-52
+      "wilcoxon_p_value_asymptotic": 1.5702935756752625e-52,
+      "wilcoxon_p_value_exact": 1.5702935756752625e-52,
+      "wilcoxon_p_value_is_asymptotic": true
     },
     "greedy_vs_random": {
       "comparison": "Greedy Ablation vs Random Search",
@@ -166,7 +170,9 @@
       "wilcoxon_w_plus": 2151.5,
       "wilcoxon_w_minus": 54464.5,
       "wilcoxon_z_statistic": -14.685,
-      "wilcoxon_p_value_exact": 8.041148316519916e-49
+      "wilcoxon_p_value_asymptotic": 8.041148316519916e-49,
+      "wilcoxon_p_value_exact": 8.041148316519916e-49,
+      "wilcoxon_p_value_is_asymptotic": true
     }
   },
   "scaling_by_k": {
@@ -341,7 +347,8 @@
         "median_difference": 250.0,
         "std_difference": 113.5469,
         "wilcoxon_w": 1275.0,
-        "wilcoxon_raw_p": 7.571684446138765e-10,
+        "wilcoxon_asymptotic_p": 7.571684446138765e-10,
+        "wilcoxon_p_is_asymptotic": true,
         "bh_fdr_q_value": 1.7611074911150685e-09
       }
     },
@@ -374,7 +381,8 @@
         "median_difference": -70.0,
         "std_difference": 44.4123,
         "wilcoxon_w": 4.0,
-        "wilcoxon_raw_p": 9.498333534853578e-10,
+        "wilcoxon_asymptotic_p": 9.498333534853578e-10,
+        "wilcoxon_p_is_asymptotic": true,
         "bh_fdr_q_value": 1.7611074911150685e-09
       }
     },
@@ -407,7 +415,8 @@
         "median_difference": -70.0,
         "std_difference": 46.467,
         "wilcoxon_w": 0.0,
-        "wilcoxon_raw_p": 1.1006921819469179e-09,
+        "wilcoxon_asymptotic_p": 1.1006921819469179e-09,
+        "wilcoxon_p_is_asymptotic": true,
         "bh_fdr_q_value": 1.7611074911150685e-09
       }
     },
@@ -440,7 +449,8 @@
         "median_difference": -55.0,
         "std_difference": 56.8205,
         "wilcoxon_w": 104.5,
-        "wilcoxon_raw_p": 4.3505711762430283e-07,
+        "wilcoxon_asymptotic_p": 4.3505711762430283e-07,
+        "wilcoxon_p_is_asymptotic": true,
         "bh_fdr_q_value": 4.972081344277747e-07
       }
     },
@@ -473,7 +483,8 @@
         "median_difference": 0.0,
         "std_difference": 0.0,
         "wilcoxon_w": 0.0,
-        "wilcoxon_raw_p": 1.0,
+        "wilcoxon_asymptotic_p": 1.0,
+        "wilcoxon_p_is_asymptotic": true,
         "bh_fdr_q_value": 1.0
       }
     },
@@ -506,7 +517,8 @@
         "median_difference": -70.0,
         "std_difference": 44.6433,
         "wilcoxon_w": 4.0,
-        "wilcoxon_raw_p": 9.47282866427918e-10,
+        "wilcoxon_asymptotic_p": 9.47282866427918e-10,
+        "wilcoxon_p_is_asymptotic": true,
         "bh_fdr_q_value": 1.7611074911150685e-09
       }
     },
@@ -539,7 +551,8 @@
         "median_difference": -70.0,
         "std_difference": 45.641,
         "wilcoxon_w": 4.0,
-        "wilcoxon_raw_p": 9.515370985222986e-10,
+        "wilcoxon_asymptotic_p": 9.515370985222986e-10,
+        "wilcoxon_p_is_asymptotic": true,
         "bh_fdr_q_value": 1.7611074911150685e-09
       }
     },
@@ -572,7 +585,8 @@
         "median_difference": -50.0,
         "std_difference": 71.2538,
         "wilcoxon_w": 35.0,
-        "wilcoxon_raw_p": 1.9332298256216878e-07,
+        "wilcoxon_asymptotic_p": 1.9332298256216878e-07,
+        "wilcoxon_p_is_asymptotic": true,
         "bh_fdr_q_value": 2.577639767495584e-07
       }
     }
