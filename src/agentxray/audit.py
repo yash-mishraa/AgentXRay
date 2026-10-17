@@ -44,8 +44,8 @@ class AuditRunRecord(BaseModel):
     matches_ground_truth: bool
     is_null_case: bool
     is_false_positive: bool
-    precision: float
-    recall: float
+    precision: float | None = None
+    recall: float | None = None
     excess_distractors: int
     missing_elements: int
     search_status: str
@@ -303,24 +303,11 @@ def run_multiseed_audit(
 
             # Post-hoc evaluation of greedy candidate
             is_fp_g = is_null and (comp_greedy.failure_reproduced or len(comp_greedy.discovered_elements) > 0)
-            disc_g = set(comp_greedy.discovered_elements)
-            true_g = set(ground_truth.trigger_elements)
-            alt_g = [set(alt) for alt in ground_truth.alternative_valid_triggers]
-            if is_null:
-                matches_g = (not comp_greedy.failure_reproduced) and len(disc_g) == 0
-                prec_g = 1.0 if not disc_g else 0.0
-                rec_g = 1.0 if not disc_g else 0.0
-                excess_g = len(disc_g)
-                missing_g = 0
-            else:
-                matches_g = (disc_g == true_g or any(disc_g == alt for alt in alt_g)) and comp_greedy.failure_reproduced
-                tp_g = len(disc_g & true_g)
-                fp_g = len(disc_g - true_g)
-                fn_g = len(true_g - disc_g)
-                prec_g = tp_g / (tp_g + fp_g) if (tp_g + fp_g) > 0 else 0.0
-                rec_g = tp_g / (tp_g + fn_g) if (tp_g + fn_g) > 0 else 0.0
-                excess_g = fp_g
-                missing_g = fn_g
+            matches_g, prec_g, rec_g, excess_g_tup, missing_g_tup = evaluate_stochastic_ground_truth(
+                ground_truth, comp_greedy
+            )
+            excess_g = len(excess_g_tup)
+            missing_g = len(missing_g_tup)
 
             records.append(
                 AuditRunRecord(
@@ -359,24 +346,11 @@ def run_multiseed_audit(
             dur_random = time.perf_counter() - t0
 
             is_fp_r = is_null and (comp_random.failure_reproduced or len(comp_random.discovered_elements) > 0)
-            disc_r = set(comp_random.discovered_elements)
-            true_r = set(ground_truth.trigger_elements)
-            alt_r = [set(alt) for alt in ground_truth.alternative_valid_triggers]
-            if is_null:
-                matches_r = (not comp_random.failure_reproduced) and len(disc_r) == 0
-                prec_r = 1.0 if not disc_r else 0.0
-                rec_r = 1.0 if not disc_r else 0.0
-                excess_r = len(disc_r)
-                missing_r = 0
-            else:
-                matches_r = (disc_r == true_r or any(disc_r == alt for alt in alt_r)) and comp_random.failure_reproduced
-                tp_r = len(disc_r & true_r)
-                fp_r = len(disc_r - true_r)
-                fn_r = len(true_r - disc_r)
-                prec_r = tp_r / (tp_r + fp_r) if (tp_r + fp_r) > 0 else 0.0
-                rec_r = tp_r / (tp_r + fn_r) if (tp_r + fn_r) > 0 else 0.0
-                excess_r = fp_r
-                missing_r = fn_r
+            matches_r, prec_r, rec_r, excess_r_tup, missing_r_tup = evaluate_stochastic_ground_truth(
+                ground_truth, comp_random
+            )
+            excess_r = len(excess_r_tup)
+            missing_r = len(missing_r_tup)
 
             records.append(
                 AuditRunRecord(

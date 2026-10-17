@@ -73,13 +73,15 @@ def format_markdown_report(report: ExperimentReport) -> str:
     for eval_item in report.evaluations:
         gt_str = ", ".join(f"`{e}`" for e in eval_item.ground_truth_trigger) if eval_item.ground_truth_trigger else "*(None - Null Case)*"
         init_str = ", ".join(f"`{e}`" for e in eval_item.initial_elements)
+        prec_str = f"`{eval_item.precision * 100:.1f}%`" if eval_item.precision is not None else "`N/A (Null Case / Control)`"
+        rec_str = f"`{eval_item.recall * 100:.1f}%`" if eval_item.recall is not None else "`N/A (Null Case / Control)`"
         lines.extend([
             f"### Task: {eval_item.task_name}",
             f"- **Description**: {eval_item.description}",
             f"- **Initial Elements ({len(eval_item.initial_elements)})**: {init_str}",
             f"- **Planted Ground Truth**: {gt_str}",
-            f"- **Minimizer Precision**: `{eval_item.precision * 100:.1f}%`",
-            f"- **Minimizer Recall**: `{eval_item.recall * 100:.1f}%`",
+            f"- **Minimizer Precision**: {prec_str}",
+            f"- **Minimizer Recall**: {rec_str}",
             f"- **Excess Distractors Retained**: {', '.join(f'`{e}`' for e in eval_item.excess_elements) if eval_item.excess_elements else '0'}",
             f"- **Status Message**: {eval_item.minimizer_condition.status_message}",
             "",
@@ -191,6 +193,8 @@ def format_stochastic_markdown_report(report: StochasticExperimentReport) -> str
             alternative="two-sided",
         )
 
+        prec_str = f"`{eval_item.precision * 100:.1f}%`" if eval_item.precision is not None else "`N/A (Null Case / Control)`"
+        rec_str = f"`{eval_item.recall * 100:.1f}%`" if eval_item.recall is not None else "`N/A (Null Case / Control)`"
         lines.extend([
             f"### Task: {eval_item.task_name}",
             f"- **Description**: {eval_item.description}",
@@ -198,8 +202,8 @@ def format_stochastic_markdown_report(report: StochasticExperimentReport) -> str
             f"- **Planted Ground Truth**: {gt_str}",
             f"- **Ground Truth Probabilities**: Base $P={eval_item.base_probability:.2f}$, Triggered $P={eval_item.trigger_probability:.2f}$ (Delta: ${eval_item.trigger_probability - eval_item.base_probability:.2f}$)",
             f"- **Statistical Power (at n={report.trials_per_candidate}, alpha=0.05)**: `{power * 100:.1f}%` *(Cohen's arcsine theoretical design calculation, not empirical power)*",
-            f"- **Minimizer Precision**: `{eval_item.precision * 100:.1f}%`",
-            f"- **Minimizer Recall**: `{eval_item.recall * 100:.1f}%`",
+            f"- **Minimizer Precision**: {prec_str}",
+            f"- **Minimizer Recall**: {rec_str}",
             f"- **Minimality Classification**: `{cond.minimality_status.value}`",
             f"- **Final Candidate Failure Rate**: `{cond.candidate_evaluation.failure_rate:.2f}` (95% Wilson CI: `[{cond.candidate_evaluation.confidence_interval[0]:.2f}, {cond.candidate_evaluation.confidence_interval[1]:.2f}]`, $k={cond.candidate_evaluation.failures}/{cond.candidate_evaluation.trials}$)",
             f"- **Status Narrative**: {cond.status_message}",
@@ -304,7 +308,8 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
     bs = report.budget_summary
     req_used = bs.get("total_requests", 0)
     req_max = bs.get("max_requests", "N/A")
-    lines.append(f"| **Attempted Requests (Total)** | {req_used} | {req_max} | `{'OK' if req_used <= req_max else 'EXCEEDED'}` |")
+    req_status = "OK" if not isinstance(req_max, (int, float)) or req_used <= req_max else "EXCEEDED"
+    lines.append(f"| **Attempted Requests (Total)** | {req_used} | {req_max} | `{req_status}` |")
 
     succ_req = bs.get("successful_requests", 0)
     failed_req = bs.get("failed_requests", 0)
@@ -314,8 +319,10 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
     lines.append(f"| **Retried Invocations** | {retries} | N/A | Logged |")
 
     spend_used = bs.get("estimated_spend_usd", 0.0)
-    spend_max = bs.get("max_spend_usd", 0.0)
-    lines.append(f"| **Estimated Billable Spend (USD)** | `${spend_used:.4f}` | `${spend_max:.4f}` | `{'OK' if spend_used <= spend_max else 'EXCEEDED'}` |")
+    spend_max = bs.get("max_spend_usd", "N/A")
+    spend_max_str = f"${spend_max:.4f}" if isinstance(spend_max, (int, float)) else "N/A"
+    spend_status = "OK" if not isinstance(spend_max, (int, float)) or spend_used <= spend_max else "EXCEEDED"
+    lines.append(f"| **Estimated Billable Spend (USD)** | `${spend_used:.4f}` | {spend_max_str} | `{spend_status}` |")
 
     p_tok = bs.get("prompt_tokens", 0)
     c_tok = bs.get("completion_tokens", 0)

@@ -282,7 +282,7 @@ def test_wilcoxon_asymptotic_vs_exact_small_sample():
 
 
 def test_wilcoxon_zero_differences_and_ties():
-    """Verify Pratt zero-drop and tie-adjusted variance in Wilcoxon signed-rank test."""
+    """Verify Wilcoxon (1945) zero-discard and tie-adjusted variance in Wilcoxon signed-rank test."""
     from agentxray.statistics import wilcoxon_signed_rank_test
 
     # All differences zero: must return W=0, p=1.0
@@ -290,7 +290,7 @@ def test_wilcoxon_zero_differences_and_ties():
     assert w_stat == 0.0
     assert p_val == 1.0
 
-    # Half differences zero: Pratt zero drop reduces effective sample size
+    # Half differences zero: Wilcoxon (1945) zero-discard reduces effective sample size
     x = [10.0, 10.0, 5.0, 5.0]
     y = [8.0, 8.0, 5.0, 5.0]
     # Non-zero diffs are [+2, +2], n_r = 2, tied at rank 1.5

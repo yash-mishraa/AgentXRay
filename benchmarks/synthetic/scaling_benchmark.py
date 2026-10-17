@@ -287,8 +287,8 @@ class AlgorithmRunResult(BaseModel):
     minimality_status: str
     is_verified_one_minimal: bool
     matches_ground_truth: bool
-    precision: float
-    recall: float
+    precision: float | None = None
+    recall: float | None = None
     budget_exhausted: bool
     runtime_ms: float
 
@@ -650,8 +650,8 @@ def export_benchmark_results(
                     "minimality_status": algo_res.minimality_status,
                     "is_verified_one_minimal": algo_res.is_verified_one_minimal,
                     "matches_ground_truth": algo_res.matches_ground_truth,
-                    "precision": algo_res.precision,
-                    "recall": algo_res.recall,
+                    "precision": algo_res.precision if algo_res.precision is not None else "",
+                    "recall": algo_res.recall if algo_res.recall is not None else "",
                     "budget_exhausted": algo_res.budget_exhausted,
                     "runtime_ms": algo_res.runtime_ms,
                 })

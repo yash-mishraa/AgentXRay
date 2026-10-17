@@ -273,6 +273,9 @@ def run_stochastic_benchmark(
         f"Statistically supported 1-minimality established on {stat_supp_count}/{len(evaluations)} tasks."
     )
 
+    valid_precisions = [e.precision for e in evaluations if e.precision is not None]
+    valid_recalls = [e.recall for e in evaluations if e.recall is not None]
+
     report = StochasticExperimentReport(
         experiment_name=config.experiment_name,
         config=config,
@@ -283,8 +286,8 @@ def run_stochastic_benchmark(
             "tasks_evaluated": len(evaluations),
             "ground_truth_matches": matched_count,
             "statistically_supported_minimality": stat_supp_count,
-            "mean_precision": round(sum(e.precision for e in evaluations) / len(evaluations), 4),
-            "mean_recall": round(sum(e.recall for e in evaluations) / len(evaluations), 4),
+            "mean_precision": round(sum(valid_precisions) / len(valid_precisions), 4) if valid_precisions else None,
+            "mean_recall": round(sum(valid_recalls) / len(valid_recalls), 4) if valid_recalls else None,
         },
         summary=summary_text,
     )

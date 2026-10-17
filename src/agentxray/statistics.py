@@ -676,7 +676,7 @@ def wilcoxon_signed_rank_test(
     """Perform Wilcoxon signed-rank test for paired continuous/discrete observations.
 
     IMPORTANT STATISTICAL DESIGNATION:
-    The p-value returned is an ASYMPTOTIC NORMAL APPROXIMATION with Pratt zero-drop,
+    The p-value returned is an ASYMPTOTIC NORMAL APPROXIMATION with Wilcoxon (1945) zero-discard,
     average-rank tie correction, and Yates-style continuity correction (+-0.5).
     It is NOT an exact combinatorial distribution result.
     For large paired samples (such as N=400, n_r=340), exact combinatorial enumeration over

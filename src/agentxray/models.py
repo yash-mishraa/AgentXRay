@@ -185,8 +185,8 @@ class EvaluationResult(BaseModel):
     minimizer_condition: DiscoveredCondition = Field(..., description="Result produced by delta debugging.")
     baseline_comparisons: tuple[BaselineComparison, ...] = Field(default=(), description="Results from baseline algorithms.")
     matches_ground_truth: bool = Field(..., description="Whether minimizer output exactly equals ground truth.")
-    precision: float = Field(..., ge=0.0, le=1.0, description="Precision of isolated elements relative to ground truth.")
-    recall: float = Field(..., ge=0.0, le=1.0, description="Recall of ground-truth elements in isolated set.")
+    precision: float | None = Field(default=None, ge=0.0, le=1.0, description="Precision of isolated elements relative to ground truth.")
+    recall: float | None = Field(default=None, ge=0.0, le=1.0, description="Recall of ground-truth elements in isolated set.")
     excess_elements: tuple[str, ...] = Field(default=(), description="Distractor elements falsely retained.")
     missing_elements: tuple[str, ...] = Field(default=(), description="True causal elements omitted.")
 
@@ -295,8 +295,8 @@ class StochasticEvaluationResult(BaseModel):
         default=(), description="Baseline results."
     )
     matches_ground_truth: bool = Field(..., description="Whether minimizer output matches ground truth.")
-    precision: float = Field(..., ge=0.0, le=1.0, description="Precision.")
-    recall: float = Field(..., ge=0.0, le=1.0, description="Recall.")
+    precision: float | None = Field(default=None, ge=0.0, le=1.0, description="Precision.")
+    recall: float | None = Field(default=None, ge=0.0, le=1.0, description="Recall.")
     excess_elements: tuple[str, ...] = Field(default=(), description="Distractor elements falsely retained.")
     missing_elements: tuple[str, ...] = Field(default=(), description="True causal elements omitted.")
 
