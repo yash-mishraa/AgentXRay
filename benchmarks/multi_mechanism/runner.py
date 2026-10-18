@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -240,6 +241,22 @@ class ScriptedJudgeProvider(ModelProvider):
         )
 
 
+def derive_mechanism_seed(mechanism_id: str, root_seed: int = 42) -> int:
+    """Derive a reproducible 32-bit mechanism-specific seed from root seed and mechanism ID.
+
+    Uses the first 4 bytes of SHA-256 (interpreted as big-endian integer) combined with
+    the root seed multiplier (root_seed * 10007), masked to 32 bits (0xFFFFFFFF).
+    This guarantees:
+    1. Perfect stability across processes and runs (unlike Python's salted hash()).
+    2. Distinct seeds across all benchmark mechanisms for any fixed root seed.
+    3. Distinct seeds across different root seeds.
+    4. Pairwise seed sharing between methods evaluating the same mechanism and root seed.
+    """
+    digest = hashlib.sha256(mechanism_id.encode("utf-8")).digest()
+    mech_hash = int.from_bytes(digest[:4], "big")
+    return (root_seed * 10007 + mech_hash) & 0xFFFFFFFF
+
+
 def evaluate_mechanism_three_way(
     spec: MechanismTaskSpec,
     provider: ModelProvider | None = None,
@@ -254,7 +271,7 @@ def evaluate_mechanism_three_way(
     gt = spec.get_ground_truth()
 
     # Deterministic mechanism-specific seed derived from root seed and mechanism_id
-    mech_seed = (seed * 10007 + int.from_bytes(spec.mechanism_id.encode(), "little")) & 0xFFFFFFFF
+    mech_seed = derive_mechanism_seed(spec.mechanism_id, root_seed=seed)
 
     # 1. Instantiate Target and Initial Input with seeded candidate permutation
     target = spec.create_target(provider=prov, cost_tracker=cost_tracker)

@@ -28,6 +28,7 @@ from agentxray.statistics import (
 )
 from benchmarks.multi_mechanism.runner import (
     ScriptedJudgeProvider,
+    derive_mechanism_seed,
     evaluate_mechanism_three_way,
     run_multi_mechanism_benchmark,
     run_with_infra_guard,
@@ -628,6 +629,29 @@ class TestInfrastructureRerunGuard:
         assert len(deviation_log) == 2
         assert deviation_log[1]["event"] == "INFRA_FAILURE_UNRESOLVED"
 
+    def test_identical_seed_reset_on_rerun(self) -> None:
+        import random
+        random_values: list[float] = []
+
+        def flaky_rng_fn() -> DiagnosticOutcome:
+            random_values.append(random.random())
+            if len(random_values) == 1:
+                raise ProviderError("Transient network failure")
+            return DiagnosticOutcome(
+                mechanism_id="mech_test_rng",
+                method_name="test_method",
+                predicted_candidate_set=(),
+                is_valid_diagnosis=True,
+                false_attribution_indicator=0,
+                exact_recovery_indicator=1,
+            )
+
+        res = run_with_infra_guard(flaky_rng_fn, mechanism_id="mech_test_rng", method_name="test_method", seed=98765)
+        assert res.is_valid_diagnosis is True
+        assert len(random_values) == 2
+        # Because seed was reset to 98765 before attempt 1 and before retry, random.random() must yield identical values
+        assert random_values[0] == random_values[1]
+
 
 class TestBenchmarkExecutionAndReporting:
     """Verifies end-to-end multi-mechanism benchmark execution and markdown report generation."""
@@ -780,6 +804,43 @@ class TestBenchmarkCausalNecessityAndSufficiency:
 class TestCandidatePermutationAndSeedPropagation:
     """Verifies deterministic candidate permutation and seed propagation across methods."""
 
+    def test_derive_mechanism_seed_distinct_across_all_18_mechanisms(self) -> None:
+        specs = list_mechanism_tasks()
+        assert len(specs) == 18
+        seeds_root42 = [derive_mechanism_seed(spec.mechanism_id, root_seed=42) for spec in specs]
+        # All 18 registered mechanisms must produce distinct seeds for fixed root seed
+        assert len(set(seeds_root42)) == 18
+
+    def test_derive_mechanism_seed_reproducibility(self) -> None:
+        spec = get_mechanism_task("mech_p01_directive_prohibition")
+        s1 = derive_mechanism_seed(spec.mechanism_id, root_seed=42)
+        s2 = derive_mechanism_seed(spec.mechanism_id, root_seed=42)
+        assert s1 == s2
+
+    def test_derive_mechanism_seed_changes_with_root_seed(self) -> None:
+        specs = list_mechanism_tasks()
+        seeds_root42 = [derive_mechanism_seed(spec.mechanism_id, root_seed=42) for spec in specs]
+        seeds_root99 = [derive_mechanism_seed(spec.mechanism_id, root_seed=99) for spec in specs]
+        assert seeds_root42 != seeds_root99
+        # Each mechanism should produce a different seed when root seed changes
+        for s42, s99 in zip(seeds_root42, seeds_root99):
+            assert s42 != s99
+
+    def test_derive_mechanism_seed_stable_across_processes(self) -> None:
+        import subprocess
+        import sys
+        code = (
+            "from benchmarks.multi_mechanism.runner import derive_mechanism_seed\n"
+            "from benchmarks.multi_mechanism.tasks import list_mechanism_tasks\n"
+            "print([derive_mechanism_seed(s.mechanism_id, 42) for s in list_mechanism_tasks()])\n"
+        )
+        out1 = subprocess.check_output([sys.executable, "-c", code], text=True).strip()
+        out2 = subprocess.check_output([sys.executable, "-c", code], text=True).strip()
+        assert out1 == out2
+        specs = list_mechanism_tasks()
+        expected = [derive_mechanism_seed(s.mechanism_id, 42) for s in specs]
+        assert eval(out1) == expected
+
     def test_create_initial_input_seed_permutation(self) -> None:
         spec = get_mechanism_task("mech_p01_directive_prohibition")
         inp_seed1 = spec.create_initial_input(seed=42)
@@ -797,9 +858,8 @@ class TestCandidatePermutationAndSeedPropagation:
         spec = get_mechanism_task("mech_p01_directive_prohibition")
         res = evaluate_mechanism_three_way(spec, seed=42, trials_per_candidate=2, max_trials=10)
         # Evaluated initial elements match the deterministic permutation for seed 42
-        expected_perm = spec.create_initial_input(
-            seed=(42 * 10007 + int.from_bytes(spec.mechanism_id.encode(), "little")) & 0xFFFFFFFF
-        ).elements
+        expected_seed = derive_mechanism_seed(spec.mechanism_id, root_seed=42)
+        expected_perm = spec.create_initial_input(seed=expected_seed).elements
         assert res.initial_elements == expected_perm
 
 
