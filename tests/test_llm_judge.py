@@ -27,6 +27,7 @@ from agentxray.statistics import (
     mcnemar_exact_test,
 )
 from benchmarks.multi_mechanism.runner import (
+    ScriptedJudgeProvider,
     evaluate_mechanism_three_way,
     run_multi_mechanism_benchmark,
     run_with_infra_guard,
@@ -476,13 +477,31 @@ class TestNullControlMechanics:
         out_hallucinated = score_diagnostic_outcome(
             mechanism_id=spec.mechanism_id,
             method_name="llm_judge",
-            candidate_set=("distractor_client_tag: client_internal",),
+            candidate_set=("client_application_tag: Internal client application identifier.",),
             is_valid_diagnosis=True,
             ground_truth_trigger=(),
             is_null_case=True,
         )
         assert out_hallucinated.false_attribution_indicator == 1
         assert out_hallucinated.exact_recovery_indicator == 0
+
+    def test_active_dd_and_greedy_on_clean_and_bloat_null_controls(self) -> None:
+        for null_id in ("mech_null_clean", "mech_null_bloat"):
+            spec = get_mechanism_task(null_id)
+            eval_res = evaluate_mechanism_three_way(spec, seed=42, trials_per_candidate=2, max_trials=10)
+
+            # Active DD on null controls must be valid (not missing), with Y=0 and R_exact=1
+            assert eval_res.active_dd_outcome.is_valid_diagnosis is True
+            assert eval_res.active_dd_outcome.predicted_candidate_set == ()
+            assert eval_res.active_dd_outcome.false_attribution_indicator == 0
+            assert eval_res.active_dd_outcome.exact_recovery_indicator == 1
+
+            # Greedy ablation on null controls must also be valid, with Y=0 and R_exact=1
+            assert eval_res.greedy_ablation_outcome.is_valid_diagnosis is True
+            assert eval_res.greedy_ablation_outcome.predicted_candidate_set == ()
+            assert eval_res.greedy_ablation_outcome.false_attribution_indicator == 0
+            assert eval_res.greedy_ablation_outcome.exact_recovery_indicator == 1
+
 
 
 class TestStatisticalInferenceAndSensitivity:
@@ -704,3 +723,114 @@ class TestBenchmarkExecutionAndReporting:
         # Check all 18 mechanism IDs appear in report
         for mech in list_mechanism_tasks():
             assert mech.mechanism_id in md
+
+
+class TestBenchmarkCausalNecessityAndSufficiency:
+    """Verifies that planted triggers across all 18 mechanisms satisfy causal necessity and sufficiency."""
+
+    def test_necessity_and_sufficiency_across_all_18_mechanisms(self) -> None:
+        specs = list_mechanism_tasks()
+        assert len(specs) == 18
+
+        for spec in specs:
+            target = spec.create_target()
+            initial_input = spec.create_initial_input()
+
+            if spec.is_null_case:
+                if spec.category == "null_ext":
+                    # External shock: initial unablated input fails
+                    res = target.execute(initial_input)
+                    assert res.outcome == TargetOutcome.FAILURE
+                    # Empty input also fails (external shock)
+                    res_empty = target.execute(InputCase(case_id="empty", elements=()))
+                    assert res_empty.outcome == TargetOutcome.FAILURE
+                else:
+                    # Clean null cases: initial unablated input passes
+                    res = target.execute(initial_input)
+                    assert res.outcome == TargetOutcome.SUCCESS
+            elif spec.is_conjunctive:
+                # Conjunctive: initial unablated input fails
+                res = target.execute(initial_input)
+                assert res.outcome == TargetOutcome.FAILURE
+
+                # Sufficiency: planted triggers alone fail
+                res_suff = target.execute(InputCase(case_id="suff", elements=spec.planted_trigger_elements))
+                assert res_suff.outcome == TargetOutcome.FAILURE
+
+                # Necessity: removing any single planted trigger causes success
+                for trig in spec.planted_trigger_elements:
+                    sub = tuple(e for e in spec.planted_trigger_elements if e != trig)
+                    res_nec = target.execute(InputCase(case_id="nec", elements=sub))
+                    assert res_nec.outcome == TargetOutcome.SUCCESS
+            else:
+                # Single-factor active: initial unablated input fails
+                res = target.execute(initial_input)
+                assert res.outcome == TargetOutcome.FAILURE
+
+                # Sufficiency: planted trigger alone fails
+                res_suff = target.execute(InputCase(case_id="suff", elements=spec.planted_trigger_elements))
+                assert res_suff.outcome == TargetOutcome.FAILURE
+
+                # Necessity: candidate set without planted triggers passes
+                distractors = tuple(e for e in spec.candidate_elements if e not in spec.planted_trigger_elements)
+                res_nec = target.execute(InputCase(case_id="nec", elements=distractors))
+                assert res_nec.outcome == TargetOutcome.SUCCESS
+
+
+class TestCandidatePermutationAndSeedPropagation:
+    """Verifies deterministic candidate permutation and seed propagation across methods."""
+
+    def test_create_initial_input_seed_permutation(self) -> None:
+        spec = get_mechanism_task("mech_p01_directive_prohibition")
+        inp_seed1 = spec.create_initial_input(seed=42)
+        inp_seed2 = spec.create_initial_input(seed=42)
+        inp_seed3 = spec.create_initial_input(seed=999)
+
+        # Same seed produces identical candidate order
+        assert inp_seed1.elements == inp_seed2.elements
+        # Same elements as a set
+        assert set(inp_seed1.elements) == set(spec.candidate_elements)
+        # Different seed produces different order
+        assert inp_seed1.elements != inp_seed3.elements
+
+    def test_permutation_shared_across_methods_in_three_way_eval(self) -> None:
+        spec = get_mechanism_task("mech_p01_directive_prohibition")
+        res = evaluate_mechanism_three_way(spec, seed=42, trials_per_candidate=2, max_trials=10)
+        # Evaluated initial elements match the deterministic permutation for seed 42
+        expected_perm = spec.create_initial_input(
+            seed=(42 * 10007 + int.from_bytes(spec.mechanism_id.encode(), "little")) & 0xFFFFFFFF
+        ).elements
+        assert res.initial_elements == expected_perm
+
+
+class TestScriptedJudgeProvider:
+    """Verifies that ScriptedJudgeProvider executes offline benchmarks predictably."""
+
+    def test_scripted_judge_decision_map_and_defaults(self) -> None:
+        provider = ScriptedJudgeProvider(
+            decision_map={"directive": ("tool_dispatch_policy",)},
+            default_prediction=(),
+        )
+
+        # Matched key
+        resp1 = provider.generate([Message(role="user", content="Analyzing directive error")])
+        payload1 = json.loads(resp1.content)
+        assert payload1["culprit_element_ids"] == ["tool_dispatch_policy"]
+
+        # Default fallback
+        resp2 = provider.generate([Message(role="user", content="Unknown error")])
+        payload2 = json.loads(resp2.content)
+        assert payload2["culprit_element_ids"] == []
+
+    def test_scripted_judge_in_three_way_eval(self) -> None:
+        spec = get_mechanism_task("mech_p01_directive_prohibition")
+        # ScriptedJudgeProvider matches on user_msg content
+        prov = ScriptedJudgeProvider(
+            decision_map={"calculator": spec.planted_trigger_elements},
+            default_prediction=(),
+        )
+        res = evaluate_mechanism_three_way(spec, provider=prov, seed=123, trials_per_candidate=2, max_trials=10)
+        assert res.llm_judge_outcome.is_valid_diagnosis is True
+        assert res.llm_judge_outcome.exact_recovery_indicator == 1
+        assert res.llm_judge_outcome.false_attribution_indicator == 0
+

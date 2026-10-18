@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import random
 from typing import Any, Callable, Sequence
 
 from agentxray.agent_harness.agent import AgentExecutionTrace
@@ -17,7 +19,14 @@ from agentxray.models import (
     SearchStatus,
     StochasticMinimalityStatus,
 )
-from agentxray.providers.base import ModelProvider, ProviderError
+from agentxray.providers.base import (
+    Message,
+    ModelProvider,
+    ModelResponse,
+    ProviderError,
+    ToolDefinition,
+    UsageMetadata,
+)
 from agentxray.providers.fake import FakeProvider
 from agentxray.runner import InterventionRunner
 from agentxray.statistics import (
@@ -103,9 +112,12 @@ def run_with_infra_guard(
     fn: Callable[[], DiagnosticOutcome],
     mechanism_id: str,
     method_name: str,
+    seed: int | None = None,
     deviation_log: list[dict[str, Any]] | None = None,
 ) -> DiagnosticOutcome:
     """Execute a diagnostic method with single identical-seed rerun upon infrastructure failure."""
+    if seed is not None:
+        random.seed(seed)
     try:
         return fn()
     except (ProviderError, OSError, ConnectionError, TimeoutError) as first_err:
@@ -120,6 +132,8 @@ def run_with_infra_guard(
         logger.warning(f"Infrastructure failure on {mechanism_id} ({method_name}): {first_err}. Attempting single rerun.")
 
         # Single identical-seed rerun
+        if seed is not None:
+            random.seed(seed)
         try:
             return fn()
         except Exception as second_err:
@@ -146,6 +160,86 @@ def run_with_infra_guard(
             )
 
 
+class ScriptedJudgeProvider(ModelProvider):
+    """Deterministic scripted judge provider for offline pipeline orchestration validation only.
+
+    CRITICAL SCIENTIFIC INTEGRITY GUARANTEE:
+    This provider is strictly for testing benchmark pipeline orchestration, missingness accounting,
+    and statistical arithmetic offline without incurring inference costs.
+    It does NOT measure or represent real LLM diagnostic capability.
+    """
+
+    def __init__(
+        self,
+        decision_map: dict[str, Sequence[str]] | None = None,
+        default_prediction: Sequence[str] = (),
+        model_name: str = "fake-scripted-judge",
+    ) -> None:
+        self._decision_map = decision_map or {}
+        self._default_prediction = tuple(default_prediction)
+        self._model_name = model_name
+        self.request_count = 0
+
+    @property
+    def supports_retry_limits(self) -> bool:
+        return True
+
+    @property
+    def is_trusted_for_hard_budgets(self) -> bool:
+        return True
+
+    @property
+    def call_count(self) -> int:
+        return self.request_count
+
+    @property
+    def provider_name(self) -> str:
+        return "scripted_judge"
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    def generate(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolDefinition] = (),
+        temperature: float = 0.0,
+        max_tokens: int = 512,
+        max_retries: int | None = None,
+    ) -> ModelResponse:
+        self.request_count += 1
+        prompt_len = sum(len(m.content) for m in messages) // 4 + 20
+        user_msg = messages[-1].content if messages else ""
+
+        pred = list(self._default_prediction)
+        for key, p in self._decision_map.items():
+            if key in user_msg:
+                pred = list(p)
+                break
+
+        payload = {
+            "culprit_element_ids": pred,
+            "rationale": "Scripted offline methodological pipeline validation response.",
+        }
+        content = json.dumps(payload)
+        comp_len = len(content) // 4 + 5
+
+        return ModelResponse(
+            content=content,
+            tool_calls=(),
+            usage=UsageMetadata(
+                prompt_tokens=prompt_len,
+                completion_tokens=comp_len,
+                total_tokens=prompt_len + comp_len,
+                estimated_cost_usd=round((prompt_len * 0.15 + comp_len * 0.60) / 1_000_000, 7),
+            ),
+            finish_reason="stop",
+            model_identifier=self._model_name,
+            latency_ms=1.0,
+        )
+
+
 def evaluate_mechanism_three_way(
     spec: MechanismTaskSpec,
     provider: ModelProvider | None = None,
@@ -159,9 +253,12 @@ def evaluate_mechanism_three_way(
     prov = provider or FakeProvider(model_name="fake-multi-mech")
     gt = spec.get_ground_truth()
 
-    # 1. Instantiate Target and Initial Input
+    # Deterministic mechanism-specific seed derived from root seed and mechanism_id
+    mech_seed = (seed * 10007 + int.from_bytes(spec.mechanism_id.encode(), "little")) & 0xFFFFFFFF
+
+    # 1. Instantiate Target and Initial Input with seeded candidate permutation
     target = spec.create_target(provider=prov, cost_tracker=cost_tracker)
-    initial_input = spec.create_initial_input()
+    initial_input = spec.create_initial_input(seed=mech_seed)
 
     # 2. Run initial unablated execution (Trial 1) to generate baseline trace
     base_res = target.execute(initial_input)
@@ -189,15 +286,23 @@ def evaluate_mechanism_three_way(
         )
         cond = minimizer.minimize(initial_input)
 
-        is_valid = cond.status != SearchStatus.INFRA_FAILURE and (
-            cond.status == SearchStatus.COMPLETE or len(cond.subset_elements) > 0
-        )
-        cand_set = tuple(cond.subset_elements) if is_valid else None
-        term_reason = "normal_completion"
-        if cond.status == SearchStatus.BUDGET_EXHAUSTED:
-            term_reason = "budget_exhausted"
-        elif cond.status == SearchStatus.TIMEOUT:
-            term_reason = "timeout"
+        # Task-semantic validity determination:
+        if cond.status == SearchStatus.INFRA_FAILURE:
+            is_valid = False
+            cand_set = None
+            term_reason = "infra_failure"
+        elif cond.status in (SearchStatus.BUDGET_EXHAUSTED, SearchStatus.TIMEOUT) and len(cond.subset_elements) == 0:
+            is_valid = False
+            cand_set = None
+            term_reason = "budget_exhausted" if cond.status == SearchStatus.BUDGET_EXHAUSTED else "timeout"
+        else:
+            is_valid = True
+            cand_set = tuple(cond.subset_elements)
+            term_reason = "normal_completion"
+            if cond.status == SearchStatus.BUDGET_EXHAUSTED:
+                term_reason = "budget_exhausted"
+            elif cond.status == SearchStatus.TIMEOUT:
+                term_reason = "timeout"
 
         return score_diagnostic_outcome(
             mechanism_id=spec.mechanism_id,
@@ -217,6 +322,7 @@ def evaluate_mechanism_three_way(
         _run_active_dd,
         mechanism_id=spec.mechanism_id,
         method_name="active_dd",
+        seed=mech_seed,
         deviation_log=deviation_log,
     )
 
@@ -233,9 +339,14 @@ def evaluate_mechanism_three_way(
             trials_per_candidate=trials_per_candidate,
             failure_threshold=0.30,
         )
-        is_valid = not res.budget_exhausted or len(res.discovered_elements) > 0
-        cand_set = tuple(res.discovered_elements) if is_valid else None
-        term_reason = "budget_exhausted" if res.budget_exhausted else "normal_completion"
+        if res.budget_exhausted and len(res.discovered_elements) == 0:
+            is_valid = False
+            cand_set = None
+            term_reason = "budget_exhausted"
+        else:
+            is_valid = True
+            cand_set = tuple(res.discovered_elements)
+            term_reason = "budget_exhausted" if res.budget_exhausted else "normal_completion"
 
         return score_diagnostic_outcome(
             mechanism_id=spec.mechanism_id,
@@ -254,6 +365,7 @@ def evaluate_mechanism_three_way(
         _run_greedy,
         mechanism_id=spec.mechanism_id,
         method_name="greedy_ablation",
+        seed=mech_seed,
         deviation_log=deviation_log,
     )
 
@@ -286,6 +398,7 @@ def evaluate_mechanism_three_way(
         _run_judge,
         mechanism_id=spec.mechanism_id,
         method_name="llm_judge",
+        seed=mech_seed,
         deviation_log=deviation_log,
     )
 
@@ -295,7 +408,7 @@ def evaluate_mechanism_three_way(
         category=spec.category,
         is_null_case=spec.is_null_case,
         is_conjunctive=spec.is_conjunctive,
-        initial_elements=spec.candidate_elements,
+        initial_elements=initial_input.elements,
         ground_truth_trigger=spec.planted_trigger_elements,
         active_dd_outcome=dd_outcome,
         greedy_ablation_outcome=greedy_outcome,

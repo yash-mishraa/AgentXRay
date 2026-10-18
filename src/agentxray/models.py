@@ -606,6 +606,7 @@ class ExploratoryBenchmarkReport(BaseModel):
             "The 18-mechanism benchmark is an exploratory pilot; sample size is insufficient to guarantee confirmatory power under modest discordance rates.",
             "Reported McNemar p-value and odds ratio evaluate differences across the realized sample of mechanisms; generalization beyond the testbed requires defensible assumptions about etiological independence and representativeness.",
             "Sensitivity bounds [Delta_Risk_min, Delta_Risk_max] describe the retained benchmark cohort under extreme missingness; they do not automatically bound target-population risk if infrastructure attrition is non-random.",
+            "A non-false-attribution outcome (Y=0) denotes the absence of false attribution (e.g., no spurious elements claimed), but on active failure tasks where no causal element is isolated, it does not represent diagnostic success (R_exact=0). False attribution risk and exact identification recall must be evaluated jointly.",
             "FakeProvider evaluations validate software interfaces, JSON parsing, error recovery, and metric math; they do not measure real-world LLM diagnostic reasoning.",
         ),
         description="Explicit scientific and engineering limitations.",

@@ -14,6 +14,7 @@ Epistemic Integrity Guarantees:
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
@@ -69,11 +70,11 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
             tools=self.tools,
         )
 
-        # Check failure predicate for planted ground-truth mechanics
+        # Check failure predicate for observable mechanism symptoms
         if self._failure_predicate is not None:
             fails, reason = self._failure_predicate(input_case)
             if fails:
-                # Patch trace error message to reflect the mechanism failure for judge inspection
+                # Patch trace error message to reflect the observable symptom for judge inspection
                 err_trace = AgentExecutionTrace(
                     messages=trace.messages,
                     final_response=f"Execution error: {reason}" if not trace.final_response else trace.final_response,
@@ -89,14 +90,14 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
                 return TargetResult(
                     outcome=TargetOutcome.FAILURE,
                     output_message=f"Target execution failed: {reason}",
-                    error_telemetry={"mechanism_id": self.mechanism_id, "error": reason},
+                    metadata={"error": reason},
                 )
             else:
                 self._last_trace = trace
                 return TargetResult(
                     outcome=TargetOutcome.SUCCESS,
                     output_message=f"Target execution succeeded: {reason}",
-                    error_telemetry={"mechanism_id": self.mechanism_id},
+                    metadata={},
                 )
 
         # Fallback to evaluator outcome if no predicate is configured
@@ -106,7 +107,7 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
         return TargetResult(
             outcome=outcome,
             output_message=eval_msg,
-            error_telemetry={"mechanism_id": self.mechanism_id} if not is_success else {},
+            metadata={"error": eval_msg} if not is_success else {},
         )
 
 
@@ -121,13 +122,19 @@ class MechanismTaskSpec:
     is_conjunctive: bool
     candidate_elements: tuple[str, ...]
     planted_trigger_elements: tuple[str, ...]
+    observable_failure_symptom: str = ""
     description: str = ""
 
-    def create_initial_input(self) -> InputCase:
-        """Return the unablated initial InputCase containing all candidate elements."""
+    def create_initial_input(self, seed: int | None = None) -> InputCase:
+        """Return the unablated initial InputCase with optional seeded candidate permutation."""
+        if seed is None:
+            elements = self.candidate_elements
+        else:
+            rng = random.Random(seed)
+            elements = tuple(rng.sample(self.candidate_elements, len(self.candidate_elements)))
         return InputCase(
             case_id=self.mechanism_id,
-            elements=self.candidate_elements,
+            elements=elements,
             description=self.description,
         )
 
@@ -180,23 +187,34 @@ class MechanismTaskSpec:
         if self.is_null_case:
             if self.category == "null_ext":
                 # External shock: Always fails with 500 unhandled error regardless of candidate elements
-                return lambda ic: (True, "HTTP 500 Internal Server Error in mock backend service")
+                return lambda ic: (
+                    True,
+                    self.observable_failure_symptom or "ServiceUnavailableError: HTTP 500 Internal Server Error in mock backend service",
+                )
             # Clean null tasks: always pass
             return lambda ic: (False, "Clean execution")
 
         if self.is_conjunctive:
             # Conjunctive trigger: fails iff ALL trigger elements are present in candidate set
             return lambda ic: (
-                (True, f"Conjunctive failure: both {trigger_set} are active")
+                (
+                    True,
+                    self.observable_failure_symptom
+                    or "SchemaRoutingDeadlock: Parameter expression failed simultaneous typing and currency format constraints",
+                )
                 if trigger_set.issubset(set(ic.elements))
-                else (False, "Conjunctive trigger inactive: missing required components")
+                else (False, "Passing condition: required conjunctive components not all present")
             )
 
         # Standard single-factor trigger: fails iff any planted trigger is present
         return lambda ic: (
-            (True, f"Failure triggered by planted condition: {set(ic.elements) & trigger_set}")
+            (
+                True,
+                self.observable_failure_symptom
+                or "Task execution failed: observable failure criteria met",
+            )
             if any(t in ic.elements for t in trigger_set)
-            else (False, "Passing condition: planted trigger ablated")
+            else (False, "Passing condition: failure triggers absent")
         )
 
 
@@ -204,7 +222,7 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
     specs: list[MechanismTaskSpec] = []
 
     # 1-5. Prompt Surface (5 mechanisms)
-    p01_trig = "forbid_tool_call: Do not call any tools or external functions under any circumstances."
+    p01_trig = "tool_dispatch_policy: Do not call any tools or external functions under any circumstances."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_p01_directive_prohibition",
         name="Directive Prohibition",
@@ -214,15 +232,16 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(p01_trig,),
         candidate_elements=(
             p01_trig,
-            "distractor_audit_tag: mark as audited",
-            "distractor_formatting: format with clean spacing",
-            "distractor_response_tone: polite tone",
-            "distractor_currency_symbol: show dollar sign",
+            "audit_logging_policy: Mark all transaction records as verified.",
+            "output_format_layout: Format response with clean spacing.",
+            "assistant_tone_style: Maintain a polite and professional tone.",
+            "currency_symbol_mode: Display monetary values with leading dollar symbols.",
         ),
+        observable_failure_symptom="TaskExecutionError: Required tool 'calculator' was not invoked during agent execution.",
         description="Fails when tool prohibition directive is present.",
     ))
 
-    p02_trig = "format_currency_syntax: Format all numbers with leading dollar symbols like $150."
+    p02_trig = "currency_syntax_rule: Format all numbers with leading dollar symbols like $150."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_p02_argument_syntax",
         name="Argument Syntax Formatting",
@@ -232,15 +251,16 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(p02_trig,),
         candidate_elements=(
             p02_trig,
-            "distractor_accounting_code: code 1040",
-            "distractor_memo: reimbursement receipt",
-            "distractor_verification: double-check total",
-            "distractor_currency: USD currency",
+            "accounting_code_tag: Assign general ledger accounting code 1040.",
+            "transaction_memo_text: Attach reimbursement receipt note.",
+            "calculation_verification: Double check computed transaction total.",
+            "settlement_currency_unit: Use United States Dollar currency standard.",
         ),
+        observable_failure_symptom="ToolExecutionError: SyntaxError in calculator: invalid character '$' in numeric expression.",
         description="AST calculator fails on unescaped currency syntax.",
     ))
 
-    p03_trig = "compute_mental_first: Always mentally compute arithmetic before invoking tools and override output."
+    p03_trig = "mental_arithmetic_rule: Always mentally compute arithmetic before invoking tools and override output."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_p03_contradictory_order",
         name="Contradictory Order Constraint",
@@ -250,15 +270,16 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(p03_trig,),
         candidate_elements=(
             p03_trig,
-            "distractor_manager_signoff: approved by CFO",
-            "distractor_priority: high priority task",
-            "distractor_date_format: YYYY-MM-DD",
-            "distractor_department: Dept Accounting",
+            "manager_approval_tag: Record CFO authorization approval in metadata.",
+            "priority_queue_level: Process task with high priority routing.",
+            "date_format_convention: Represent dates using ISO standard YYYY-MM-DD.",
+            "cost_center_department: Route accounting allocation to Finance department.",
         ),
+        observable_failure_symptom="TaskEvaluationError: Expected calculation result '400' not found in final response.",
         description="Induces mental arithmetic hallucination before tool call.",
     ))
 
-    p04_trig = "filler_distractor_block: Extended corporate policy clause requiring verbose manual compliance verification."
+    p04_trig = "compliance_policy_clause: Extended corporate policy clause requiring verbose manual compliance verification."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_p04_attention_dilution",
         name="Attention Dilution Bloat",
@@ -268,17 +289,18 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(p04_trig,),
         candidate_elements=(
             p04_trig,
-            "distractor_c1: compliance paragraph 1",
-            "distractor_c2: compliance paragraph 2",
-            "distractor_c3: compliance paragraph 3",
-            "distractor_c4: compliance paragraph 4",
-            "distractor_c5: compliance paragraph 5",
-            "distractor_c6: compliance paragraph 6",
+            "regulatory_standard_p1: Corporate compliance and ethics guidelines paragraph 1.",
+            "regulatory_standard_p2: Treasury oversight and fiduciary duty paragraph 2.",
+            "regulatory_standard_p3: Enterprise risk management protocol paragraph 3.",
+            "regulatory_standard_p4: Internal accounting internal controls paragraph 4.",
+            "regulatory_standard_p5: Financial reporting disclosure checklist paragraph 5.",
+            "regulatory_standard_p6: Document retention and archival policy paragraph 6.",
         ),
+        observable_failure_symptom="TaskExecutionError: Agent session exceeded turn limit without producing final calculation.",
         description="Prompt length bloat induces small model attention omission.",
     ))
 
-    p05_trig = "override_tool_dispatch: Route all calculation requests to non_existent_quantum_calculator tool."
+    p05_trig = "tool_routing_override: Route all calculation requests to non_existent_quantum_calculator tool."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_p05_instruction_override",
         name="Instruction Dispatch Override",
@@ -288,11 +310,12 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(p05_trig,),
         candidate_elements=(
             p05_trig,
-            "distractor_routing_fast: use fast path",
-            "distractor_session_id: sess_1234",
-            "distractor_env_mode: production",
-            "distractor_fallback: fallback allowed",
+            "execution_path_setting: Utilize fast path dispatch pipeline.",
+            "session_identifier_tag: Track interaction under session tag sess_1234.",
+            "environment_tier_flag: Execute under production runtime constraints.",
+            "fallback_routing_mode: Permit standard fallback if primary fails.",
         ),
+        observable_failure_symptom="ToolDispatchError: Tool 'non_existent_quantum_calculator' is not available in environment.",
         description="Overrides tool dispatch to nonexistent tool name.",
     ))
 
@@ -309,15 +332,16 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         candidate_elements=(
             conj_e1,
             conj_e2,
-            "distractor_user_persona: corporate accounting assistant",
-            "distractor_response_tone: formal and respectful",
-            "distractor_audit_timestamp: append timestamp to internal notes",
+            "assistant_persona_role: Act as corporate accounting assistant.",
+            "communication_style_guide: Maintain formal and respectful tone.",
+            "audit_trail_timestamp: Append timestamp metadata to internal audit notes.",
         ),
+        observable_failure_symptom="SchemaRoutingDeadlock: Parameter expression failed simultaneous typing and currency format constraints.",
         description="Conjunctive trigger: fails iff both strict typing and currency syntax directives are present.",
     ))
 
     # 7-11. Tool Schema Surface (5 mechanisms)
-    s01_trig = "param_type_array_error: Tool parameter expression declared as array of strings instead of string."
+    s01_trig = "schema_param_type_spec: Tool parameter expression declared as array of strings instead of string."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_s01_type_mismatch",
         name="Schema Parameter Type Mismatch",
@@ -327,14 +351,15 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(s01_trig,),
         candidate_elements=(
             s01_trig,
-            "distractor_schema_version: JSON schema draft 7",
-            "distractor_tool_timeout: 5000ms",
-            "distractor_tool_owner: Platform Team",
+            "json_schema_version_spec: Adhere to JSON schema draft 7 specifications.",
+            "tool_timeout_limit_ms: Enforce execution timeout limit of 5000ms.",
+            "service_owner_team_tag: Assign tool maintenance ownership to Platform Team.",
         ),
+        observable_failure_symptom="ValidationError: Tool 'calculator' parameter 'expression' expected string, got array.",
         description="Schema mismatch causes parameter validation failure.",
     ))
 
-    s02_trig = "missing_required_expr: Tool parameter expression marked as forbidden or omitted from required properties."
+    s02_trig = "required_property_spec: Tool parameter expression marked as forbidden or omitted from required properties."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_s02_missing_property",
         name="Schema Missing Required Property",
@@ -344,14 +369,15 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(s02_trig,),
         candidate_elements=(
             s02_trig,
-            "distractor_optional_meta: metadata dict",
-            "distractor_cache_key: cache_calc",
-            "distractor_strict_mode: enabled",
+            "metadata_field_schema: Include optional metadata dictionary definition.",
+            "calculation_cache_key: Use cache key cache_calc for memoization.",
+            "validation_strictness_mode: Enable strict validation checking.",
         ),
+        observable_failure_symptom="ValidationError: Tool 'calculator' missing required parameter 'expression'.",
         description="Missing required expression causes empty parameter invocation.",
     ))
 
-    s03_trig = "misleading_unit_docstring: Parameter docstring states input must be in Rankine degrees for Celsius conversion."
+    s03_trig = "parameter_docstring_unit: Parameter docstring states input must be in Rankine degrees for Celsius conversion."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_s03_ambiguous_docstring",
         name="Ambiguous Docstring Specification",
@@ -361,15 +387,16 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(s03_trig,),
         candidate_elements=(
             s03_trig,
-            "distractor_doc_author: Team Doc",
-            "distractor_doc_revision: rev_4",
-            "distractor_doc_lang: en-US",
-            "distractor_doc_examples: 2 examples",
+            "documentation_author_tag: Document authored by Platform Documentation Team.",
+            "documentation_revision_id: Document updated under revision tracking rev_4.",
+            "documentation_language_code: Document locale set to English US.",
+            "documentation_example_count: Provide 2 usage examples in docstring.",
         ),
+        observable_failure_symptom="TaskEvaluationError: Calculation result '-459.67' did not match expected value '400'.",
         description="Ambiguous parameter docstring induces wrong argument conversion.",
     ))
 
-    s04_trig = "duplicate_calc_signature: Second calculator tool defined with identical signature but conflicting return format."
+    s04_trig = "duplicate_tool_definition: Second calculator tool defined with identical signature but conflicting return format."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_s04_signature_overlap",
         name="Tool Signature Overlap Conflict",
@@ -379,14 +406,15 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(s04_trig,),
         candidate_elements=(
             s04_trig,
-            "distractor_tool_prefix: math_",
-            "distractor_tool_tag: utility",
-            "distractor_tool_scope: internal",
+            "tool_namespace_prefix: Use namespace prefix math_ for utility functions.",
+            "tool_registry_category: Categorize tool under financial utility functions.",
+            "tool_visibility_scope: Restrict tool accessibility to internal platform.",
         ),
+        observable_failure_symptom="ToolRoutingError: Ambiguous tool call resolution between duplicate tool declarations.",
         description="Overlapping tool definitions cause routing paralysis.",
     ))
 
-    s05_trig = "restricted_enum_whitelist: Restricts currency parameter to enum ['EUR', 'GBP'] on USD transactions."
+    s05_trig = "currency_enum_constraint: Restricts currency parameter to enum ['EUR', 'GBP'] on USD transactions."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_s05_enum_whitelist",
         name="Restricted Enum Whitelist Conflict",
@@ -396,15 +424,16 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(s05_trig,),
         candidate_elements=(
             s05_trig,
-            "distractor_currency_locale: en-US",
-            "distractor_allow_rounding: True",
-            "distractor_precision_digits: 2",
+            "locale_format_setting: Format currency according to en-US standard.",
+            "rounding_precision_rule: Allow half-up rounding precision.",
+            "decimal_places_limit: Format fractional amounts to 2 decimal places.",
         ),
+        observable_failure_symptom="ValidationError: Value 'USD' is not a member of allowed currency enum ['EUR', 'GBP'].",
         description="Enum constraint forbids requested currency parameter.",
     ))
 
     # 12-15. Environment Surface (4 mechanisms)
-    e01_trig = "return_unparseable_json: Mock tool returns corrupt syntax-invalid JSON payload."
+    e01_trig = "json_serializer_syntax: Mock tool returns corrupt syntax-invalid JSON payload."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_e01_malformed_json_return",
         name="Malformed JSON Return",
@@ -414,14 +443,15 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(e01_trig,),
         candidate_elements=(
             e01_trig,
-            "distractor_env_region: us-east-1",
-            "distractor_env_tier: staging",
-            "distractor_env_compression: gzip",
+            "backend_region_code: Deploy service in region us-east-1.",
+            "deployment_environment_tier: Target staging environment runtime.",
+            "payload_compression_type: Compress payload using standard gzip.",
         ),
+        observable_failure_symptom="ToolExecutionError: Failed to parse tool response as valid JSON: JSONDecodeError at position 0.",
         description="Tool execution returns corrupt JSON payload.",
     ))
 
-    e02_trig = "drifted_output_keys: Mock tool returns result_val instead of documented value key."
+    e02_trig = "output_key_mapping: Mock tool returns result_val instead of documented value key."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_e02_return_schema_drift",
         name="Return Schema Drift",
@@ -431,14 +461,15 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(e02_trig,),
         candidate_elements=(
             e02_trig,
-            "distractor_api_version: v2.4",
-            "distractor_auth_header: Bearer",
-            "distractor_rate_limit: 100/min",
+            "api_version_specification: Expose endpoint under api version v2.4.",
+            "authorization_scheme_header: Authenticate requests using Bearer token.",
+            "client_rate_limit_policy: Throttle client calls at 100 per minute.",
         ),
+        observable_failure_symptom="KeyError: Missing expected key 'value' in tool execution response payload.",
         description="Return schema key drift causes agent to miss required answer.",
     ))
 
-    e03_trig = "db_missing_primary_key: Mock database returns valid JSON record but omits primary lookup key."
+    e03_trig = "record_primary_key_rule: Mock database returns valid JSON record but omits primary lookup key."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_e03_missing_key_field",
         name="Missing Key Field in Record",
@@ -448,15 +479,16 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(e03_trig,),
         candidate_elements=(
             e03_trig,
-            "distractor_db_table: accounts",
-            "distractor_db_engine: in-memory",
-            "distractor_db_replica: read-only",
-            "distractor_db_isolation: serializable",
+            "database_table_target: Query records from accounts table.",
+            "storage_engine_type: Execute queries using in-memory engine.",
+            "database_replica_policy: Route read queries to read-only replica.",
+            "transaction_isolation_level: Enforce serializable transaction isolation.",
         ),
+        observable_failure_symptom="DatabaseError: Record retrieved from table 'accounts' is missing primary key 'id'.",
         description="Database record lacks primary lookup key.",
     ))
 
-    e04_trig = "mock_server_error_500: Tool server injects HTTP 500 internal server error."
+    e04_trig = "server_fault_injection: Tool server injects HTTP 500 internal server error."
     specs.append(MechanismTaskSpec(
         mechanism_id="mech_e04_transient_http_500",
         name="Tool Server HTTP 500 Error",
@@ -466,10 +498,11 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         planted_trigger_elements=(e04_trig,),
         candidate_elements=(
             e04_trig,
-            "distractor_http_method: POST",
-            "distractor_client_agent: Python-requests",
-            "distractor_keep_alive: True",
+            "http_request_method: Issue tool dispatch over HTTP POST method.",
+            "client_user_agent_header: Identify client as Python-requests.",
+            "connection_keep_alive: Maintain persistent connection keep alive.",
         ),
+        observable_failure_symptom="ServiceUnavailableError: HTTP 500 Internal Server Error returned by mock service.",
         description="Tool server returns internal server error.",
     ))
 
@@ -482,11 +515,12 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         is_conjunctive=False,
         planted_trigger_elements=(),
         candidate_elements=(
-            "distractor_format_summary: summarize clearly",
-            "distractor_accounting_tag: tag_reimburse",
-            "distractor_currency_name: USD",
-            "distractor_verification_note: audited",
+            "summary_reporting_format: Format arithmetic summary clearly.",
+            "accounting_entry_tag: Assign tag tag_reimburse to ledger entry.",
+            "currency_unit_label: Display amounts with currency symbol USD.",
+            "audit_signoff_verification: Record transaction as verified by accounting.",
         ),
+        observable_failure_symptom="",
         description="Clean passing condition with 0 planted triggers. Must succeed.",
     ))
 
@@ -498,13 +532,14 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         is_conjunctive=False,
         planted_trigger_elements=(),
         candidate_elements=(
-            "distractor_p1: paragraph 1 formatting guidance",
-            "distractor_p2: paragraph 2 audit requirements",
-            "distractor_p3: paragraph 3 corporate governance",
-            "distractor_p4: paragraph 4 compliance standards",
-            "distractor_p5: paragraph 5 reporting procedures",
-            "distractor_p6: paragraph 6 archival protocol",
+            "presentation_layout_p1: Paragraph 1 formatting and layout guidelines.",
+            "audit_verification_p2: Paragraph 2 audit inspection requirements.",
+            "corporate_governance_p3: Paragraph 3 corporate governance protocols.",
+            "compliance_framework_p4: Paragraph 4 financial compliance standards.",
+            "reporting_procedure_p5: Paragraph 5 reporting and reconciliation procedures.",
+            "archival_protocol_p6: Paragraph 6 document archival and retention rules.",
         ),
+        observable_failure_symptom="",
         description="Distractor-heavy passing condition with 0 planted triggers.",
     ))
 
@@ -516,11 +551,12 @@ def _build_18_mechanisms() -> dict[str, MechanismTaskSpec]:
         is_conjunctive=False,
         planted_trigger_elements=(),
         candidate_elements=(
-            "distractor_client_tag: client_internal",
-            "distractor_audit_user: auditor_7",
-            "distractor_log_level: DEBUG",
-            "distractor_output_currency: USD",
+            "client_application_tag: Internal client application identifier.",
+            "audit_user_account: Record auditing user account auditor_7.",
+            "telemetry_log_level: Configure telemetry logging level to DEBUG.",
+            "default_settlement_currency: Default settlement currency configured to USD.",
         ),
+        observable_failure_symptom="ServiceUnavailableError: HTTP 500 Internal Server Error in mock backend service.",
         description="External shock failure: target always fails with HTTP 500 uncaused by any candidate input.",
     ))
 

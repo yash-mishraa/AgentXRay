@@ -510,3 +510,95 @@ class TestRuntimeIsolation:
         assert s_rec == 1.0
         assert s_excess == ()
         assert s_missing == ()
+
+
+class TestRuntimeJudgePromptIsolation:
+    """Verifies that passive judge prompts and traces have zero ground-truth leakage across all 18 mechanisms."""
+
+    def test_zero_distractor_prefixes_in_benchmark_registry(self) -> None:
+        from benchmarks.multi_mechanism.tasks import list_mechanism_tasks
+
+        for spec in list_mechanism_tasks():
+            for elem in spec.candidate_elements:
+                assert not elem.lower().startswith("distractor_"), (
+                    f"Mechanism {spec.mechanism_id} candidate leaks distractor_ prefix: {elem}"
+                )
+                assert not elem.lower().startswith("distractor:"), (
+                    f"Mechanism {spec.mechanism_id} candidate leaks distractor prefix: {elem}"
+                )
+
+    def test_trace_telemetry_and_errors_leak_no_planted_triggers(self) -> None:
+        from benchmarks.multi_mechanism.tasks import list_mechanism_tasks
+
+        for spec in list_mechanism_tasks():
+            target = spec.create_target()
+            inp = spec.create_initial_input()
+            res = target.execute(inp)
+            trace = target.last_trace
+            assert trace is not None
+
+            # Mechanism ID must never leak into trace error message or target error telemetry
+            if trace.error_message:
+                assert spec.mechanism_id not in trace.error_message, (
+                    f"Mechanism ID {spec.mechanism_id} leaked in error_message"
+                )
+                assert "planted" not in trace.error_message.lower(), (
+                    f"Word 'planted' leaked in error_message for {spec.mechanism_id}"
+                )
+                assert "ground_truth" not in trace.error_message.lower(), (
+                    f"Word 'ground_truth' leaked in error_message for {spec.mechanism_id}"
+                )
+
+            # Target error telemetry must be sanitized
+            for k, v in res.metadata.items():
+                val_str = str(v).lower()
+                assert "planted" not in val_str, f"Word 'planted' found in metadata for {spec.mechanism_id}"
+                assert "ground_truth" not in val_str, f"Word 'ground_truth' found in metadata for {spec.mechanism_id}"
+                assert spec.mechanism_id not in val_str, f"Mechanism ID found in metadata for {spec.mechanism_id}"
+
+    def test_judge_prompt_construction_contains_zero_leakage(self) -> None:
+        from typing import Sequence
+        from agentxray.llm_judge import LLMJudgeBaseline
+        from agentxray.providers.base import Message, ModelResponse, ToolDefinition, UsageMetadata
+        from agentxray.providers.fake import FakeProvider
+        from benchmarks.multi_mechanism.tasks import list_mechanism_tasks
+
+        captured_messages: list[Sequence[Message]] = []
+
+        def capture_handler(messages: Sequence[Message], tools: Sequence[ToolDefinition]) -> ModelResponse:
+            captured_messages.append(messages)
+            return ModelResponse(
+                content='{"culprit_element_ids": [], "rationale": "ok"}',
+                usage=UsageMetadata(prompt_tokens=100, completion_tokens=20, total_tokens=120),
+                model_identifier="fake-judge",
+            )
+
+        provider = FakeProvider(custom_handler=capture_handler)
+        judge = LLMJudgeBaseline(provider=provider)
+
+        for spec in list_mechanism_tasks():
+            captured_messages.clear()
+            target = spec.create_target()
+            inp = spec.create_initial_input(seed=123)
+            target.execute(inp)
+            trace = target.last_trace
+            assert trace is not None
+
+            judge.diagnose(inp, trace)
+            assert len(captured_messages) >= 1
+            full_prompt = "\n".join(m.content for m in captured_messages[0])
+
+            # Assert no ground-truth meta-labels leak to judge
+            assert spec.mechanism_id not in full_prompt, (
+                f"Mechanism ID {spec.mechanism_id} found in judge prompt"
+            )
+            assert "planted" not in full_prompt.lower(), (
+                f"'planted' found in judge prompt for {spec.mechanism_id}"
+            )
+            assert "ground_truth" not in full_prompt.lower(), (
+                f"'ground_truth' found in judge prompt for {spec.mechanism_id}"
+            )
+            assert "distractor_" not in full_prompt.lower(), (
+                f"'distractor_' found in judge prompt for {spec.mechanism_id}"
+            )
+

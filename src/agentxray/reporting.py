@@ -814,6 +814,8 @@ def format_exploratory_benchmark_markdown(report: Any) -> str:
 
     lines.extend([
         "",
+        "*(Note: $Y=0$ denotes absence of false attribution, while $R=1$ denotes exact recovery. On active mechanisms, $Y=0$ alone does not indicate diagnostic success if $R=0$, as when a method identifies no elements.)*",
+        "",
         "## 5. Secondary Metrics Summary",
         "",
     ])
