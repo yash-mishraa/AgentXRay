@@ -404,3 +404,87 @@ def test_missingness_sensitivity_fragile_yields_inconclusive():
     assert res.missingness_sensitivity_status == "fragile"
     assert res.minimality_status == StochasticMinimalityStatus.INCONCLUSIVE
     assert "collapses under adversarial missingness sensitivity analysis" in res.status_message
+
+
+def test_strict_significance_boundary_p_equals_alpha():
+    """Verify that strict inequality p < alpha is enforced when p == alpha exactly.
+
+    For candidate failures 3/3 (100%) and ablation failures 0/3 (0%) under alternative='greater',
+    the hypergeometric tail probability is comb(3,3)*comb(3,0) / comb(6,3) = 1/20 = 0.05.
+    At alpha=0.05, p < alpha evaluates to False.
+    The result must NOT be classified as STATISTICALLY_SUPPORTED; it must yield OBSERVED_ONLY.
+    """
+    initial_input = InputCase(case_id="case_p_alpha", elements=("p_a",))
+    candidate = ("p_a",)
+
+    def target_fn(case: InputCase) -> TargetResult:
+        is_fail = ("p_a" in case.elements)
+        return TargetResult(
+            case_id=case.case_id,
+            outcome=TargetOutcome.FAILURE if is_fail else TargetOutcome.SUCCESS,
+            observable_signals={},
+        )
+
+    runner = InterventionRunner(
+        config=ExperimentConfig(experiment_name="test_p_alpha", max_trials=50),
+        target_fn=target_fn,
+    )
+
+    res = verify_candidate_stochastically(
+        candidate=candidate,
+        initial_input=initial_input,
+        runner=runner,
+        trials_per_candidate=3,
+        failure_threshold=0.50,
+        alpha=0.05,
+        alternative="greater",
+    )
+
+    assert res.minimality_status == StochasticMinimalityStatus.OBSERVED_ONLY
+    assert res.minimality_status != StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
+    assert "did not achieve statistical significance at alpha=0.05" in res.status_message
+    assert "p_comp=0.0500" in res.status_message
+
+
+def test_equal_failure_rates_classified_not_minimal():
+    """Verify that equal candidate and ablation failure rates yield NOT_MINIMAL with the observed-data disclaimer.
+
+    Candidate confirmation requires failure rate >= failure_threshold (e.g. 4/8 = 0.50 with threshold=0.50).
+    When the single-element ablation yields an identical failure rate (4/8 = 0.50), removing the element
+    does not reduce failure rate below threshold, and is classified as NOT_MINIMAL based on observed sample rates.
+    """
+    initial_input = InputCase(case_id="case_equal_rate", elements=("p_a",))
+    candidate = ("p_a",)
+
+    call_counts = {"cand": 0, "ablat": 0}
+
+    def target_fn(case: InputCase) -> TargetResult:
+        if "p_a" in case.elements:
+            call_counts["cand"] += 1
+            is_fail = (call_counts["cand"] <= 4)
+        else:
+            call_counts["ablat"] += 1
+            is_fail = (call_counts["ablat"] <= 4)
+        return TargetResult(
+            case_id=case.case_id,
+            outcome=TargetOutcome.FAILURE if is_fail else TargetOutcome.SUCCESS,
+            observable_signals={},
+        )
+
+    runner = InterventionRunner(
+        config=ExperimentConfig(experiment_name="test_equal_rate", max_trials=50),
+        target_fn=target_fn,
+    )
+
+    res = verify_candidate_stochastically(
+        candidate=candidate,
+        initial_input=initial_input,
+        runner=runner,
+        trials_per_candidate=8,
+        failure_threshold=0.50,
+        alternative="greater",
+    )
+
+    assert res.minimality_status == StochasticMinimalityStatus.NOT_MINIMAL
+    assert "Candidate is not 1-minimal" in res.status_message
+    assert "observed-data classification, not an equivalence or non-inferiority proof" in res.status_message

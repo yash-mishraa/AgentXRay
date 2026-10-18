@@ -675,7 +675,11 @@ def verify_candidate_stochastically(
                 )
         elif any_non_drop:
             status = StochasticMinimalityStatus.NOT_MINIMAL
-            msg = "Removal of at least one element did not decrease the observed failure rate."
+            msg = (
+                f"Removal of at least one element did not decrease the observed failure rate. "
+                f"Classified as NOT_MINIMAL based on observed sample rates (note: observed-data classification, "
+                f"not an equivalence or non-inferiority proof)."
+            )
         else:
             status = StochasticMinimalityStatus.INCONCLUSIVE
             msg = "1-Minimality not established: protocol attrition or interruption compromised trial execution."
