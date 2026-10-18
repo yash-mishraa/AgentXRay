@@ -46,6 +46,7 @@ from benchmarks.multi_mechanism.tasks import (
     MECHANISM_REGISTRY,
     MechanismTaskSpec,
     MechanismTargetAdapter,
+    TargetMode,
     list_mechanism_tasks,
 )
 
@@ -125,7 +126,7 @@ def run_with_infra_guard(
         random.seed(seed)
     try:
         return fn()
-    except (ProviderError, OSError, ConnectionError, TimeoutError) as first_err:
+    except (ProviderError, OSError, ConnectionError, TimeoutError, RuntimeError) as first_err:
         entry = {
             "mechanism_id": mechanism_id,
             "method_name": method_name,
@@ -616,6 +617,7 @@ def run_multi_mechanism_benchmark(
     tc_judge = [ev.llm_judge_outcome.target_calls_used for ev in evaluable_evs]
 
     secondary = {
+        "benchmark_tier": "synthetic_control",
         "pooled_fdr": {"active_dd": fdr_dd, "greedy_ablation": fdr_greedy, "llm_judge": fdr_judge},
         "mean_fdp": {"active_dd": fdp_dd, "greedy_ablation": fdp_greedy, "llm_judge": fdp_judge},
         "exact_recovery_rate": {

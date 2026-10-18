@@ -14,6 +14,7 @@ Epistemic Integrity Guarantees:
 
 from __future__ import annotations
 
+import enum
 import random
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
@@ -37,6 +38,13 @@ from agentxray.providers.fake import FakeProvider
 from benchmarks.multi_mechanism.ground_truth import MultiMechanismGroundTruthSpec
 
 
+class TargetMode(str, enum.Enum):
+    """Target execution mode distinguishing synthetic rule evaluation from trace evaluation."""
+
+    SYNTHETIC_CONTROL = "synthetic_control"
+    TRACE_EVALUATED = "trace_evaluated"
+
+
 class MechanismTargetAdapter(ModelBackedAgentTarget):
     """Target adapter that evaluates planted mechanism failure rules hermetically."""
 
@@ -50,6 +58,7 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
         tools: Sequence[Any] = (),
         name: str = "MechanismTarget",
         failure_predicate: Callable[[InputCase], tuple[bool, str]] | None = None,
+        target_mode: TargetMode | str = TargetMode.SYNTHETIC_CONTROL,
     ) -> None:
         super().__init__(
             agent=agent,
@@ -61,6 +70,7 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
         )
         self.mechanism_id = mechanism_id
         self._failure_predicate = failure_predicate
+        self.target_mode = TargetMode(target_mode)
 
     def execute(self, input_case: InputCase) -> TargetResult:
         """Execute the agent on the given input_case and determine outcome."""
@@ -82,6 +92,42 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
 
         self._call_count += 1
 
+        # Trace-evaluated mode: outcome determined strictly from evaluator, predicate bypassed
+        if self.target_mode == TargetMode.TRACE_EVALUATED:
+            # Immediately abort on provider infrastructure error (auth, quota, network, provider 5xx)
+            # Provider crashes must never be conflated with observable agent behavioral failures.
+            if trace.finish_reason == "error":
+                raise RuntimeError(
+                    f"Controlled agent execution aborted due to provider infrastructure error: {trace.error_message}"
+                )
+
+            is_success, eval_msg = self.evaluator.evaluate(trace)
+            self._last_trace = trace
+            outcome = TargetOutcome.SUCCESS if is_success else TargetOutcome.FAILURE
+            metadata: dict[str, Any] = {
+                "target_mode": self.target_mode.value,
+                "model_identifier": getattr(self.agent.provider, "model_name", "unknown"),
+                "turns_used": trace.turns_used,
+                "total_tokens": trace.total_tokens,
+                "estimated_cost_usd": trace.estimated_cost_usd,
+                "tool_calls_count": len(trace.tool_executions),
+                "tool_names_called": [t.tool_name for t in trace.tool_executions],
+                "finish_reason": trace.finish_reason,
+            }
+            if trace.error_message:
+                metadata["error"] = trace.error_message
+            elif not is_success and eval_msg:
+                metadata["eval_diagnostic"] = eval_msg
+
+            return TargetResult(
+                outcome=outcome,
+                output_message=eval_msg,
+                error_code="AGENT_FAILURE" if not is_success else None,
+                latency_ms=trace.total_latency_ms,
+                metadata=metadata,
+            )
+
+        # Synthetic-control mode (default):
         # Check failure predicate for observable mechanism symptoms
         if self._failure_predicate is not None:
             fails, reason = self._failure_predicate(input_case)
@@ -102,14 +148,14 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
                 return TargetResult(
                     outcome=TargetOutcome.FAILURE,
                     output_message=f"Target execution failed: {reason}",
-                    metadata={"error": reason},
+                    metadata={"error": reason, "target_mode": self.target_mode.value},
                 )
             else:
                 self._last_trace = trace
                 return TargetResult(
                     outcome=TargetOutcome.SUCCESS,
                     output_message=f"Target execution succeeded: {reason}",
-                    metadata={},
+                    metadata={"target_mode": self.target_mode.value},
                 )
 
         # Fallback to evaluator outcome if no predicate is configured
@@ -119,7 +165,7 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
         return TargetResult(
             outcome=outcome,
             output_message=eval_msg,
-            metadata={"error": eval_msg} if not is_success else {},
+            metadata={"error": eval_msg, "target_mode": self.target_mode.value} if not is_success else {"target_mode": self.target_mode.value},
         )
 
 
@@ -169,6 +215,7 @@ class MechanismTaskSpec:
         provider: ModelProvider | None = None,
         cost_tracker: CostTracker | None = None,
         max_turns: int = 3,
+        target_mode: TargetMode | str = TargetMode.SYNTHETIC_CONTROL,
     ) -> MechanismTargetAdapter:
         """Create target adapter executing this mechanism."""
         prov = provider or FakeProvider(model_name="fake-multi-mech")
@@ -191,6 +238,7 @@ class MechanismTaskSpec:
             tools=[CALCULATOR_TOOL_DEF, DATABASE_LOOKUP_TOOL_DEF],
             name=f"Target_{self.mechanism_id}",
             failure_predicate=pred,
+            target_mode=target_mode,
         )
 
     def _build_failure_predicate(self) -> Callable[[InputCase], tuple[bool, str]]:
