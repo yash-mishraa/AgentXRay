@@ -256,8 +256,47 @@ class StochasticDiscoveredCondition(BaseModel):
     target_calls_used: int = Field(..., ge=0, description="Total target calls consumed.")
     search_target_calls: int = Field(default=0, ge=0, description="Target calls spent in search phase.")
     verification_target_calls: int = Field(default=0, ge=0, description="Target calls spent in verification phase.")
+    search_model_requests: int = Field(default=0, ge=0, description="Model provider requests spent in search/discovery phase.")
+    verification_model_requests: int = Field(default=0, ge=0, description="Model provider requests spent in verification phase.")
+    total_model_requests: int = Field(default=0, ge=0, description="Total model provider requests consumed.")
+    verification_status: str | None = Field(default=None, description="Execution status of verification.")
+    evidence_tier: str | None = Field(default=None, description="Evidence tier ('exploratory' or 'confirmatory').")
+    sample_size_rationale: str | None = Field(default=None, description="Sample size rationale ('exploratory_default', 'unresolved_user_specified', etc.).")
+    sample_size_validation_status: str = Field(default="not_applicable", description="Validation status of sample size / statistical power ('not_applicable', 'not_implemented', 'unresolved', 'validated').")
+    confirmatory_power_established: bool = Field(default=False, description="Whether confirmatory power was established by an approved sample size rationale.")
     subsets_examined: int = Field(default=0, ge=0, description="Count of distinct candidate subsets evaluated.")
     status_message: str = Field(default="", description="Detailed narrative.")
+
+    @model_validator(mode="after")
+    def validate_evidentiary_consistency(self) -> StochasticDiscoveredCondition:
+        tier_val = str(self.evidence_tier or "").lower()
+        val_status = str(self.sample_size_validation_status or "").lower()
+
+        if self.confirmatory_power_established and tier_val != "confirmatory":
+            raise ValueError(
+                f"Invalid evidentiary state: confirmatory_power_established=True cannot coexist "
+                f"with evidence_tier={self.evidence_tier!r}."
+            )
+
+        if self.confirmatory_power_established and val_status in ("unresolved", "not_implemented", "not_applicable", ""):
+            raise ValueError(
+                f"Invalid evidentiary state: confirmatory_power_established=True cannot coexist "
+                f"with sample_size_validation_status={self.sample_size_validation_status!r}."
+            )
+
+        if self.confirmatory_power_established:
+            raise ValueError(
+                "Invalid evidentiary claim: confirmatory_power_established cannot be True because "
+                "automated prospective power analysis is not implemented in AgentXRay."
+            )
+
+        if self.evidence_tier is None and self.verification_status is None and val_status == "validated":
+            raise ValueError(
+                "Invalid evidentiary state: sample_size_validation_status cannot be 'validated' "
+                "when verification has not been performed (evidence_tier and verification_status are None)."
+            )
+
+        return self
 
 
 class StochasticBaselineComparison(BaseModel):
@@ -272,11 +311,50 @@ class StochasticBaselineComparison(BaseModel):
     target_calls: int = Field(..., ge=0, description="Target evaluations consumed.")
     search_target_calls: int = Field(default=0, ge=0, description="Target calls spent in search phase.")
     verification_target_calls: int = Field(default=0, ge=0, description="Target calls spent in verification phase.")
+    search_model_requests: int = Field(default=0, ge=0, description="Model provider requests spent in search/discovery phase.")
+    verification_model_requests: int = Field(default=0, ge=0, description="Model provider requests spent in verification phase.")
+    total_model_requests: int = Field(default=0, ge=0, description="Total model provider requests consumed.")
+    verification_status: str | None = Field(default=None, description="Execution status of verification.")
+    evidence_tier: str | None = Field(default=None, description="Evidence tier ('exploratory' or 'confirmatory').")
+    sample_size_rationale: str | None = Field(default=None, description="Sample size rationale ('exploratory_default', 'unresolved_user_specified', etc.).")
+    sample_size_validation_status: str = Field(default="not_applicable", description="Validation status of sample size / statistical power ('not_applicable', 'not_implemented', 'unresolved', 'validated').")
+    confirmatory_power_established: bool = Field(default=False, description="Whether confirmatory power was established by an approved sample size rationale.")
     subsets_examined: int = Field(default=0, ge=0, description="Count of distinct candidate subsets evaluated.")
     candidate_evaluation: CandidateEvaluation = Field(..., description="Statistical evaluation of isolated candidate.")
     irrelevant_elements_remaining: int = Field(default=0, ge=0, description="Count of non-causal distractor elements retained.")
     matches_ground_truth: bool = Field(default=False, description="Exact match with planted trigger.")
     budget_exhausted: bool = Field(default=False, description="Whether search budget was exhausted.")
+
+    @model_validator(mode="after")
+    def validate_evidentiary_consistency(self) -> StochasticBaselineComparison:
+        tier_val = str(self.evidence_tier or "").lower()
+        val_status = str(self.sample_size_validation_status or "").lower()
+
+        if self.confirmatory_power_established and tier_val != "confirmatory":
+            raise ValueError(
+                f"Invalid evidentiary state: confirmatory_power_established=True cannot coexist "
+                f"with evidence_tier={self.evidence_tier!r}."
+            )
+
+        if self.confirmatory_power_established and val_status in ("unresolved", "not_implemented", "not_applicable", ""):
+            raise ValueError(
+                f"Invalid evidentiary state: confirmatory_power_established=True cannot coexist "
+                f"with sample_size_validation_status={self.sample_size_validation_status!r}."
+            )
+
+        if self.confirmatory_power_established:
+            raise ValueError(
+                "Invalid evidentiary claim: confirmatory_power_established cannot be True because "
+                "automated prospective power analysis is not implemented in AgentXRay."
+            )
+
+        if self.evidence_tier is None and self.verification_status is None and val_status == "validated":
+            raise ValueError(
+                "Invalid evidentiary state: sample_size_validation_status cannot be 'validated' "
+                "when verification has not been performed (evidence_tier and verification_status are None)."
+            )
+
+        return self
 
 
 class StochasticEvaluationResult(BaseModel):

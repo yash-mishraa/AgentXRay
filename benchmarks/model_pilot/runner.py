@@ -10,7 +10,9 @@ from agentxray.agent_harness.cost_tracker import (
     CostTracker,
     ExperimentBudgetConfig,
     IsolatedAlgorithmCostTracker,
+    IsolatedPhaseCostTracker,
 )
+from agentxray.verification import verify_candidate_stochastically
 from agentxray.models import (
     AccessMode,
     ExecutionTier,
@@ -163,6 +165,12 @@ def run_model_pilot_benchmark(
     timeout_seconds: float = 60.0,
     output_dir: Path | str = ".",
     seed: int = 42,
+    max_discovery_requests: int | None = None,
+    max_verification_requests: int | None = None,
+    enable_independent_verification: bool = False,
+    verification_trials: int | None = None,
+    verification_tier: str = "exploratory",
+    sample_size_rationale: str | None = None,
 ) -> ModelPilotExperimentReport:
     """Execute the model-backed agent pilot across the selected pilot task(s).
 
@@ -196,6 +204,18 @@ def run_model_pilot_benchmark(
         Directory to write output JSON and Markdown reports.
     seed : int
         RNG seed for random baselines and local model generation reproducibility.
+    max_discovery_requests : int | None
+        Independent request quota for discovery phase.
+    max_verification_requests : int | None
+        Independent request quota for verification phase.
+    enable_independent_verification : bool
+        Whether to run post-discovery independent verification audit.
+    verification_trials : int | None
+        Number of trials per condition in verification phase.
+    verification_tier : str
+        'exploratory' (default) or 'confirmatory'.
+    sample_size_rationale : str | None
+        Documentation / rationale status for verification sample size.
 
     Returns
     -------
@@ -224,6 +244,15 @@ def run_model_pilot_benchmark(
             f"Safety safeguard violation: max_spend_usd is ${max_spend_usd:.2f}, "
             "but initial real-model validation pilots strictly mandate max_spend_usd <= $1.00 USD."
         )
+
+    if enable_independent_verification:
+        tier_norm = verification_tier.strip().lower()
+        if tier_norm == "confirmatory":
+            if verification_trials is None:
+                raise ValueError(
+                    "Confirmatory verification requires an explicitly configured sample size (verification_trials), "
+                    "but none was provided. Defaulting to exploratory 5 trials is not permitted for confirmatory claims."
+                )
 
     # 1. Resolve Provider and Execution Tier
     if provider_type == "openai":
@@ -260,6 +289,8 @@ def run_model_pilot_benchmark(
         max_spend_usd=max_spend_usd,
         model_name=resolved_model,
         request_timeout_seconds=timeout_seconds,
+        max_discovery_requests=max_discovery_requests,
+        max_verification_requests=max_verification_requests,
     )
 
     config = ExperimentConfig(
@@ -300,8 +331,9 @@ def run_model_pilot_benchmark(
     for target, initial_input, ground_truth in tasks:
         # 1. Run Stochastic Delta Debugging Minimizer
         target.reset_call_count()
-        tracker_dd = IsolatedAlgorithmCostTracker(
+        tracker_dd = IsolatedPhaseCostTracker(
             algorithm_config=algo_budget_cfg,
+            phase="discovery",
             global_tracker=global_cost_tracker,
             enforce_global_requests=True,
         )
@@ -316,21 +348,99 @@ def run_model_pilot_benchmark(
             confidence=confidence,
         )
         discovered_dd = minimizer.minimize(initial_input)
-        total_calls += runner_dd.trial_count
+        dd_disc_calls = runner_dd.trial_count
+        dd_disc_reqs = tracker_dd.total_requests
+        dd_verif_calls = 0
+        dd_verif_reqs = 0
+        dd_verif_status = "skipped"
+
+        if enable_independent_verification:
+            target.reset_call_count()
+            tracker_dd_verif = IsolatedPhaseCostTracker(
+                algorithm_config=algo_budget_cfg,
+                phase="verification",
+                global_tracker=global_cost_tracker,
+                enforce_global_requests=True,
+            )
+            target.agent.cost_tracker = tracker_dd_verif
+            runner_dd_verif = InterventionRunner(
+                config=ExperimentConfig(
+                    experiment_name=f"{config.experiment_name}_dd_verif",
+                    max_trials=max_trials,
+                    timeout_seconds=timeout_seconds,
+                    seed=seed,
+                ),
+                target_fn=target.execute,
+            )
+            v_res = verify_candidate_stochastically(
+                candidate=discovered_dd.subset_elements,
+                initial_input=initial_input,
+                runner=runner_dd_verif,
+                trials_per_candidate=verification_trials or trials_per_candidate,
+                failure_threshold=failure_threshold,
+                alpha=alpha,
+                confidence=confidence,
+                cost_tracker=tracker_dd_verif,
+                evidence_tier=verification_tier,
+                sample_size_rationale=sample_size_rationale,
+                trials_explicitly_set=(verification_trials is not None),
+            )
+            dd_verif_calls = runner_dd_verif.trial_count
+            dd_verif_reqs = tracker_dd_verif.total_requests
+            dd_verif_status = v_res.verification_status.value
+            discovered_dd = discovered_dd.model_copy(update={
+                "minimality_status": v_res.minimality_status,
+                "verification_status": v_res.verification_status.value,
+                "evidence_tier": v_res.evidence_tier.value,
+                "sample_size_rationale": v_res.sample_size_rationale,
+                "sample_size_validation_status": v_res.sample_size_validation_status,
+                "confirmatory_power_established": v_res.confirmatory_power_established,
+                "search_target_calls": dd_disc_calls,
+                "verification_target_calls": dd_verif_calls,
+                "target_calls_used": dd_disc_calls + dd_verif_calls,
+                "search_model_requests": dd_disc_reqs,
+                "verification_model_requests": dd_verif_reqs,
+                "total_model_requests": dd_disc_reqs + dd_verif_reqs,
+                "removal_evaluations": v_res.removal_evaluations if v_res.removal_evaluations else discovered_dd.removal_evaluations,
+            })
+        else:
+            discovered_dd = discovered_dd.model_copy(update={
+                "search_model_requests": dd_disc_reqs,
+                "total_model_requests": dd_disc_reqs,
+                "sample_size_validation_status": "not_applicable",
+            })
+
+        dd_disc_spend = tracker_dd.estimated_spend_usd
+        dd_verif_spend = tracker_dd_verif.estimated_spend_usd if (enable_independent_verification and tracker_dd_verif is not None) else 0.0
+        dd_total_spend = round(dd_disc_spend + dd_verif_spend, 7)
+
+        total_calls += (dd_disc_calls + dd_verif_calls)
         algo_breakdown.append({
             "task_name": ground_truth.name,
             "algorithm": "delta_debugging",
-            "model_requests": tracker_dd.total_requests,
-            "target_calls": runner_dd.trial_count,
-            "estimated_spend_usd": tracker_dd.estimated_spend_usd,
+            "model_requests": dd_disc_reqs + dd_verif_reqs,
+            "target_calls": dd_disc_calls + dd_verif_calls,
+            "discovery_requests": dd_disc_reqs,
+            "verification_requests": dd_verif_reqs,
+            "discovery_target_calls": dd_disc_calls,
+            "verification_target_calls": dd_verif_calls,
+            "discovery_spend_usd": dd_disc_spend,
+            "verification_spend_usd": dd_verif_spend,
+            "estimated_spend_usd": dd_total_spend,
+            "verification_status": dd_verif_status,
+            "evidence_tier": v_res.evidence_tier.value if enable_independent_verification else None,
+            "sample_size_rationale": v_res.sample_size_rationale if enable_independent_verification else None,
+            "sample_size_validation_status": v_res.sample_size_validation_status if enable_independent_verification else "not_applicable",
+            "confirmatory_power_established": v_res.confirmatory_power_established if enable_independent_verification else False,
         })
 
         matches_gt, prec, rec, excess, missing = evaluate_model_pilot_ground_truth(ground_truth, discovered_dd)
 
         # 2. Run Stochastic Greedy Ablation Baseline
         target.reset_call_count()
-        tracker_greedy = IsolatedAlgorithmCostTracker(
+        tracker_greedy = IsolatedPhaseCostTracker(
             algorithm_config=algo_budget_cfg,
+            phase="discovery",
             global_tracker=global_cost_tracker,
             enforce_global_requests=True,
         )
@@ -345,13 +455,90 @@ def run_model_pilot_benchmark(
             alpha=alpha,
             confidence=confidence,
         )
-        total_calls += runner_greedy.trial_count
+        greedy_disc_calls = runner_greedy.trial_count
+        greedy_disc_reqs = tracker_greedy.total_requests
+        greedy_verif_calls = 0
+        greedy_verif_reqs = 0
+        greedy_verif_status = "skipped"
+        tracker_greedy_verif: IsolatedPhaseCostTracker | None = None
+
+        if enable_independent_verification:
+            target.reset_call_count()
+            tracker_greedy_verif = IsolatedPhaseCostTracker(
+                algorithm_config=algo_budget_cfg,
+                phase="verification",
+                global_tracker=global_cost_tracker,
+                enforce_global_requests=True,
+            )
+            target.agent.cost_tracker = tracker_greedy_verif
+            runner_greedy_verif = InterventionRunner(
+                config=ExperimentConfig(
+                    experiment_name=f"{config.experiment_name}_greedy_verif",
+                    max_trials=max_trials,
+                    timeout_seconds=timeout_seconds,
+                    seed=seed,
+                ),
+                target_fn=target.execute,
+            )
+            v_res_g = verify_candidate_stochastically(
+                candidate=greedy_comp.discovered_elements,
+                initial_input=initial_input,
+                runner=runner_greedy_verif,
+                trials_per_candidate=verification_trials or trials_per_candidate,
+                failure_threshold=failure_threshold,
+                alpha=alpha,
+                confidence=confidence,
+                cost_tracker=tracker_greedy_verif,
+                evidence_tier=verification_tier,
+                sample_size_rationale=sample_size_rationale,
+                trials_explicitly_set=(verification_trials is not None),
+            )
+            greedy_verif_calls = runner_greedy_verif.trial_count
+            greedy_verif_reqs = tracker_greedy_verif.total_requests
+            greedy_verif_status = v_res_g.verification_status.value
+            greedy_comp = greedy_comp.model_copy(update={
+                "minimality_status": v_res_g.minimality_status,
+                "verification_status": v_res_g.verification_status.value,
+                "evidence_tier": v_res_g.evidence_tier.value,
+                "sample_size_rationale": v_res_g.sample_size_rationale,
+                "sample_size_validation_status": v_res_g.sample_size_validation_status,
+                "confirmatory_power_established": v_res_g.confirmatory_power_established,
+                "search_target_calls": greedy_disc_calls,
+                "verification_target_calls": greedy_verif_calls,
+                "target_calls": greedy_disc_calls + greedy_verif_calls,
+                "search_model_requests": greedy_disc_reqs,
+                "verification_model_requests": greedy_verif_reqs,
+                "total_model_requests": greedy_disc_reqs + greedy_verif_reqs,
+            })
+        else:
+            greedy_comp = greedy_comp.model_copy(update={
+                "search_model_requests": greedy_disc_reqs,
+                "total_model_requests": greedy_disc_reqs,
+                "sample_size_validation_status": "not_applicable",
+            })
+
+        greedy_disc_spend = tracker_greedy.estimated_spend_usd
+        greedy_verif_spend = tracker_greedy_verif.estimated_spend_usd if (enable_independent_verification and tracker_greedy_verif is not None) else 0.0
+        greedy_total_spend = round(greedy_disc_spend + greedy_verif_spend, 7)
+
+        total_calls += (greedy_disc_calls + greedy_verif_calls)
         algo_breakdown.append({
             "task_name": ground_truth.name,
             "algorithm": "stochastic_greedy_ablation",
-            "model_requests": tracker_greedy.total_requests,
-            "target_calls": runner_greedy.trial_count,
-            "estimated_spend_usd": tracker_greedy.estimated_spend_usd,
+            "model_requests": greedy_disc_reqs + greedy_verif_reqs,
+            "target_calls": greedy_disc_calls + greedy_verif_calls,
+            "discovery_requests": greedy_disc_reqs,
+            "verification_requests": greedy_verif_reqs,
+            "discovery_target_calls": greedy_disc_calls,
+            "verification_target_calls": greedy_verif_calls,
+            "discovery_spend_usd": greedy_disc_spend,
+            "verification_spend_usd": greedy_verif_spend,
+            "estimated_spend_usd": greedy_total_spend,
+            "verification_status": greedy_verif_status,
+            "evidence_tier": v_res_g.evidence_tier.value if enable_independent_verification else None,
+            "sample_size_rationale": v_res_g.sample_size_rationale if enable_independent_verification else None,
+            "sample_size_validation_status": v_res_g.sample_size_validation_status if enable_independent_verification else "not_applicable",
+            "confirmatory_power_established": v_res_g.confirmatory_power_established if enable_independent_verification else False,
         })
         g_matches, _, _, g_excess, _ = evaluate_model_pilot_ground_truth(ground_truth, greedy_comp)
         greedy_comp = greedy_comp.model_copy(update={
@@ -361,8 +548,9 @@ def run_model_pilot_benchmark(
 
         # 3. Run Stochastic Seeded Random Search Baseline
         target.reset_call_count()
-        tracker_random = IsolatedAlgorithmCostTracker(
+        tracker_random = IsolatedPhaseCostTracker(
             algorithm_config=algo_budget_cfg,
+            phase="discovery",
             global_tracker=global_cost_tracker,
             enforce_global_requests=True,
         )
@@ -377,14 +565,92 @@ def run_model_pilot_benchmark(
             alpha=alpha,
             confidence=confidence,
             seed=seed,
+            reserve_verification_budget=(not enable_independent_verification),
         )
-        total_calls += runner_random.trial_count
+        random_disc_calls = runner_random.trial_count
+        random_disc_reqs = tracker_random.total_requests
+        random_verif_calls = 0
+        random_verif_reqs = 0
+        random_verif_status = "skipped"
+        tracker_random_verif: IsolatedPhaseCostTracker | None = None
+
+        if enable_independent_verification:
+            target.reset_call_count()
+            tracker_random_verif = IsolatedPhaseCostTracker(
+                algorithm_config=algo_budget_cfg,
+                phase="verification",
+                global_tracker=global_cost_tracker,
+                enforce_global_requests=True,
+            )
+            target.agent.cost_tracker = tracker_random_verif
+            runner_random_verif = InterventionRunner(
+                config=ExperimentConfig(
+                    experiment_name=f"{config.experiment_name}_random_verif",
+                    max_trials=max_trials,
+                    timeout_seconds=timeout_seconds,
+                    seed=seed,
+                ),
+                target_fn=target.execute,
+            )
+            v_res_r = verify_candidate_stochastically(
+                candidate=random_comp.discovered_elements,
+                initial_input=initial_input,
+                runner=runner_random_verif,
+                trials_per_candidate=verification_trials or trials_per_candidate,
+                failure_threshold=failure_threshold,
+                alpha=alpha,
+                confidence=confidence,
+                cost_tracker=tracker_random_verif,
+                evidence_tier=verification_tier,
+                sample_size_rationale=sample_size_rationale,
+                trials_explicitly_set=(verification_trials is not None),
+            )
+            random_verif_calls = runner_random_verif.trial_count
+            random_verif_reqs = tracker_random_verif.total_requests
+            random_verif_status = v_res_r.verification_status.value
+            random_comp = random_comp.model_copy(update={
+                "minimality_status": v_res_r.minimality_status,
+                "verification_status": v_res_r.verification_status.value,
+                "evidence_tier": v_res_r.evidence_tier.value,
+                "sample_size_rationale": v_res_r.sample_size_rationale,
+                "sample_size_validation_status": v_res_r.sample_size_validation_status,
+                "confirmatory_power_established": v_res_r.confirmatory_power_established,
+                "search_target_calls": random_disc_calls,
+                "verification_target_calls": random_verif_calls,
+                "target_calls": random_disc_calls + random_verif_calls,
+                "search_model_requests": random_disc_reqs,
+                "verification_model_requests": random_verif_reqs,
+                "total_model_requests": random_disc_reqs + random_verif_reqs,
+            })
+        else:
+            random_comp = random_comp.model_copy(update={
+                "search_model_requests": random_disc_reqs,
+                "total_model_requests": random_disc_reqs,
+                "sample_size_validation_status": "not_applicable",
+            })
+
+        random_disc_spend = tracker_random.estimated_spend_usd
+        random_verif_spend = tracker_random_verif.estimated_spend_usd if (enable_independent_verification and tracker_random_verif is not None) else 0.0
+        random_total_spend = round(random_disc_spend + random_verif_spend, 7)
+
+        total_calls += (random_disc_calls + random_verif_calls)
         algo_breakdown.append({
             "task_name": ground_truth.name,
             "algorithm": "stochastic_seeded_random",
-            "model_requests": tracker_random.total_requests,
-            "target_calls": runner_random.trial_count,
-            "estimated_spend_usd": tracker_random.estimated_spend_usd,
+            "model_requests": random_disc_reqs + random_verif_reqs,
+            "target_calls": random_disc_calls + random_verif_calls,
+            "discovery_requests": random_disc_reqs,
+            "verification_requests": random_verif_reqs,
+            "discovery_target_calls": random_disc_calls,
+            "verification_target_calls": random_verif_calls,
+            "discovery_spend_usd": random_disc_spend,
+            "verification_spend_usd": random_verif_spend,
+            "estimated_spend_usd": random_total_spend,
+            "verification_status": random_verif_status,
+            "evidence_tier": v_res_r.evidence_tier.value if enable_independent_verification else None,
+            "sample_size_rationale": v_res_r.sample_size_rationale if enable_independent_verification else None,
+            "sample_size_validation_status": v_res_r.sample_size_validation_status if enable_independent_verification else "not_applicable",
+            "confirmatory_power_established": v_res_r.confirmatory_power_established if enable_independent_verification else False,
         })
         r_matches, _, _, r_excess, _ = evaluate_model_pilot_ground_truth(ground_truth, random_comp)
         random_comp = random_comp.model_copy(update={

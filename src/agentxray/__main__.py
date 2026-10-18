@@ -371,6 +371,43 @@ def main() -> None:
         help="Hard cap on total model generation requests for model-backed experiments (default: 150).",
     )
     parser.add_argument(
+        "--enable-independent-verification",
+        action="store_true",
+        default=False,
+        help="Enable post-discovery independent 1-minimality verification audit (default: False).",
+    )
+    parser.add_argument(
+        "--max-discovery-requests",
+        type=int,
+        default=None,
+        help="Hard cap on model generation requests for discovery phase (default: None).",
+    )
+    parser.add_argument(
+        "--max-verification-requests",
+        type=int,
+        default=None,
+        help="Hard cap on model generation requests for verification phase (default: None).",
+    )
+    parser.add_argument(
+        "--verification-trials",
+        type=int,
+        default=None,
+        help="Number of trials per candidate subset in verification phase (default: trials-per-candidate).",
+    )
+    parser.add_argument(
+        "--verification-tier",
+        type=str,
+        choices=["exploratory", "confirmatory"],
+        default="exploratory",
+        help="Verification evidence tier classification (default: 'exploratory').",
+    )
+    parser.add_argument(
+        "--sample-size-rationale",
+        type=str,
+        default=None,
+        help="Sample size / statistical power rationale for verification trials (default: None).",
+    )
+    parser.add_argument(
         "--audit-seeds",
         type=str,
         default="42,43,44,45,46",
@@ -444,6 +481,20 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # Validate verification parameters
+    if args.max_discovery_requests is not None and args.max_discovery_requests <= 0:
+        parser.error("--max-discovery-requests must be a positive integer.")
+    if args.max_verification_requests is not None and args.max_verification_requests <= 0:
+        parser.error("--max-verification-requests must be a positive integer.")
+    if args.verification_trials is not None and args.verification_trials <= 0:
+        parser.error("--verification-trials must be a positive integer.")
+    if args.verification_tier.lower() == "confirmatory":
+        if args.verification_trials is None:
+            parser.error(
+                "Confirmatory verification requires an explicitly configured sample size (--verification-trials). "
+                "Defaulting to exploratory 5 trials is not permitted for confirmatory claims."
+            )
 
     if args.command == "demo" or args.mode == "demo":
         from agentxray.demo import format_demo_output, run_demo, write_demo_reports
@@ -598,6 +649,12 @@ def main() -> None:
                     timeout_seconds=args.timeout,
                     output_dir=args.output_dir,
                     seed=args.seed,
+                    max_discovery_requests=args.max_discovery_requests,
+                    max_verification_requests=args.max_verification_requests,
+                    enable_independent_verification=args.enable_independent_verification,
+                    verification_trials=args.verification_trials,
+                    verification_tier=args.verification_tier,
+                    sample_size_rationale=args.sample_size_rationale,
                 )
                 print(format_model_pilot_markdown_report(pilot_report))
             except RuntimeError as exc:

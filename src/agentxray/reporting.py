@@ -345,6 +345,39 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
     lines.append(f"| **Billable Completion Tokens** | {c_tok:,} | N/A | Logged |")
     lines.append(f"| **Total Billable Tokens** | {t_tok:,} | N/A | Logged |")
 
+    algo_usage = bs.get("per_algorithm_usage", [])
+    if algo_usage:
+        lines.extend([
+            "",
+            "### Phase & Algorithm Usage Breakdown",
+            "",
+            "| Task | Algorithm | Discovery Reqs | Verif Reqs | Total Reqs | Discovery Spend | Verif Spend | Total Spend | Verif Status | Evidence Tier (Requested) |",
+            "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
+        ])
+        for row in algo_usage:
+            lines.append(
+                f"| `{row.get('task_name', 'N/A')}` | {row.get('algorithm', 'N/A')} | "
+                f"{row.get('discovery_requests', 0)} | {row.get('verification_requests', 0)} | "
+                f"{row.get('model_requests', 0)} | ${row.get('discovery_spend_usd', 0.0):.4f} | "
+                f"${row.get('verification_spend_usd', 0.0):.4f} | ${row.get('estimated_spend_usd', 0.0):.4f} | "
+                f"`{row.get('verification_status', 'skipped')}` | `{row.get('evidence_tier') or 'N/A'}` |"
+            )
+
+        has_unresolved_confirmatory = any(
+            row.get("evidence_tier") == "confirmatory" and (
+                not row.get("confirmatory_power_established", False)
+                or row.get("sample_size_validation_status") in ("unresolved", "not_implemented")
+                or "unresolved" in str(row.get("sample_size_rationale", ""))
+            )
+            for row in algo_usage
+        )
+        if has_unresolved_confirmatory:
+            lines.extend([
+                "",
+                "> [!WARNING]",
+                "> **Unresolved Confirmatory Sample Size**: Confirmatory verification was requested with an unresolved sample-size/power rationale. Confirmatory statistical power has NOT been established; these results must not be interpreted as adequately powered confirmatory evidence.",
+            ])
+
     lines.extend([
         "",
         "*(Note: Estimated spend is calculated strictly from published standard per-token pricing tables; it does not represent an actual invoice.)*",
@@ -387,16 +420,42 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
         prec_str = f"{eval_item.precision * 100:.1f}%" if eval_item.precision is not None else "N/A (Null Case / Control)"
         rec_str = f"{eval_item.recall * 100:.1f}%" if eval_item.recall is not None else "N/A (Null Case / Control)"
 
-        lines.extend([
+        v_stat = getattr(cond, "verification_status", None) or "skipped"
+        e_tier = getattr(cond, "evidence_tier", None) or "N/A"
+        min_stat = getattr(cond, "minimality_status", None)
+        min_stat_val = min_stat.value if hasattr(min_stat, "value") else str(min_stat)
+        ss_rat = getattr(cond, "sample_size_rationale", None) or "N/A"
+        val_stat = getattr(cond, "sample_size_validation_status", "unresolved")
+        power_est = getattr(cond, "confirmatory_power_established", False)
+
+        task_eval_lines = [
             f"### Pilot Task: {eval_item.task_name}",
             f"- **Description**: {eval_item.description}",
             f"- **Initial Candidate Elements ({len(eval_item.initial_elements)})**: {init_str}",
             f"- **Planted Ground Truth**: {gt_str}",
             f"- **Minimizer Precision**: `{prec_str}` | **Recall**: `{rec_str}`",
-            f"- **Minimality Classification**: `{cond.minimality_status.value}`",
-            f"- **Final Candidate Failure Rate**: `{cond.candidate_evaluation.failure_rate:.2f}` (95% Wilson CI: `[{cond.candidate_evaluation.confidence_interval[0]:.2f}, {cond.candidate_evaluation.confidence_interval[1]:.2f}]`, $k={cond.candidate_evaluation.failures}/{cond.candidate_evaluation.trials}$)",
-            f"- **Status Narrative**: {cond.status_message}",
-        ])
+            f"- **Minimality Classification**: `{min_stat_val}`",
+            f"- **Statistical Minimality Outcome**: `{min_stat_val}`",
+            f"- **Verification Status**: `{v_stat}`",
+            f"- **Evidence Tier**: `{e_tier}`",
+            f"- **Requested Evidence Tier**: `{e_tier}`",
+            f"- **Sample Size Rationale**: `{ss_rat}`",
+            f"- **Sample Size Rationale Context**: `{ss_rat}`",
+            f"- **Rationale Validation Status**: `{val_stat}`",
+            f"- **Confirmatory Power Established**: `{'YES' if power_est else 'NO (Unresolved / Unvalidated)'}`",
+        ]
+        if e_tier == "confirmatory" and (not power_est or val_stat in ("unresolved", "not_implemented")):
+            task_eval_lines.append(
+                "- **Evidentiary Validity Disclosure**: Confirmatory power has not been established (sample-size rationale is unresolved/not implemented; results should not be interpreted as adequately powered confirmatory evidence)."
+            )
+        if cond.candidate_evaluation is not None:
+            task_eval_lines.append(
+                f"- **Final Candidate Failure Rate**: `{cond.candidate_evaluation.failure_rate:.2f}` (95% Wilson CI: `[{cond.candidate_evaluation.confidence_interval[0]:.2f}, {cond.candidate_evaluation.confidence_interval[1]:.2f}]`, $k={cond.candidate_evaluation.failures}/{cond.candidate_evaluation.trials}$)"
+            )
+        else:
+            task_eval_lines.append("- **Final Candidate Failure Rate**: `N/A`")
+        task_eval_lines.append(f"- **Status Narrative**: {cond.status_message}")
+        lines.extend(task_eval_lines)
 
         if cond.removal_evaluations:
             lines.append("- **Single-Element Removal Uncertainty Checks & Risk Differences**:")
@@ -474,6 +533,59 @@ def _is_timed_out(eval_item: Any) -> bool:
     )
 
 
+def _is_inconclusive(eval_item: Any) -> bool:
+    """Determine whether a task evaluation yielded an inconclusive minimality outcome."""
+    cond = getattr(eval_item, "minimizer_condition", None)
+    min_status = getattr(cond, "minimality_status", None) or getattr(eval_item, "minimality_status", None)
+    return (
+        min_status == StochasticMinimalityStatus.INCONCLUSIVE
+        or min_status == "inconclusive"
+        or getattr(min_status, "value", None) == "inconclusive"
+    )
+
+
+def _is_not_minimal(eval_item: Any) -> bool:
+    """Determine whether a task evaluation was classified as NOT_MINIMAL."""
+    cond = getattr(eval_item, "minimizer_condition", None)
+    min_status = getattr(cond, "minimality_status", None) or getattr(eval_item, "minimality_status", None)
+    return (
+        min_status == StochasticMinimalityStatus.NOT_MINIMAL
+        or min_status == "not_minimal"
+        or getattr(min_status, "value", None) == "not_minimal"
+    )
+
+
+def _is_observed_only(eval_item: Any) -> bool:
+    """Determine whether a task evaluation was classified as OBSERVED_ONLY."""
+    cond = getattr(eval_item, "minimizer_condition", None)
+    min_status = getattr(cond, "minimality_status", None) or getattr(eval_item, "minimality_status", None)
+    return (
+        min_status == StochasticMinimalityStatus.OBSERVED_ONLY
+        or min_status == "observed_only"
+        or getattr(min_status, "value", None) == "observed_only"
+    )
+
+
+def _is_candidate_confirmation_failure(eval_item: Any) -> bool:
+    """Determine whether post-discovery candidate verification failed to reproduce target failure."""
+    cond = getattr(eval_item, "minimizer_condition", None)
+    if cond is None:
+        return False
+    msg = getattr(cond, "status_message", "")
+    return "Candidate failed to reproduce failure rate" in msg
+
+
+def _is_interrupted(eval_item: Any) -> bool:
+    """Determine whether execution was interrupted by budgets or timeouts in discovery or verification."""
+    if _is_budget_exhausted(eval_item) or _is_timed_out(eval_item):
+        return True
+    cond = getattr(eval_item, "minimizer_condition", None)
+    v_stat = getattr(cond, "verification_status", None)
+    if v_stat in ("budget_exhausted", "timed_out", "partial"):
+        return True
+    return False
+
+
 def compute_stochastic_aggregate_metrics(evaluations: Sequence[Any]) -> dict[str, Any]:
     """Compute partitioned aggregate metrics across active failure tasks and control tasks.
 
@@ -486,9 +598,14 @@ def compute_stochastic_aggregate_metrics(evaluations: Sequence[Any]) -> dict[str
     -------
     dict[str, Any]
         Dictionary with aggregate metrics:
-        - tasks_evaluated: Total count of evaluated tasks.
+        - tasks_evaluated: Total count of evaluated tasks (the Intention-to-Treat denominator).
         - ground_truth_matches: Tasks matching ground truth exactly.
         - statistically_supported_minimality: Tasks achieving STATISTICALLY_SUPPORTED minimality.
+        - inconclusive_tasks: Tasks with inconclusive minimality classification.
+        - not_minimal_tasks: Tasks with rejected minimality (not 1-minimal).
+        - observed_only_tasks: Tasks with observed but unconfirmed minimality.
+        - candidate_confirmation_failures: Tasks where candidate failed post-discovery confirmation.
+        - interrupted_tasks: Tasks interrupted by budget or timeout.
         - active_tasks: Count of active (non-null) failure tasks.
         - active_mean_precision: Mean precision across active tasks.
         - active_mean_recall: Mean recall across active tasks.
@@ -503,6 +620,19 @@ def compute_stochastic_aggregate_metrics(evaluations: Sequence[Any]) -> dict[str
         - mean_recall: Legacy mean recall across all evaluations where recall is not None.
         - mean_precision_evaluations: Denominator count for mean_precision.
         - mean_recall_evaluations: Denominator count for mean_recall.
+
+    Diagnostic Counter Overlap Notice
+    ---------------------------------
+    The diagnostic counters `inconclusive_tasks`, `candidate_confirmation_failures`,
+    and `interrupted_tasks` represent diagnostic subsets and can OVERLAP:
+    - All candidate confirmation failures are inconclusive (`candidate_confirmation_failures`
+      is a diagnostic subset of `inconclusive_tasks`).
+    - An interrupted task can be classified as inconclusive (counted in both
+      `interrupted_tasks` and `inconclusive_tasks`) or not minimal (counted in both
+      `interrupted_tasks` and `not_minimal_tasks`).
+    Therefore, these diagnostic counts MUST NOT be summed together as if they
+    formed a disjoint partition of `tasks_evaluated`. The primary Intention-to-Treat
+    (ITT) success rate denominator is always `tasks_evaluated`.
     """
     active_evals = [
         e for e in evaluations
@@ -557,10 +687,21 @@ def compute_stochastic_aggregate_metrics(evaluations: Sequence[Any]) -> dict[str
     budget_exhausted_tasks = sum(1 for e in evaluations if _is_budget_exhausted(e))
     timed_out_tasks = sum(1 for e in evaluations if _is_timed_out(e))
 
+    inconclusive_tasks = sum(1 for e in evaluations if _is_inconclusive(e))
+    not_minimal_tasks = sum(1 for e in evaluations if _is_not_minimal(e))
+    observed_only_tasks = sum(1 for e in evaluations if _is_observed_only(e))
+    candidate_confirmation_failures = sum(1 for e in evaluations if _is_candidate_confirmation_failure(e))
+    interrupted_tasks = sum(1 for e in evaluations if _is_interrupted(e))
+
     return {
         "tasks_evaluated": len(evaluations),
         "ground_truth_matches": matched_count,
         "statistically_supported_minimality": stat_supp_count,
+        "inconclusive_tasks": inconclusive_tasks,
+        "not_minimal_tasks": not_minimal_tasks,
+        "observed_only_tasks": observed_only_tasks,
+        "candidate_confirmation_failures": candidate_confirmation_failures,
+        "interrupted_tasks": interrupted_tasks,
         "active_tasks": len(active_evals),
         "active_mean_precision": active_mean_prec,
         "active_mean_recall": active_mean_rec,

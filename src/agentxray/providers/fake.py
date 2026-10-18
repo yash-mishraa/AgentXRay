@@ -10,6 +10,7 @@ from agentxray.providers.base import (
     Message,
     ModelProvider,
     ModelResponse,
+    ProviderError,
     ProviderRateLimitError,
     ProviderTimeoutError,
     ToolCall,
@@ -32,13 +33,32 @@ class FakeProvider(ModelProvider):
         model_name: str = "fake-model-v1",
         custom_handler: Callable[[Sequence[Message], Sequence[ToolDefinition]], ModelResponse] | None = None,
         simulate_error: type[Exception] | None = None,
+        max_retries_limit: int = 2,
     ) -> None:
         self._model_name = model_name
         self._custom_handler = custom_handler
         self._simulate_error = simulate_error
+        self.max_retries = max_retries_limit
         self.request_count = 0
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
+        self.last_max_retries: int | None = None
+
+    def set_simulate_error(self, err_type: type[Exception] | None) -> None:
+        """Configure or clear simulated infrastructure/provider error for subsequent calls."""
+        self._simulate_error = err_type
+
+    @property
+    def supports_retry_limits(self) -> bool:
+        return True
+
+    @property
+    def is_trusted_for_hard_budgets(self) -> bool:
+        return True
+
+    @property
+    def call_count(self) -> int:
+        return self.request_count
 
     @property
     def provider_name(self) -> str:
@@ -57,8 +77,14 @@ class FakeProvider(ModelProvider):
         max_retries: int | None = None,
     ) -> ModelResponse:
         self.request_count += 1
+        self.last_max_retries = max_retries
 
         if self._simulate_error is not None:
+            if isinstance(self._simulate_error, type) and issubclass(self._simulate_error, ProviderError):
+                raise self._simulate_error(
+                    f"Simulated error in FakeProvider: {self._simulate_error.__name__}",
+                    retries=max_retries or 0,
+                )
             raise self._simulate_error(f"Simulated error in FakeProvider: {self._simulate_error.__name__}")
 
         if self._custom_handler is not None:

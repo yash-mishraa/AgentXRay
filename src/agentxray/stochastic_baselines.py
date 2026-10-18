@@ -259,6 +259,7 @@ def run_stochastic_random_search(
     alternative: str = "two-sided",
     seed: int = 42,
     max_samples: int | None = None,
+    reserve_verification_budget: bool = True,
 ) -> StochasticBaselineComparison:
     """Stochastic seeded random candidate search baseline.
 
@@ -329,10 +330,11 @@ def run_stochastic_random_search(
             if max_samples is not None and samples_tested >= max_samples:
                 break
 
-            remaining_budget = runner.config.max_trials - runner.trial_count
-            needed_for_verification = len(best_candidate) * trials_per_candidate
-            if remaining_budget <= needed_for_verification:
-                break
+            if reserve_verification_budget:
+                remaining_budget = runner.config.max_trials - runner.trial_count
+                needed_for_verification = len(best_candidate) * trials_per_candidate
+                if remaining_budget <= needed_for_verification:
+                    break
 
             k = rng.randint(1, len(all_elements) - 1)
             sample = tuple(sorted(rng.sample(all_elements, k)))

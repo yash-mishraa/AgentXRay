@@ -86,8 +86,34 @@ class ProviderTimeoutError(ProviderError):
     """Raised when provider communication times out."""
 
 
+class UnsupportedProviderError(ProviderError):
+    """Raised when a provider implementation cannot enforce required execution constraints (e.g. retry limits)."""
+
+
+TRUSTED_BUILTIN_PROVIDERS: frozenset[str] = frozenset({"openai", "ollama", "fake"})
+
+
 class ModelProvider(ABC):
     """Abstract interface for language model backends."""
+
+    @property
+    def supports_retry_limits(self) -> bool:
+        """Whether the provider accepts and guarantees pre-invocation retry limiting.
+
+        Defaults to False on the base class for safety. Arbitrary custom subclasses
+        must not be presumed retry-safe through inheritance alone.
+        """
+        return False
+
+    @property
+    def is_trusted_for_hard_budgets(self) -> bool:
+        """Whether this provider is verified to honor retry limits and hard request budgets.
+
+        Only built-in adapters whose internal retry mechanisms have been verified
+        (OpenAIProvider, OllamaProvider, FakeProvider) or verified test fixtures
+        return True. Arbitrary custom subclasses default to False.
+        """
+        return False
 
     @property
     @abstractmethod
@@ -120,6 +146,17 @@ class ModelProvider(ABC):
             Sampling temperature (default 0.0 for deterministic evaluation).
         max_tokens : int
             Generation token cap.
+        max_retries : int | None
+            Maximum number of transient network/rate-limit retry attempts allowed
+            for this invocation. Built-in providers (OpenAI, Ollama, Fake) strictly respect
+            this parameter and clamp internal retry loops to min(self._max_retries, max_retries).
+
+            Note on Custom Providers: Under strict request budgets, AgentXRay requires
+            providers to be trusted and verified to honor retry limits. Arbitrary custom
+            providers that do not support retry limits or whose internal attempts cannot be
+            constrained fail closed before dispatch with UnsupportedProviderError. AgentXRay
+            cannot inspect or guarantee hard caps for arbitrary third-party provider implementations
+            that execute unobservable internal retry loops.
 
         Returns
         -------

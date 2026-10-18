@@ -27,6 +27,12 @@ class ExperimentBudgetConfig(BaseModel):
     custom_pricing_per_1m: tuple[float, float] | None = Field(
         default=None, description="Optional custom (input_usd, output_usd) per 1M tokens."
     )
+    max_discovery_requests: int | None = Field(
+        default=None, ge=1, description="Explicit cap on model requests during discovery/search phase."
+    )
+    max_verification_requests: int | None = Field(
+        default=None, ge=1, description="Explicit cap on model requests during verification phase."
+    )
 
 
 class CostTracker:
@@ -204,6 +210,11 @@ class CostTracker:
         """Return True if total requests reached or exceeded (>=) configured budget."""
         return self.total_requests >= self.config.max_model_requests
 
+    @property
+    def remaining_request_headroom(self) -> int:
+        """Return remaining allowed provider requests before reaching configured cap."""
+        return max(0, self.config.max_model_requests - self.total_requests)
+
 
 class IsolatedAlgorithmCostTracker(CostTracker):
     """Tracks resource consumption for a single algorithm execution while mirroring usage to a global tracker.
@@ -251,6 +262,14 @@ class IsolatedAlgorithmCostTracker(CostTracker):
         if self.enforce_global_requests and self.global_tracker is not None:
             return self.global_tracker.is_request_cap_reached
         return False
+
+    @property
+    def remaining_request_headroom(self) -> int:
+        """Return remaining allowed provider requests considering local and enforced global caps."""
+        local_hr = super().remaining_request_headroom
+        if self.enforce_global_requests and self.global_tracker is not None:
+            return min(local_hr, self.global_tracker.remaining_request_headroom)
+        return local_hr
 
     def check_budget_before_request(self, est_prompt_tokens: int = 0) -> None:
         """Verify local algorithm allowance and global safety limits before request."""
@@ -329,6 +348,191 @@ class IsolatedAlgorithmCostTracker(CostTracker):
             except CostBudgetExceededError as g_exc:
                 if self.enforce_global_requests:
                     if local_exc is None or not super().is_request_cap_exceeded:
+                        local_exc = g_exc
+
+        if local_exc is not None:
+            raise local_exc
+
+
+class IsolatedPhaseCostTracker(IsolatedAlgorithmCostTracker):
+    """Tracks resource consumption for a distinct execution phase (discovery or verification).
+
+    Enforces phase-specific model-request quotas while mirroring usage to an overarching
+    global safety tracker. Prevents discovery from consuming the verification allowance
+    and vice versa.
+    """
+
+    def __init__(
+        self,
+        algorithm_config: ExperimentBudgetConfig,
+        phase: str = "discovery",
+        global_tracker: CostTracker | None = None,
+        enforce_global_spend: bool = True,
+        enforce_global_requests: bool = False,
+    ) -> None:
+        super().__init__(
+            algorithm_config=algorithm_config,
+            global_tracker=global_tracker,
+            enforce_global_spend=enforce_global_spend,
+            enforce_global_requests=enforce_global_requests,
+        )
+        self.phase = phase.strip().lower()
+        if self.phase in ("discovery", "search"):
+            self.max_phase_requests = (
+                algorithm_config.max_discovery_requests
+                if algorithm_config.max_discovery_requests is not None
+                else algorithm_config.max_model_requests
+            )
+        elif self.phase in ("verification", "verify", "audit"):
+            self.max_phase_requests = (
+                algorithm_config.max_verification_requests
+                if algorithm_config.max_verification_requests is not None
+                else algorithm_config.max_model_requests
+            )
+        else:
+            self.max_phase_requests = algorithm_config.max_model_requests
+
+    @property
+    def is_request_cap_exceeded(self) -> bool:
+        """Return True if local phase requests or enforced global requests strictly exceeded (>) budget."""
+        if self.total_requests > self.max_phase_requests:
+            return True
+        if self.enforce_global_requests and self.global_tracker is not None:
+            return self.global_tracker.is_request_cap_exceeded
+        return False
+
+    @property
+    def is_request_cap_reached(self) -> bool:
+        """Return True if local phase requests or enforced global requests reached or exceeded (>=) budget."""
+        if self.total_requests >= self.max_phase_requests:
+            return True
+        if self.enforce_global_requests and self.global_tracker is not None:
+            return self.global_tracker.is_request_cap_reached
+        return False
+
+    @property
+    def remaining_request_headroom(self) -> int:
+        """Return remaining allowed provider requests considering phase, algorithm, and enforced global caps."""
+        phase_hr = max(0, self.max_phase_requests - self.total_requests)
+        algo_hr = max(0, self.config.max_model_requests - self.total_requests)
+        local_hr = min(phase_hr, algo_hr)
+        if self.enforce_global_requests and self.global_tracker is not None:
+            return min(local_hr, self.global_tracker.remaining_request_headroom)
+        return local_hr
+
+    def check_budget_before_request(self, est_prompt_tokens: int = 0) -> None:
+        """Verify local phase request allowance and global safety limits before request."""
+        # Check local spend limit
+        if self.estimated_spend_usd >= self.config.max_spend_usd:
+            raise CostBudgetExceededError(
+                f"Estimated spend budget exhausted before request: "
+                f"reached ${self.estimated_spend_usd:.4f} USD (limit: ${self.config.max_spend_usd:.4f} USD)."
+            )
+
+        # Check local phase request allowance
+        if self.total_requests >= self.max_phase_requests:
+            raise CostBudgetExceededError(
+                f"{self.phase.capitalize()} model request budget exhausted before request: "
+                f"executed {self.total_requests} requests (phase limit: {self.max_phase_requests})."
+            )
+
+        # Check global safety limits if global_tracker is attached
+        if self.global_tracker is not None:
+            if (
+                self.enforce_global_requests
+                and self.global_tracker.total_requests >= self.global_tracker.config.max_model_requests
+            ):
+                raise CostBudgetExceededError(
+                    f"Global benchmark model request budget exhausted before request: "
+                    f"executed {self.global_tracker.total_requests} requests "
+                    f"(global limit: {self.global_tracker.config.max_model_requests})."
+                )
+            if self.enforce_global_spend:
+                if est_prompt_tokens > 0:
+                    est_call_cost = (est_prompt_tokens * self.global_tracker._pricing[0]) / 1_000_000.0
+                    if (self.global_tracker.estimated_spend_usd + est_call_cost) >= self.global_tracker.config.max_spend_usd:
+                        raise CostBudgetExceededError(
+                            f"Global estimated spend budget would be exceeded before request: "
+                            f"current ${self.global_tracker.estimated_spend_usd:.4f} USD + "
+                            f"projected ${est_call_cost:.4f} USD >= limit ${self.global_tracker.config.max_spend_usd:.4f} USD."
+                        )
+                elif self.global_tracker.estimated_spend_usd >= self.global_tracker.config.max_spend_usd:
+                    raise CostBudgetExceededError(
+                        f"Global estimated spend budget exhausted before request: "
+                        f"reached ${self.global_tracker.estimated_spend_usd:.4f} USD "
+                        f"(global limit: ${self.global_tracker.config.max_spend_usd:.4f} USD)."
+                    )
+
+    def record_usage(
+        self,
+        usage: UsageMetadata,
+        success: bool = True,
+        retries: int = 0,
+    ) -> None:
+        """Record model request outcomes in phase tracker and mirror to global tracker."""
+        self.total_requests += (1 + retries)
+        self.retries += retries
+        if success:
+            self.successful_requests += 1
+        else:
+            self.failed_requests += (1 + retries)
+
+        p_tok = max(10, usage.prompt_tokens) if (usage.prompt_tokens == 0 and usage.completion_tokens == 0) else usage.prompt_tokens
+        c_tok = max(5, usage.completion_tokens) if (usage.prompt_tokens == 0 and usage.completion_tokens == 0) else usage.completion_tokens
+        self.prompt_tokens += p_tok
+        self.completion_tokens += c_tok
+        self.total_tokens += (p_tok + c_tok)
+        call_cost = (p_tok * self._pricing[0] + c_tok * self._pricing[1]) / 1_000_000.0
+        self.estimated_spend_usd = round(self.estimated_spend_usd + call_cost, 7)
+
+        local_exc: CostBudgetExceededError | None = None
+        if self.estimated_spend_usd >= self.config.max_spend_usd:
+            local_exc = CostBudgetExceededError(
+                f"Estimated spend budget exhausted: reached ${self.estimated_spend_usd:.4f} USD "
+                f"(limit: ${self.config.max_spend_usd:.4f} USD)."
+            )
+        elif self.total_requests >= self.max_phase_requests:
+            local_exc = CostBudgetExceededError(
+                f"{self.phase.capitalize()} model request budget exhausted: executed {self.total_requests} requests "
+                f"(phase limit: {self.max_phase_requests})."
+            )
+
+        if self.global_tracker is not None:
+            try:
+                self.global_tracker.record_usage(usage, success=success, retries=retries)
+            except CostBudgetExceededError as g_exc:
+                if (
+                    self.global_tracker.estimated_spend_usd >= self.global_tracker.config.max_spend_usd
+                    and self.enforce_global_spend
+                ):
+                    if local_exc is None or not (self.estimated_spend_usd >= self.config.max_spend_usd):
+                        local_exc = g_exc
+                elif self.enforce_global_requests:
+                    if local_exc is None or not (self.total_requests > self.max_phase_requests):
+                        local_exc = g_exc
+
+        if local_exc is not None:
+            raise local_exc
+
+    def record_failed_request(self, retries: int = 0) -> None:
+        """Record failed request attempt in phase tracker and mirror to global tracker."""
+        self.total_requests += (1 + retries)
+        self.failed_requests += (1 + retries)
+        self.retries += retries
+
+        local_exc: CostBudgetExceededError | None = None
+        if self.total_requests > self.max_phase_requests:
+            local_exc = CostBudgetExceededError(
+                f"{self.phase.capitalize()} model request budget exceeded on failed request: "
+                f"executed {self.total_requests} requests (phase limit: {self.max_phase_requests})."
+            )
+
+        if self.global_tracker is not None:
+            try:
+                self.global_tracker.record_failed_request(retries=retries)
+            except CostBudgetExceededError as g_exc:
+                if self.enforce_global_requests:
+                    if local_exc is None or not (self.total_requests > self.max_phase_requests):
                         local_exc = g_exc
 
         if local_exc is not None:

@@ -71,6 +71,14 @@ class OllamaProvider(ModelProvider):
             )
 
     @property
+    def supports_retry_limits(self) -> bool:
+        return True
+
+    @property
+    def is_trusted_for_hard_budgets(self) -> bool:
+        return True
+
+    @property
     def provider_name(self) -> str:
         return "ollama"
 
