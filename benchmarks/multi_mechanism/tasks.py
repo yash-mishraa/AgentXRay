@@ -639,3 +639,110 @@ def get_mechanism_task(mechanism_id: str) -> MechanismTaskSpec:
 def list_mechanism_tasks() -> list[MechanismTaskSpec]:
     """Return all 18 registered mechanism task specifications."""
     return list(MECHANISM_REGISTRY.values())
+
+
+@dataclass(frozen=True)
+class TraceEvaluatedPromptTaskSpec:
+    """Specification for an isolated trace-evaluated prompt benchmark task (Phase 4.6K.3).
+
+    NOTE: This specification is strictly for offline methodological and pipeline validation
+    using scripted or mock providers. It does NOT represent real LLM diagnostic performance.
+    """
+
+    mechanism_id: str
+    name: str
+    category: str
+    candidate_elements: tuple[str, ...]
+    planted_trigger_elements: tuple[str, ...]
+    description: str = ""
+    observable_failure_symptom: str = ""
+    is_null_case: bool = False
+    is_conjunctive: bool = False
+
+    def create_initial_input(self, seed: int | None = None) -> InputCase:
+        """Return the unablated initial InputCase with optional seeded candidate permutation."""
+        if seed is None:
+            elements = self.candidate_elements
+        else:
+            rng = random.Random(seed)
+            elements = tuple(rng.sample(self.candidate_elements, len(self.candidate_elements)))
+        return InputCase(
+            case_id=self.mechanism_id,
+            elements=elements,
+            description=self.description,
+            metadata={"benchmark_tier": "trace_evaluated_validation"},
+        )
+
+    def get_ground_truth(self) -> MultiMechanismGroundTruthSpec:
+        """Return the isolated ground-truth specification for post-hoc scoring."""
+        distractors = tuple(e for e in self.candidate_elements if e not in self.planted_trigger_elements)
+        return MultiMechanismGroundTruthSpec(
+            mechanism_id=self.mechanism_id,
+            name=self.name,
+            category=self.category,
+            is_null_case=self.is_null_case,
+            is_conjunctive=self.is_conjunctive,
+            trigger_elements=self.planted_trigger_elements,
+            distractor_elements=distractors,
+            description=self.description,
+        )
+
+    def create_target(
+        self,
+        provider: ModelProvider | None = None,
+        cost_tracker: CostTracker | None = None,
+        max_turns: int = 3,
+        failure_predicate: Callable[[InputCase], tuple[bool, str]] | None = None,
+    ) -> MechanismTargetAdapter:
+        """Create target adapter configured in TargetMode.TRACE_EVALUATED."""
+        prov = provider or FakeProvider(model_name="fake-trace-prompt")
+        tracker = cost_tracker or CostTracker(
+            ExperimentBudgetConfig(max_model_requests=100, max_spend_usd=1.00, model_name=prov.model_name)
+        )
+        env = MockToolEnvironment()
+        agent = ControlledAgent(provider=prov, mock_env=env, cost_tracker=tracker, max_turns=max_turns)
+        evaluator = ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400")
+
+        return MechanismTargetAdapter(
+            mechanism_id=self.mechanism_id,
+            agent=agent,
+            evaluator=evaluator,
+            user_prompt="Calculate the sum of receipts $150 and $250 using calculator.",
+            base_system_prompt="You are an automated accounting bot.",
+            tools=[CALCULATOR_TOOL_DEF, DATABASE_LOOKUP_TOOL_DEF],
+            name=f"Target_{self.mechanism_id}",
+            failure_predicate=failure_predicate,
+            target_mode=TargetMode.TRACE_EVALUATED,
+        )
+
+
+def create_trace_evaluated_prompt_task() -> TraceEvaluatedPromptTaskSpec:
+    """Create an isolated trace-evaluated prompt mechanism (Phase 4.6K.3).
+
+    Task design:
+    - User Prompt: "Calculate the sum of receipts $150 and $250 using calculator."
+    - Expected trace behavior: Agent invokes calculator tool and answers '400'.
+    - Planted trigger element: A strict directive forbidding tool usage:
+      "Strict constraint: Do not invoke the calculator tool under any circumstances; estimate all totals directly."
+    - Distractors: 3 benign guidelines (monetary formatting, professional tone, receipt item auditing).
+    - Mode: TargetMode.TRACE_EVALUATED.
+    - Evaluator: ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400").
+    """
+    trigger = "Strict constraint: Do not invoke the calculator tool under any circumstances; estimate all totals directly."
+    distractor_1 = "Formatting guideline: Express all monetary values with dollar signs and two decimal places."
+    distractor_2 = "Tone guideline: Maintain a concise, professional accounting tone in all messages."
+    distractor_3 = "Audit guideline: Note that receipts were verified by accounts payable before calculation."
+
+    candidates = (trigger, distractor_1, distractor_2, distractor_3)
+
+    return TraceEvaluatedPromptTaskSpec(
+        mechanism_id="trace_prompt_01_tool_prohibition",
+        name="Trace-Evaluated Prompt Tool Prohibition (Offline Validation)",
+        category="prompt",
+        candidate_elements=candidates,
+        planted_trigger_elements=(trigger,),
+        observable_failure_symptom="Agent failed to invoke required tool 'calculator'.",
+        description="Isolated trace-evaluated prompt directive prohibition for offline validation.",
+        is_null_case=False,
+        is_conjunctive=False,
+    )
