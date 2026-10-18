@@ -163,6 +163,7 @@ class ControlledAgent:
         system_prompt: str,
         user_prompt: str,
         tools: Sequence[ToolDefinition] = (),
+        mock_env: MockToolEnvironment | None = None,
     ) -> AgentExecutionTrace:
         """Execute a controlled agent interaction up to max_turns."""
         messages: list[Message] = []
@@ -291,9 +292,10 @@ class ControlledAgent:
                     )
                 )
 
+                active_env = mock_env if mock_env is not None else self.mock_env
                 for tc in response.tool_calls:
                     t_tool = time.perf_counter()
-                    out = self.mock_env.execute(tc.name, tc.arguments)
+                    out = active_env.execute(tc.name, tc.arguments)
                     tool_lat = (time.perf_counter() - t_tool) * 1000.0
 
                     rec = ToolExecutionRecord(

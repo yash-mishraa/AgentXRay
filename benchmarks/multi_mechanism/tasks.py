@@ -61,6 +61,7 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
         target_mode: TargetMode | str = TargetMode.SYNTHETIC_CONTROL,
         prompt_builder: Callable[[InputCase, str, str], tuple[str, str]] | None = None,
         tool_builder: Callable[[InputCase, Sequence[ToolDefinition]], Sequence[ToolDefinition]] | None = None,
+        env_builder: Callable[[InputCase, MockToolEnvironment], MockToolEnvironment] | None = None,
     ) -> None:
         super().__init__(
             agent=agent,
@@ -75,6 +76,7 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
         self._failure_predicate = failure_predicate
         self.target_mode = TargetMode(target_mode)
         self._tool_builder = tool_builder
+        self._env_builder = env_builder
 
     def _compose_tools(self, input_case: InputCase) -> Sequence[ToolDefinition]:
         """Compose tools incorporating input_case elements if a tool_builder is provided."""
@@ -82,16 +84,24 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
             return self._tool_builder(input_case, self.tools)
         return self.tools
 
+    def _compose_env(self, input_case: InputCase) -> MockToolEnvironment:
+        """Compose mock tool environment incorporating input_case elements if an env_builder is provided."""
+        if self._env_builder is not None:
+            return self._env_builder(input_case, self.agent.mock_env)
+        return self.agent.mock_env
+
     def execute(self, input_case: InputCase) -> TargetResult:
         """Execute the agent on the given input_case and determine outcome."""
         system_prompt, user_prompt = self._compose_prompts(input_case)
         active_tools = self._compose_tools(input_case)
+        active_env = self._compose_env(input_case)
 
         # Run agent to generate realistic trace and consume tokens/budget
         trace = self.agent.run_session(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             tools=active_tools,
+            mock_env=active_env,
         )
         self._last_trace = trace
 
@@ -920,4 +930,128 @@ def create_trace_evaluated_schema_task() -> TraceEvaluatedSchemaTaskSpec:
         is_null_case=False,
         is_conjunctive=False,
     )
+
+
+@dataclass(frozen=True)
+class TraceEvaluatedEnvironmentTaskSpec:
+    """Specification for an isolated trace-evaluated environment benchmark task (Phase 4.6K.7).
+
+    NOTE: This specification is strictly for offline methodological and pipeline validation
+    using scripted or mock providers. It does NOT represent real LLM diagnostic performance.
+    """
+
+    mechanism_id: str
+    name: str
+    category: str
+    candidate_elements: tuple[str, ...]
+    planted_trigger_elements: tuple[str, ...]
+    description: str = ""
+    observable_failure_symptom: str = ""
+    is_null_case: bool = False
+    is_conjunctive: bool = False
+
+    def create_initial_input(self, seed: int | None = None) -> InputCase:
+        """Return the unablated initial InputCase with optional seeded candidate permutation."""
+        if seed is None:
+            elements = self.candidate_elements
+        else:
+            rng = random.Random(seed)
+            elements = tuple(rng.sample(self.candidate_elements, len(self.candidate_elements)))
+        return InputCase(
+            case_id=self.mechanism_id,
+            elements=elements,
+            description=self.description,
+            metadata={"benchmark_tier": "trace_evaluated_validation"},
+        )
+
+    def get_ground_truth(self) -> MultiMechanismGroundTruthSpec:
+        """Return the isolated ground-truth specification for post-hoc scoring."""
+        distractors = tuple(e for e in self.candidate_elements if e not in self.planted_trigger_elements)
+        return MultiMechanismGroundTruthSpec(
+            mechanism_id=self.mechanism_id,
+            name=self.name,
+            category=self.category,
+            is_null_case=self.is_null_case,
+            is_conjunctive=self.is_conjunctive,
+            trigger_elements=self.planted_trigger_elements,
+            distractor_elements=distractors,
+            description=self.description,
+        )
+
+    def create_target(
+        self,
+        provider: ModelProvider | None = None,
+        cost_tracker: CostTracker | None = None,
+        max_turns: int = 3,
+        failure_predicate: Callable[[InputCase], tuple[bool, str]] | None = None,
+    ) -> MechanismTargetAdapter:
+        """Create target adapter configured in TargetMode.TRACE_EVALUATED for environment fault."""
+        prov = provider or FakeProvider(model_name="fake-trace-env")
+        tracker = cost_tracker or CostTracker(
+            ExperimentBudgetConfig(max_model_requests=100, max_spend_usd=1.00, model_name=prov.model_name)
+        )
+        env = MockToolEnvironment()
+        agent = ControlledAgent(provider=prov, mock_env=env, cost_tracker=tracker, max_turns=max_turns)
+        evaluator = ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400")
+
+        trigger_elem = self.planted_trigger_elements[0]
+
+        def _faulty_calculator(expression: str) -> str:
+            return "Error: 500 Internal Server Error: Mock calculator service temporarily unavailable."
+
+        def _env_builder(input_case: InputCase, base_env: MockToolEnvironment) -> MockToolEnvironment:
+            trial_env = MockToolEnvironment()
+            if trigger_elem in input_case.elements:
+                trial_env._tools["calculator"] = (CALCULATOR_TOOL_DEF, _faulty_calculator)
+            return trial_env
+
+        def _clean_prompt_builder(ic: InputCase, base_sys: str, user: str) -> tuple[str, str]:
+            return base_sys, user
+
+        return MechanismTargetAdapter(
+            mechanism_id=self.mechanism_id,
+            agent=agent,
+            evaluator=evaluator,
+            user_prompt="Calculate the sum of receipts $150 and $250 using calculator.",
+            base_system_prompt="You are an automated accounting bot.",
+            tools=[CALCULATOR_TOOL_DEF, DATABASE_LOOKUP_TOOL_DEF],
+            name=f"Target_{self.mechanism_id}",
+            failure_predicate=failure_predicate,
+            target_mode=TargetMode.TRACE_EVALUATED,
+            prompt_builder=_clean_prompt_builder,
+            env_builder=_env_builder,
+        )
+
+
+def create_trace_evaluated_environment_task() -> TraceEvaluatedEnvironmentTaskSpec:
+    """Create an isolated trace-evaluated environment mechanism (Phase 4.6K.7).
+
+    Task design:
+    - User Prompt: "Calculate the sum of receipts $150 and $250 using calculator."
+    - Canonical tool schema: calculator(expression: str) -> str (unchanged)
+    - Planted trigger element: Mock calculator service endpoint injects HTTP 500 Internal Server Error.
+    - Distractors: 3 benign mock environment / operational telemetry guidelines that do NOT alter backend tool execution.
+    - Mode: TargetMode.TRACE_EVALUATED.
+    - Evaluator: ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400").
+    - Isolation: Not registered in MECHANISM_REGISTRY.
+    """
+    trigger = "env_calculator_500_fault: Mock calculator service endpoint injects HTTP 500 Internal Server Error."
+    distractor_1 = "env_telemetry_region: Mock service telemetry routed to region us-east-1."
+    distractor_2 = "env_log_retention: Tool execution logs retained for 30 days under policy."
+    distractor_3 = "env_connection_pool: Mock backend client maintains persistent connection pool of 5 connections."
+
+    candidates = (trigger, distractor_1, distractor_2, distractor_3)
+
+    return TraceEvaluatedEnvironmentTaskSpec(
+        mechanism_id="trace_env_01_service_http_500",
+        name="Trace-Evaluated Environment Service 500 Error (Offline Validation)",
+        category="environment",
+        candidate_elements=candidates,
+        planted_trigger_elements=(trigger,),
+        observable_failure_symptom="Error: 500 Internal Server Error: Mock calculator service temporarily unavailable.",
+        description="Isolated trace-evaluated mock environment fault where calculator service returns HTTP 500 Internal Server Error.",
+        is_null_case=False,
+        is_conjunctive=False,
+    )
+
 
