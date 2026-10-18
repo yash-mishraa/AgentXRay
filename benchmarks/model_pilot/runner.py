@@ -207,6 +207,8 @@ def run_model_pilot_benchmark(
         - null_false_positive_rate: Overall control false-alarm rate (1.0 - null_detection_rate).
         - null_element_false_positives: Count of null controls with non-empty discovered elements.
         - null_spurious_failures: Count of null controls with empty discovered sets that spuriously reproduced failure.
+        - budget_exhausted_tasks: Count of evaluated tasks where the minimizer exhausted the trial budget.
+        - timed_out_tasks: Count of evaluated tasks where the minimizer exceeded execution timeout.
         - mean_precision: Legacy mean precision across all evaluations where precision is not None.
         - mean_recall: Legacy mean recall across all evaluations where recall is not None.
         - mean_precision_evaluations: Denominator count for mean_precision.

@@ -14,10 +14,20 @@ from agentxray.models import (
     ExecutionTier,
     ExperimentReport,
     ModelPilotExperimentReport,
+    SearchStatus,
     StochasticExperimentReport,
     StochasticMinimalityStatus,
 )
 from agentxray.statistics import compare_proportions, estimate_two_proportion_power
+
+
+def _format_trigger_elements(elements: Sequence[str] | tuple[str, ...], is_null: bool) -> str:
+    """Format discovered trigger elements in comparison matrix, distinguishing null controls from search misses."""
+    if elements:
+        return ", ".join(f"`{e}`" for e in elements)
+    if is_null:
+        return "*(None - Null Case)*"
+    return "*(none)*"
 
 
 def format_json_report(report: ExperimentReport) -> str:
@@ -50,14 +60,15 @@ def format_markdown_report(report: ExperimentReport) -> str:
 
     for eval_item in report.evaluations:
         cond = eval_item.minimizer_condition
-        cond_str = ", ".join(f"`{e}`" for e in cond.subset_elements) if cond.subset_elements else "*(none)*"
+        is_null = getattr(eval_item, "is_null_case", False) or not bool(eval_item.ground_truth_trigger)
+        cond_str = _format_trigger_elements(cond.subset_elements, is_null)
         lines.append(
             f"| **{eval_item.task_name}** | **Delta Debugging** | {cond_str} | "
             f"{'Yes' if cond.is_one_minimal else 'No'} | {cond.target_calls_used} | "
             f"{len(eval_item.excess_elements)} | {'**MATCH**' if eval_item.matches_ground_truth else 'FAIL'} |"
         )
         for base in eval_item.baseline_comparisons:
-            base_str = ", ".join(f"`{e}`" for e in base.discovered_elements) if base.discovered_elements else "*(none)*"
+            base_str = _format_trigger_elements(base.discovered_elements, is_null)
             lines.append(
                 f"| | {base.baseline_name} | {base_str} | "
                 f"{'Yes' if base.minimality_check_passed else 'No'} | {base.target_calls} | "
@@ -149,7 +160,8 @@ def format_stochastic_markdown_report(report: StochasticExperimentReport) -> str
 
     for eval_item in report.evaluations:
         cond = eval_item.minimizer_condition
-        cond_str = ", ".join(f"`{e}`" for e in cond.subset_elements) if cond.subset_elements else "*(none)*"
+        is_null = getattr(eval_item, "is_null_case", False) or not bool(eval_item.ground_truth_trigger)
+        cond_str = _format_trigger_elements(cond.subset_elements, is_null)
         cand_ci = (
             f"{cond.candidate_evaluation.failure_rate:.2f} [{cond.candidate_evaluation.confidence_interval[0]:.2f}, {cond.candidate_evaluation.confidence_interval[1]:.2f}]"
             if cond.subset_elements
@@ -161,7 +173,7 @@ def format_stochastic_markdown_report(report: StochasticExperimentReport) -> str
             f"{len(eval_item.excess_elements)} | {'**MATCH**' if eval_item.matches_ground_truth else 'FAIL'} |"
         )
         for base in eval_item.baseline_comparisons:
-            base_str = ", ".join(f"`{e}`" for e in base.discovered_elements) if base.discovered_elements else "*(none)*"
+            base_str = _format_trigger_elements(base.discovered_elements, is_null)
             base_ci = (
                 f"{base.candidate_evaluation.failure_rate:.2f} [{base.candidate_evaluation.confidence_interval[0]:.2f}, {base.candidate_evaluation.confidence_interval[1]:.2f}]"
                 if base.discovered_elements
@@ -346,12 +358,7 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
     for eval_item in report.evaluations:
         cond = eval_item.minimizer_condition
         is_null = getattr(eval_item, "is_null_case", False) or not bool(eval_item.ground_truth_trigger)
-        if cond.subset_elements:
-            trigger_str = ", ".join(f"`{e}`" for e in cond.subset_elements)
-        elif is_null:
-            trigger_str = "*(None - Null Case)*"
-        else:
-            trigger_str = "*(none)*"
+        trigger_str = _format_trigger_elements(cond.subset_elements, is_null)
         match_str = "YES" if eval_item.matches_ground_truth else "NO"
         lines.append(
             f"| **{eval_item.task_name}** | Stochastic Delta Debugging | {trigger_str} | "
@@ -359,12 +366,7 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
         )
 
         for b in eval_item.baseline_comparisons:
-            if b.discovered_elements:
-                b_trig = ", ".join(f"`{e}`" for e in b.discovered_elements)
-            elif is_null:
-                b_trig = "*(None - Null Case)*"
-            else:
-                b_trig = "*(none)*"
+            b_trig = _format_trigger_elements(b.discovered_elements, is_null)
             b_match = "YES" if b.matches_ground_truth else "NO"
             lines.append(
                 f"| | *{b.baseline_name}* | {b_trig} | `{b.minimality_status.value}` | "
@@ -443,6 +445,35 @@ def write_model_pilot_reports(
     md_p.write_text(format_model_pilot_markdown_report(report), encoding="utf-8")
 
 
+def _is_budget_exhausted(eval_item: Any) -> bool:
+    """Determine whether a task evaluation hit the execution or search budget limit."""
+    cond = getattr(eval_item, "minimizer_condition", None)
+    status = getattr(cond, "status", None) or getattr(eval_item, "status", None)
+    min_status = getattr(cond, "minimality_status", None) or getattr(eval_item, "minimality_status", None)
+    return (
+        status == SearchStatus.BUDGET_EXHAUSTED
+        or getattr(status, "value", None) == SearchStatus.BUDGET_EXHAUSTED.value
+        or min_status == StochasticMinimalityStatus.BUDGET_EXHAUSTED
+        or getattr(min_status, "value", None) == StochasticMinimalityStatus.BUDGET_EXHAUSTED.value
+        or bool(getattr(cond, "budget_exhausted", False))
+        or bool(getattr(eval_item, "budget_exhausted", False))
+    )
+
+
+def _is_timed_out(eval_item: Any) -> bool:
+    """Determine whether a task evaluation exceeded wall-clock timeout."""
+    cond = getattr(eval_item, "minimizer_condition", None)
+    status = getattr(cond, "status", None) or getattr(eval_item, "status", None)
+    min_status = getattr(cond, "minimality_status", None) or getattr(eval_item, "minimality_status", None)
+    return (
+        status == SearchStatus.TIMEOUT
+        or getattr(status, "value", None) == SearchStatus.TIMEOUT.value
+        or min_status == "timeout"
+        or bool(getattr(cond, "timed_out", False))
+        or bool(getattr(eval_item, "timed_out", False))
+    )
+
+
 def compute_stochastic_aggregate_metrics(evaluations: Sequence[Any]) -> dict[str, Any]:
     """Compute partitioned aggregate metrics across active failure tasks and control tasks.
 
@@ -466,6 +497,8 @@ def compute_stochastic_aggregate_metrics(evaluations: Sequence[Any]) -> dict[str
         - null_false_positive_rate: Overall control false-alarm rate (1.0 - null_detection_rate).
         - null_element_false_positives: Count of null controls with non-empty discovered elements.
         - null_spurious_failures: Count of null controls with empty discovered sets that spuriously reproduced failure.
+        - budget_exhausted_tasks: Count of evaluated tasks where the minimizer exhausted the trial budget.
+        - timed_out_tasks: Count of evaluated tasks where the minimizer exceeded execution timeout.
         - mean_precision: Legacy mean precision across all evaluations where precision is not None.
         - mean_recall: Legacy mean recall across all evaluations where recall is not None.
         - mean_precision_evaluations: Denominator count for mean_precision.
@@ -521,6 +554,8 @@ def compute_stochastic_aggregate_metrics(evaluations: Sequence[Any]) -> dict[str
         1 for e in evaluations
         if getattr(e.minimizer_condition, "minimality_status", None) == StochasticMinimalityStatus.STATISTICALLY_SUPPORTED
     )
+    budget_exhausted_tasks = sum(1 for e in evaluations if _is_budget_exhausted(e))
+    timed_out_tasks = sum(1 for e in evaluations if _is_timed_out(e))
 
     return {
         "tasks_evaluated": len(evaluations),
@@ -534,6 +569,8 @@ def compute_stochastic_aggregate_metrics(evaluations: Sequence[Any]) -> dict[str
         "null_false_positive_rate": null_fp_rate,
         "null_element_false_positives": null_element_false_positives,
         "null_spurious_failures": null_spurious_failures,
+        "budget_exhausted_tasks": budget_exhausted_tasks,
+        "timed_out_tasks": timed_out_tasks,
         "mean_precision": round(sum(valid_precisions) / len(valid_precisions), 4) if valid_precisions else None,
         "mean_recall": round(sum(valid_recalls) / len(valid_recalls), 4) if valid_recalls else None,
         "mean_precision_evaluations": len(valid_precisions),

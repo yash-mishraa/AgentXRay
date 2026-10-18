@@ -22,7 +22,7 @@ from benchmarks.model_pilot.power_and_budget_analysis import (
     generate_budget_scenarios,
 )
 from benchmarks.model_pilot.validate_confirmatory_protocol import ConfirmatoryProtocolValidator
-from agentxray.stochastic_minimizer import adjust_p_values_bh
+from agentxray.statistics import adjust_p_values_bh
 
 
 def test_null_control_identifiability_math() -> None:

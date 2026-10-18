@@ -678,3 +678,338 @@ class TestModelPilotReportingIntegrity:
         assert md_file.exists()
         assert len(json_file.read_text(encoding="utf-8")) > 0
         assert len(md_file.read_text(encoding="utf-8")) > 0
+
+
+class TestPhase44DReportingCorrectness:
+    """Tests for Phase 4.4D: Finding A (null-control label consistency) and Finding B (budget/timeout metrics)."""
+
+    def test_deterministic_markdown_trigger_label_empty_active_vs_null(self) -> None:
+        """Verify format_markdown_report distinguishes *(none)* from *(None - Null Case)*."""
+        from agentxray.models import (
+            BaselineComparison,
+            DiscoveredCondition,
+            EvaluationResult,
+            ExperimentConfig,
+            ExperimentReport,
+            SearchStatus,
+        )
+        from agentxray.reporting import format_markdown_report
+
+        active_empty = EvaluationResult(
+            task_name="Active Deterministic Fail",
+            description="Active deterministic task where discovery failed",
+            initial_elements=("a", "b"),
+            ground_truth_trigger=("a",),
+            minimizer_condition=DiscoveredCondition(
+                subset_elements=(),
+                status=SearchStatus.NO_TRIGGER_FOUND,
+                is_failure=False,
+                is_one_minimal=False,
+                target_calls_used=4,
+            ),
+            baseline_comparisons=(
+                BaselineComparison(
+                    baseline_name="greedy",
+                    discovered_elements=(),
+                    failure_reproduced=False,
+                    minimality_check_passed=False,
+                    target_calls=3,
+                    matches_ground_truth=False,
+                ),
+            ),
+            matches_ground_truth=False,
+            precision=0.0,
+            recall=0.0,
+            excess_elements=(),
+            missing_elements=("a",),
+        )
+
+        null_clean = EvaluationResult(
+            task_name="Null Deterministic Control",
+            description="Clean null control task",
+            initial_elements=("c", "d"),
+            ground_truth_trigger=(),
+            minimizer_condition=DiscoveredCondition(
+                subset_elements=(),
+                status=SearchStatus.COMPLETE,
+                is_failure=False,
+                is_one_minimal=False,
+                target_calls_used=2,
+            ),
+            baseline_comparisons=(
+                BaselineComparison(
+                    baseline_name="greedy",
+                    discovered_elements=(),
+                    failure_reproduced=False,
+                    minimality_check_passed=False,
+                    target_calls=2,
+                    matches_ground_truth=True,
+                ),
+            ),
+            matches_ground_truth=True,
+            precision=None,
+            recall=None,
+            excess_elements=(),
+            missing_elements=(),
+        )
+
+        report = ExperimentReport(
+            experiment_name="test_det_labels",
+            config=ExperimentConfig(experiment_name="test_det_labels", max_trials=20),
+            total_target_calls=11,
+            evaluations=(active_empty, null_clean),
+            summary="Deterministic label test",
+        )
+
+        md = format_markdown_report(report)
+
+        # Active empty: must be *(none)*
+        assert "| **Active Deterministic Fail** | **Delta Debugging** | *(none)* | No | 4 | 0 | FAIL |" in md
+        assert "| | greedy | *(none)* | No | 3 | 0 | FAIL |" in md
+
+        # Null clean: must be *(None - Null Case)*
+        assert "| **Null Deterministic Control** | **Delta Debugging** | *(None - Null Case)* | No | 2 | 0 | **MATCH** |" in md
+        assert "| | greedy | *(None - Null Case)* | No | 2 | 0 | MATCH |" in md
+
+    def test_stochastic_markdown_trigger_label_empty_active_vs_null(self) -> None:
+        """Verify format_stochastic_markdown_report distinguishes *(none)* from *(None - Null Case)*."""
+        from agentxray.models import (
+            CandidateEvaluation,
+            ExperimentConfig,
+            SearchStatus,
+            StochasticBaselineComparison,
+            StochasticDiscoveredCondition,
+            StochasticEvaluationResult,
+            StochasticExperimentReport,
+            StochasticMinimalityStatus,
+        )
+        from agentxray.reporting import format_stochastic_markdown_report
+
+        dummy_cand = CandidateEvaluation(
+            candidate_elements=(),
+            trials=10,
+            failures=0,
+            failure_rate=0.0,
+            confidence_interval=(0.0, 0.28),
+        )
+
+        active_empty = StochasticEvaluationResult(
+            task_name="Active Stochastic Fail",
+            description="Active stochastic task where search found nothing",
+            initial_elements=("x", "y"),
+            ground_truth_trigger=("x",),
+            base_probability=0.0,
+            trigger_probability=0.9,
+            minimizer_condition=StochasticDiscoveredCondition(
+                subset_elements=(),
+                status=SearchStatus.NO_TRIGGER_FOUND,
+                is_failure=False,
+                minimality_status=StochasticMinimalityStatus.NOT_MINIMAL,
+                candidate_evaluation=dummy_cand,
+                target_calls_used=8,
+            ),
+            baseline_comparisons=(
+                StochasticBaselineComparison(
+                    baseline_name="greedy",
+                    discovered_elements=(),
+                    failure_reproduced=False,
+                    minimality_status=StochasticMinimalityStatus.NOT_MINIMAL,
+                    target_calls=6,
+                    candidate_evaluation=dummy_cand,
+                    matches_ground_truth=False,
+                ),
+            ),
+            matches_ground_truth=False,
+            precision=0.0,
+            recall=0.0,
+            excess_elements=(),
+            missing_elements=("x",),
+        )
+
+        null_clean = StochasticEvaluationResult(
+            task_name="Null Stochastic Control",
+            description="Clean null control stochastic task",
+            initial_elements=("z", "w"),
+            ground_truth_trigger=(),
+            base_probability=0.0,
+            trigger_probability=0.0,
+            minimizer_condition=StochasticDiscoveredCondition(
+                subset_elements=(),
+                status=SearchStatus.COMPLETE,
+                is_failure=False,
+                minimality_status=StochasticMinimalityStatus.NOT_APPLICABLE,
+                candidate_evaluation=dummy_cand,
+                target_calls_used=4,
+            ),
+            baseline_comparisons=(
+                StochasticBaselineComparison(
+                    baseline_name="greedy",
+                    discovered_elements=(),
+                    failure_reproduced=False,
+                    minimality_status=StochasticMinimalityStatus.NOT_APPLICABLE,
+                    target_calls=4,
+                    candidate_evaluation=dummy_cand,
+                    matches_ground_truth=True,
+                ),
+            ),
+            matches_ground_truth=True,
+            precision=None,
+            recall=None,
+            excess_elements=(),
+            missing_elements=(),
+        )
+
+        report = StochasticExperimentReport(
+            experiment_name="test_stoch_labels",
+            config=ExperimentConfig(experiment_name="test_stoch_labels", max_trials=20),
+            trials_per_candidate=10,
+            total_target_calls=22,
+            evaluations=(active_empty, null_clean),
+            summary="Stochastic label test",
+        )
+
+        md = format_stochastic_markdown_report(report)
+
+        # Active empty: must be *(none)*
+        assert "| **Active Stochastic Fail** | **Delta Debugging** | *(none)* | N/A (base: 0.00) | `not_minimal` | 8 | 0 | FAIL |" in md
+        assert "| | greedy | *(none)* | N/A (base: 0.00) | `not_minimal` | 6 | 0 | FAIL |" in md
+
+        # Null clean: must be *(None - Null Case)*
+        assert "| **Null Stochastic Control** | **Delta Debugging** | *(None - Null Case)* | N/A (base: 0.00) | `not_applicable` | 4 | 0 | **MATCH** |" in md
+        assert "| | greedy | *(None - Null Case)* | N/A (base: 0.00) | `not_applicable` | 4 | 0 | MATCH |" in md
+
+    def test_compute_stochastic_aggregate_metrics_budget_and_timeout(self) -> None:
+        """Verify budget_exhausted_tasks and timed_out_tasks count accurately and without duplication."""
+        from agentxray.models import (
+            CandidateEvaluation,
+            SearchStatus,
+            StochasticDiscoveredCondition,
+            StochasticEvaluationResult,
+            StochasticMinimalityStatus,
+        )
+        from agentxray.reporting import compute_stochastic_aggregate_metrics
+
+        dummy_cand = CandidateEvaluation(
+            candidate_elements=(),
+            trials=5,
+            failures=0,
+            failure_rate=0.0,
+            confidence_interval=(0.0, 0.43),
+        )
+
+        # Task 1: Budget exhausted via status and minimality_status
+        task_budget = StochasticEvaluationResult(
+            task_name="Task Budget Exhausted",
+            description="Exhausted trial budget",
+            initial_elements=("a", "b"),
+            ground_truth_trigger=("a",),
+            base_probability=0.0,
+            trigger_probability=0.8,
+            minimizer_condition=StochasticDiscoveredCondition(
+                subset_elements=(),
+                status=SearchStatus.BUDGET_EXHAUSTED,
+                is_failure=False,
+                minimality_status=StochasticMinimalityStatus.BUDGET_EXHAUSTED,
+                candidate_evaluation=dummy_cand,
+                target_calls_used=50,
+            ),
+            baseline_comparisons=(),
+            matches_ground_truth=False,
+            precision=0.0,
+            recall=0.0,
+            excess_elements=(),
+            missing_elements=("a",),
+        )
+
+        # Task 2: Timed out via status
+        task_timeout = StochasticEvaluationResult(
+            task_name="Task Timeout",
+            description="Hit wall clock timeout",
+            initial_elements=("c", "d"),
+            ground_truth_trigger=("c",),
+            base_probability=0.0,
+            trigger_probability=0.8,
+            minimizer_condition=StochasticDiscoveredCondition(
+                subset_elements=(),
+                status=SearchStatus.TIMEOUT,
+                is_failure=False,
+                minimality_status=StochasticMinimalityStatus.INCONCLUSIVE,
+                candidate_evaluation=dummy_cand,
+                target_calls_used=20,
+            ),
+            baseline_comparisons=(),
+            matches_ground_truth=False,
+            precision=0.0,
+            recall=0.0,
+            excess_elements=(),
+            missing_elements=("c",),
+        )
+
+        # Task 3: Normal successful completion
+        task_success = StochasticEvaluationResult(
+            task_name="Task Success",
+            description="Completed normally",
+            initial_elements=("e", "f"),
+            ground_truth_trigger=("e",),
+            base_probability=0.0,
+            trigger_probability=0.8,
+            minimizer_condition=StochasticDiscoveredCondition(
+                subset_elements=("e",),
+                status=SearchStatus.COMPLETE,
+                is_failure=True,
+                minimality_status=StochasticMinimalityStatus.STATISTICALLY_SUPPORTED,
+                candidate_evaluation=CandidateEvaluation(
+                    candidate_elements=("e",),
+                    trials=5,
+                    failures=5,
+                    failure_rate=1.0,
+                    confidence_interval=(0.57, 1.0),
+                ),
+                target_calls_used=15,
+            ),
+            baseline_comparisons=(),
+            matches_ground_truth=True,
+            precision=1.0,
+            recall=1.0,
+            excess_elements=(),
+            missing_elements=(),
+        )
+
+        # Task 4: Task with multiple indicators of budget exhaustion (status, minimality_status, etc.)
+        task_multi_budget = StochasticEvaluationResult(
+            task_name="Task Multi Budget",
+            description="Multiple budget exhaustion indicators",
+            initial_elements=("g", "h"),
+            ground_truth_trigger=("g",),
+            base_probability=0.0,
+            trigger_probability=0.8,
+            minimizer_condition=StochasticDiscoveredCondition(
+                subset_elements=(),
+                status=SearchStatus.BUDGET_EXHAUSTED,
+                is_failure=False,
+                minimality_status=StochasticMinimalityStatus.BUDGET_EXHAUSTED,
+                candidate_evaluation=dummy_cand,
+                target_calls_used=100,
+            ),
+            baseline_comparisons=(),
+            matches_ground_truth=False,
+            precision=0.0,
+            recall=0.0,
+            excess_elements=(),
+            missing_elements=("g",),
+        )
+
+        metrics = compute_stochastic_aggregate_metrics([
+            task_budget,
+            task_timeout,
+            task_success,
+            task_multi_budget,
+        ])
+
+        assert metrics["tasks_evaluated"] == 4
+        # Two tasks exhausted budget, each counted only once
+        assert metrics["budget_exhausted_tasks"] == 2
+        # One task timed out, counted only once
+        assert metrics["timed_out_tasks"] == 1
+        assert metrics["ground_truth_matches"] == 1
+        assert metrics["statistically_supported_minimality"] == 1
