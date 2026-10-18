@@ -18,11 +18,16 @@ from __future__ import annotations
 
 import argparse
 import re
-from typing import Sequence
+from typing import Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from benchmarks.multi_mechanism.tasks import MechanismTaskSpec, list_mechanism_tasks
+from benchmarks.multi_mechanism.tasks import (
+    BenchmarkTaskSpec,
+    MechanismTaskSpec,
+    list_mechanism_tasks,
+    list_trace_evaluated_tasks,
+)
 
 # Explicit default stop words excluded during tokenization to prevent non-content inflation
 DEFAULT_STOP_WORDS: frozenset[str] = frozenset({
@@ -139,7 +144,7 @@ class BenchmarkLeakageSummary(BaseModel):
 
 
 def audit_mechanism_leakage(
-    spec: MechanismTaskSpec,
+    spec: BenchmarkTaskSpec,
     warning_threshold_jaccard: float = 0.20,
     warning_threshold_lcs: int = 15,
 ) -> MechanismLeakageReport:
@@ -215,12 +220,23 @@ def audit_mechanism_leakage(
 
 
 def audit_all_mechanisms(
-    mechanisms: Sequence[MechanismTaskSpec] | None = None,
+    mechanisms: Sequence[BenchmarkTaskSpec] | None = None,
     warning_threshold_jaccard: float = 0.20,
     warning_threshold_lcs: int = 15,
+    tier: Literal["synthetic_control", "trace_evaluated", "all"] = "synthetic_control",
 ) -> BenchmarkLeakageSummary:
-    """Audit all benchmark mechanisms and produce an aggregated summary report."""
-    specs = list(mechanisms) if mechanisms is not None else list_mechanism_tasks()
+    """Audit benchmark mechanisms and produce an aggregated summary report."""
+    if mechanisms is not None:
+        specs: list[BenchmarkTaskSpec] = list(mechanisms)
+    elif tier == "synthetic_control":
+        specs = list(list_mechanism_tasks())
+    elif tier == "trace_evaluated":
+        specs = list(list_trace_evaluated_tasks())
+    elif tier == "all":
+        specs = list(list_mechanism_tasks()) + list(list_trace_evaluated_tasks())
+    else:
+        raise ValueError(f"Unknown tier: {tier!r}. Must be 'synthetic_control', 'trace_evaluated', or 'all'.")
+
     reports = [
         audit_mechanism_leakage(
             spec=spec,
@@ -295,6 +311,13 @@ def format_leakage_table(summary: BenchmarkLeakageSummary) -> str:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Audit lexical overlap across Phase 4.6 mechanisms.")
+    parser.add_argument(
+        "--tier",
+        type=str,
+        default="synthetic_control",
+        choices=["synthetic_control", "trace_evaluated", "all"],
+        help="Benchmark tier to audit.",
+    )
     parser.add_argument("--jaccard-threshold", type=float, default=0.20, help="Jaccard warning threshold.")
     parser.add_argument("--lcs-threshold", type=int, default=15, help="LCS character length warning threshold.")
     args = parser.parse_args()
@@ -302,5 +325,6 @@ if __name__ == "__main__":
     summary = audit_all_mechanisms(
         warning_threshold_jaccard=args.jaccard_threshold,
         warning_threshold_lcs=args.lcs_threshold,
+        tier=args.tier,
     )
     print(format_leakage_table(summary))

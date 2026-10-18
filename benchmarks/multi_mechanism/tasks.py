@@ -764,21 +764,21 @@ class TraceEvaluatedPromptTaskSpec:
 
 
 def create_trace_evaluated_prompt_task() -> TraceEvaluatedPromptTaskSpec:
-    """Create an isolated trace-evaluated prompt mechanism (Phase 4.6K.3).
+    """Create an isolated trace-evaluated prompt mechanism (Phase 4.6K.3, remediated Phase 4.6K.11).
 
     Task design:
     - User Prompt: "Calculate the sum of receipts $150 and $250 using calculator."
     - Expected trace behavior: Agent invokes calculator tool and answers '400'.
-    - Planted trigger element: A strict directive forbidding tool usage:
-      "Strict constraint: Do not invoke the calculator tool under any circumstances; estimate all totals directly."
-    - Distractors: 3 benign guidelines (monetary formatting, professional tone, receipt item auditing).
+    - Planted trigger element: A strict directive forbidding external math utilities:
+      "Direct arithmetic: Compute and summarize all invoice line items directly in the response text without calling external math utilities."
+    - Distractors: 3 benign guidelines (monetary precision, professional styling, voucher verification).
     - Mode: TargetMode.TRACE_EVALUATED.
     - Evaluator: ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400").
     """
-    trigger = "Strict constraint: Do not invoke the calculator tool under any circumstances; estimate all totals directly."
-    distractor_1 = "Formatting guideline: Express all monetary values with dollar signs and two decimal places."
-    distractor_2 = "Tone guideline: Maintain a concise, professional accounting tone in all messages."
-    distractor_3 = "Audit guideline: Note that receipts were verified by accounts payable before calculation."
+    trigger = "Direct arithmetic: Compute and summarize all invoice line items directly in the response text without calling external math utilities."
+    distractor_1 = "Monetary precision: Represent all invoice amounts with exactly two decimal places and standard currency signs."
+    distractor_2 = "Professional styling: Use formal accounting terminology throughout the financial summary."
+    distractor_3 = "Voucher verification: Verify each receipt line item against internal voucher records before issuing total."
 
     candidates = (trigger, distractor_1, distractor_2, distractor_3)
 
@@ -927,21 +927,22 @@ class TraceEvaluatedSchemaTaskSpec:
 
 
 def create_trace_evaluated_schema_task() -> TraceEvaluatedSchemaTaskSpec:
-    """Create an isolated trace-evaluated schema mechanism (Phase 4.6K.5).
+    """Create an isolated trace-evaluated schema mechanism (Phase 4.6K.5, remediated Phase 4.6K.11).
 
     Task design:
     - User Prompt: "Calculate the sum of receipts $150 and $250 using calculator."
     - Canonical tool schema: calculator(expression: str) -> str
     - Planted trigger element: Renames calculator parameter from 'expression' to 'expr' in tool schema.
+    - Candidate description: Blinded/remediated without verbatim parameter names or prefix leakages.
     - Distractors: 3 benign schema/documentation guidelines that do NOT alter parameter contracts.
     - Mode: TargetMode.TRACE_EVALUATED.
     - Evaluator: ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400").
     - Isolation: Not registered in MECHANISM_REGISTRY.
     """
-    trigger = "schema_calculator_param_expr: Tool 'calculator' requires parameter 'expr' instead of 'expression'."
-    distractor_1 = "schema_calculator_desc: Tool 'calculator' description notes standard operator precedence rules."
-    distractor_2 = "schema_calculator_precision: Tool 'calculator' documentation specifies 6-decimal-place rounding precision."
-    distractor_3 = "schema_db_timeout: Database lookup tool operates with default 5-second connection timeout."
+    trigger = "Parameter naming policy: Math evaluation tools require abbreviated argument keys for formula inputs."
+    distractor_1 = "Precedence rules: Math evaluation tools follow standard algebraic operator precedence conventions."
+    distractor_2 = "Rounding precision: Math evaluation tools format fractional calculation results to six decimal places."
+    distractor_3 = "Query timeout: Database lookup tools operate with a default five-second query response timeout."
 
     candidates = (trigger, distractor_1, distractor_2, distractor_3)
 
@@ -1020,14 +1021,15 @@ class TraceEvaluatedEnvironmentTaskSpec:
         agent = ControlledAgent(provider=prov, mock_env=env, cost_tracker=tracker, max_turns=max_turns)
         evaluator = ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400")
 
-        trigger_elem = self.planted_trigger_elements[0]
+        trigger_elem = self.planted_trigger_elements[0] if self.planted_trigger_elements else None
 
         def _faulty_calculator(expression: str) -> str:
             return "Error: 500 Internal Server Error: Mock calculator service temporarily unavailable."
 
         def _env_builder(input_case: InputCase, base_env: MockToolEnvironment) -> MockToolEnvironment:
             trial_env = MockToolEnvironment()
-            if trigger_elem in input_case.elements:
+            should_fail = self.is_null_case or (trigger_elem is not None and trigger_elem in input_case.elements)
+            if should_fail:
                 trial_env._tools["calculator"] = (CALCULATOR_TOOL_DEF, _faulty_calculator)
             return trial_env
 
@@ -1050,21 +1052,22 @@ class TraceEvaluatedEnvironmentTaskSpec:
 
 
 def create_trace_evaluated_environment_task() -> TraceEvaluatedEnvironmentTaskSpec:
-    """Create an isolated trace-evaluated environment mechanism (Phase 4.6K.7).
+    """Create an isolated trace-evaluated environment mechanism (Phase 4.6K.7, remediated Phase 4.6K.11).
 
     Task design:
     - User Prompt: "Calculate the sum of receipts $150 and $250 using calculator."
     - Canonical tool schema: calculator(expression: str) -> str (unchanged)
-    - Planted trigger element: Mock calculator service endpoint injects HTTP 500 Internal Server Error.
+    - Planted trigger element: Mock calculator service endpoint injects HTTP 500 failure.
+    - Candidate description: Blinded/remediated without verbatim HTTP 500 or prefix leakages.
     - Distractors: 3 benign mock environment / operational telemetry guidelines that do NOT alter backend tool execution.
     - Mode: TargetMode.TRACE_EVALUATED.
     - Evaluator: ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400").
     - Isolation: Not registered in MECHANISM_REGISTRY.
     """
-    trigger = "env_calculator_500_fault: Mock calculator service endpoint injects HTTP 500 Internal Server Error."
-    distractor_1 = "env_telemetry_region: Mock service telemetry routed to region us-east-1."
-    distractor_2 = "env_log_retention: Tool execution logs retained for 30 days under policy."
-    distractor_3 = "env_connection_pool: Mock backend client maintains persistent connection pool of 5 connections."
+    trigger = "Service availability fault: Backend calculation cluster experiences unexpected node-level outage during execution."
+    distractor_1 = "Telemetry routing: Backend calculation telemetry is forwarded to primary monitoring facility."
+    distractor_2 = "Audit archiving: Backend transaction logs are retained for thirty days under compliance policy."
+    distractor_3 = "Connection pooling: Backend calculation client maintains five persistent warm connections."
 
     candidates = (trigger, distractor_1, distractor_2, distractor_3)
 
@@ -1080,6 +1083,67 @@ def create_trace_evaluated_environment_task() -> TraceEvaluatedEnvironmentTaskSp
         is_conjunctive=False,
     )
 
+
+def create_trace_evaluated_clean_null_task() -> TraceEvaluatedPromptTaskSpec:
+    """Create an isolated trace-evaluated clean execution null control task (Phase 4.6K.11).
+
+    Task design:
+    - User Prompt: "Calculate the sum of receipts $150 and $250 using calculator."
+    - Ground truth trigger elements: () (0 planted triggers).
+    - Candidates: 4 benign prompt distractors.
+    - Target behavior: Agent calls calculator and succeeds on all trials.
+    - Null control semantics: Clean passing condition; any attributed trigger is a false positive (Y=1).
+    """
+    cand_1 = "Summary layout: Present arithmetic invoice summary in clean tabular format."
+    cand_2 = "Ledger code: Assign entry reimbursement tag to accounting journal ledger."
+    cand_3 = "Currency label: Prepend standard USD currency label to transaction line items."
+    cand_4 = "Audit signoff: Mark final calculation output as verified by accounting review."
+
+    candidates = (cand_1, cand_2, cand_3, cand_4)
+
+    return TraceEvaluatedPromptTaskSpec(
+        mechanism_id="trace_null_01_clean_execution",
+        name="Trace-Evaluated Clean Execution Null Control (Offline Validation)",
+        category="null_clean",
+        candidate_elements=candidates,
+        planted_trigger_elements=(),
+        observable_failure_symptom="",
+        description="Clean trace-evaluated passing condition with 0 planted triggers. Must succeed.",
+        is_null_case=True,
+        is_conjunctive=False,
+    )
+
+
+def create_trace_evaluated_external_shock_null_task() -> TraceEvaluatedEnvironmentTaskSpec:
+    """Create an isolated trace-evaluated external shock 500 null control task (Phase 4.6K.11).
+
+    Task design:
+    - User Prompt: "Calculate the sum of receipts $150 and $250 using calculator."
+    - Ground truth trigger elements: () (0 planted triggers).
+    - Candidates: 4 benign environment / system configuration distractors.
+    - Target behavior: Mock calculator endpoint always returns HTTP 500 regardless of candidate presence or ablation.
+    - Null control semantics: Uncaused infrastructure failure; any candidate attribution is a false positive (Y=1).
+    """
+    cand_1 = "Client application: Register client application identifier in service request header."
+    cand_2 = "Audit account: Attribute transaction processing to auditing service account."
+    cand_3 = "Telemetry level: Set service diagnostic telemetry reporting level to standard."
+    cand_4 = "Settlement currency: Establish USD as default currency for ledger settlement."
+
+    candidates = (cand_1, cand_2, cand_3, cand_4)
+
+    return TraceEvaluatedEnvironmentTaskSpec(
+        mechanism_id="trace_null_02_unmodeled_external_shock",
+        name="Trace-Evaluated External Shock 500 Null Control (Offline Validation)",
+        category="null_ext",
+        candidate_elements=candidates,
+        planted_trigger_elements=(),
+        observable_failure_symptom="Error: 500 Internal Server Error: Mock calculator service temporarily unavailable.",
+        description="External shock failure: mock calculator service always fails with HTTP 500 independent of candidate inputs.",
+        is_null_case=True,
+        is_conjunctive=False,
+    )
+
+
 TraceEvaluatedTaskSpec = (
     TraceEvaluatedPromptTaskSpec
     | TraceEvaluatedSchemaTaskSpec
@@ -1092,10 +1156,14 @@ def _build_trace_evaluated_registry() -> dict[str, TraceEvaluatedTaskSpec]:
     prompt_task = create_trace_evaluated_prompt_task()
     schema_task = create_trace_evaluated_schema_task()
     env_task = create_trace_evaluated_environment_task()
+    clean_null_task = create_trace_evaluated_clean_null_task()
+    shock_null_task = create_trace_evaluated_external_shock_null_task()
     return {
         prompt_task.mechanism_id: prompt_task,
         schema_task.mechanism_id: schema_task,
         env_task.mechanism_id: env_task,
+        clean_null_task.mechanism_id: clean_null_task,
+        shock_null_task.mechanism_id: shock_null_task,
     }
 
 

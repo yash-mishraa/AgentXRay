@@ -35,7 +35,13 @@ def _extract_json_substring(text: str) -> str:
 
 
 def _build_candidate_id_maps(elements: Sequence[str]) -> tuple[dict[str, str], dict[str, str]]:
-    """Build bidirectional candidate ID and alias mappings."""
+    """Build bidirectional candidate ID and alias mappings with neutral displayed IDs.
+
+    Guarantees:
+    - Displayed candidate IDs are strictly neutral: 'elem_0', 'elem_1', ...
+    - Bidirectional resolution: maps 'elem_i', exact candidate text, and prefix aliases
+      back to the canonical InputCase element string for 100% backward compatibility.
+    """
     id_to_full: dict[str, str] = {}
     display_list: dict[str, str] = {}
 
@@ -44,19 +50,14 @@ def _build_candidate_id_maps(elements: Sequence[str]) -> tuple[dict[str, str], d
         id_to_full[auto_id] = elem
         id_to_full[elem] = elem
 
-        # If element has a prefix like "forbid_tool_call: ...", map the prefix
+        # Support prefix alias lookup for backwards compatibility in scoring/scripted tests
         if ":" in elem:
             prefix = elem.split(":", 1)[0].strip()
             if prefix:
                 id_to_full[prefix] = elem
-                display_id = prefix
-            else:
-                display_id = auto_id
-        else:
-            display_id = auto_id
 
-        id_to_full[display_id] = elem
-        display_list[display_id] = elem
+        # Neutral display ID presented to model
+        display_list[auto_id] = elem
 
     return id_to_full, display_list
 
@@ -85,6 +86,72 @@ def _format_trace_for_prompt(trace: AgentExecutionTrace) -> str:
     return "\n".join(lines)
 
 
+def build_judge_prompt(
+    initial_input: InputCase,
+    execution_trace: AgentExecutionTrace | None = None,
+) -> tuple[list[Message], dict[str, str], dict[str, str]]:
+    """Construct prompt messages and ID maps for LLM Judge baseline.
+
+    Parameters
+    ----------
+    initial_input : InputCase
+        Input configuration containing candidate elements to evaluate.
+    execution_trace : AgentExecutionTrace | None
+        If provided: constructs candidate-plus-trace prompt.
+        If None: constructs candidate-only prompt (omitting trace and error diagnostics).
+
+    Returns
+    -------
+    tuple[list[Message], dict[str, str], dict[str, str]]
+        (messages, id_to_full_map, display_map)
+    """
+    id_to_full, display_map = _build_candidate_id_maps(initial_input.elements)
+    candidate_lines = [f'- id: "{cid}" | description: "{desc}"' for cid, desc in display_map.items()]
+    candidates_text = "\n".join(candidate_lines)
+
+    if execution_trace is not None:
+        system_content = (
+            "You are an expert AI systems debugger and root-cause fault localization assistant.\n"
+            "Your task is to identify which candidate input elements caused an AI agent to fail its task.\n\n"
+            "Rules:\n"
+            "1. Analyze the observed agent execution trace.\n"
+            "2. Identify the MINIMAL subset of candidate element IDs that caused the failure.\n"
+            "3. If the agent execution succeeded, or if no candidate element caused the failure (for example, "
+            "if the failure was caused by an external unmodeled server error), return an empty list: [].\n"
+            "4. Do not blame non-causal formatting or distractor clauses.\n"
+            "5. Output MUST be valid JSON adhering strictly to:\n"
+            '   {"culprit_element_ids": ["<id>", ...], "rationale": "<explanation>"}'
+        )
+        trace_text = _format_trace_for_prompt(execution_trace)
+        initial_user_content = (
+            f"Candidate Input Elements:\n{candidates_text}\n\n"
+            f"Observed Agent Execution Trace:\n{trace_text}\n\n"
+            'Please identify the culprit candidate element IDs. Respond ONLY with the JSON object.'
+        )
+    else:
+        system_content = (
+            "You are an expert AI systems debugger and root-cause fault localization assistant.\n"
+            "Your task is to analyze candidate input elements and identify any that are inherently faulty or designed to induce failure.\n\n"
+            "Rules:\n"
+            "1. Analyze the candidate input element specifications.\n"
+            "2. Identify the subset of candidate element IDs that represent plausible fault injections or error-inducing directives.\n"
+            "3. If all candidate elements appear benign or no candidate is inherently faulty, return an empty list: [].\n"
+            "4. Do not blame standard benign formatting, styling, or telemetry guidelines.\n"
+            "5. Output MUST be valid JSON adhering strictly to:\n"
+            '   {"culprit_element_ids": ["<id>", ...], "rationale": "<explanation>"}'
+        )
+        initial_user_content = (
+            f"Candidate Input Elements:\n{candidates_text}\n\n"
+            'Please identify the culprit candidate element IDs based only on the candidate specifications. Respond ONLY with the JSON object.'
+        )
+
+    messages = [
+        Message(role="system", content=system_content),
+        Message(role="user", content=initial_user_content),
+    ]
+    return messages, id_to_full, display_map
+
+
 class LLMJudgeBaseline:
     """Passive LLM-as-a-judge baseline for fault localization."""
 
@@ -106,37 +173,25 @@ class LLMJudgeBaseline:
         execution_trace: AgentExecutionTrace,
     ) -> LLMJudgeResult:
         """Diagnose minimal failure-triggering elements from an execution trace in a single-shot prompt."""
-        id_to_full, display_map = _build_candidate_id_maps(initial_input.elements)
+        messages, id_to_full, display_map = build_judge_prompt(initial_input, execution_trace)
+        return self._run_diagnosis_loop(messages, id_to_full, display_map)
 
-        # 1. System Prompt
-        system_content = (
-            "You are an expert AI systems debugger and root-cause fault localization assistant.\n"
-            "Your task is to identify which candidate input elements caused an AI agent to fail its task.\n\n"
-            "Rules:\n"
-            "1. Analyze the observed agent execution trace.\n"
-            "2. Identify the MINIMAL subset of candidate element IDs that caused the failure.\n"
-            "3. If the agent execution succeeded, or if no candidate element caused the failure (for example, "
-            "if the failure was caused by an external unmodeled server error), return an empty list: [].\n"
-            "4. Do not blame non-causal formatting or distractor clauses.\n"
-            "5. Output MUST be valid JSON adhering strictly to:\n"
-            '   {"culprit_element_ids": ["<id>", ...], "rationale": "<explanation>"}'
-        )
+    def diagnose_candidate_only(
+        self,
+        initial_input: InputCase,
+    ) -> LLMJudgeResult:
+        """Diagnose failure-triggering elements using candidates only, omitting execution trace."""
+        messages, id_to_full, display_map = build_judge_prompt(initial_input, execution_trace=None)
+        return self._run_diagnosis_loop(messages, id_to_full, display_map)
 
-        # 2. Initial User Prompt
-        candidate_lines = [f'- id: "{cid}" | description: "{desc}"' for cid, desc in display_map.items()]
-        candidates_text = "\n".join(candidate_lines)
-        trace_text = _format_trace_for_prompt(execution_trace)
+    def _run_diagnosis_loop(
+        self,
+        messages: list[Message],
+        id_to_full: dict[str, str],
+        display_map: dict[str, str],
+    ) -> LLMJudgeResult:
+        """Execute the interactive diagnosis and retry loop."""
 
-        initial_user_content = (
-            f"Candidate Input Elements:\n{candidates_text}\n\n"
-            f"Observed Agent Execution Trace:\n{trace_text}\n\n"
-            'Please identify the culprit candidate element IDs. Respond ONLY with the JSON object.'
-        )
-
-        messages: list[Message] = [
-            Message(role="system", content=system_content),
-            Message(role="user", content=initial_user_content),
-        ]
 
         total_prompt_tokens = 0
         total_completion_tokens = 0

@@ -157,25 +157,40 @@ class TestTraceEvaluatedRegistryAPI:
 
     def test_list_trace_evaluated_tasks_deterministic_order(self) -> None:
         tasks = list_trace_evaluated_tasks()
-        assert len(tasks) == 3
+        assert len(tasks) == 5
         expected_ids = [
             "trace_prompt_01_tool_prohibition",
             "trace_schema_01_param_key_mismatch",
             "trace_env_01_service_http_500",
+            "trace_null_01_clean_execution",
+            "trace_null_02_unmodeled_external_shock",
         ]
         actual_ids = [t.mechanism_id for t in tasks]
         assert actual_ids == expected_ids
 
     def test_get_trace_evaluated_task_success(self) -> None:
-        for mid in (
+        active_ids = (
             "trace_prompt_01_tool_prohibition",
             "trace_schema_01_param_key_mismatch",
             "trace_env_01_service_http_500",
-        ):
+        )
+        for mid in active_ids:
             spec = get_trace_evaluated_task(mid)
             assert spec.mechanism_id == mid
             assert len(spec.planted_trigger_elements) == 1
             assert len(spec.candidate_elements) == 4
+            assert spec.is_null_case is False
+
+        null_ids = (
+            "trace_null_01_clean_execution",
+            "trace_null_02_unmodeled_external_shock",
+        )
+        for mid in null_ids:
+            spec = get_trace_evaluated_task(mid)
+            assert spec.mechanism_id == mid
+            assert len(spec.planted_trigger_elements) == 0
+            assert len(spec.candidate_elements) == 4
+            assert spec.is_null_case is True
 
     def test_get_trace_evaluated_task_unknown_id_raises_key_error(self) -> None:
         with pytest.raises(KeyError) as exc_info:
@@ -193,7 +208,7 @@ class TestRegistrySeparationAndTaskProtocol:
 
     def test_registry_sizes_and_disjointness(self) -> None:
         assert len(MECHANISM_REGISTRY) == 18
-        assert len(TRACE_EVALUATED_REGISTRY) == 3
+        assert len(TRACE_EVALUATED_REGISTRY) == 5
 
         synthetic_keys = set(MECHANISM_REGISTRY.keys())
         trace_keys = set(TRACE_EVALUATED_REGISTRY.keys())
@@ -285,7 +300,7 @@ class TestRunnerTierSelectionAndValidation:
 class TestTraceBenchmarkExecutionEndToEnd:
     """Verifies end-to-end multi-mechanism benchmark execution on the trace-evaluated tier."""
 
-    def test_run_all_three_trace_mechanisms_through_runner(self) -> None:
+    def test_run_all_trace_mechanisms_through_runner(self) -> None:
         prompt_task = get_trace_evaluated_task("trace_prompt_01_tool_prohibition")
         prompt_trigger = prompt_task.planted_trigger_elements[0]
 
@@ -302,31 +317,33 @@ class TestTraceBenchmarkExecutionEndToEnd:
         )
 
         # 1. Cohort and accounting
-        assert report.n_total == 3
+        assert report.n_total == 5
         assert report.n_infra == 0
-        assert report.n_evaluable == 3
-        assert report.n_complete == 3
+        assert report.n_evaluable == 5
+        assert report.n_complete == 5
 
         # 2. Metadata tier confirmation
         assert report.secondary_metrics["benchmark_tier"] == "trace_evaluated"
 
-        # 3. All three mechanisms evaluated in deterministic order
+        # 3. All five mechanisms evaluated in deterministic order
         eval_ids = [ev.mechanism_id for ev in report.evaluations]
         assert eval_ids == [
             "trace_prompt_01_tool_prohibition",
             "trace_schema_01_param_key_mismatch",
             "trace_env_01_service_http_500",
+            "trace_null_01_clean_execution",
+            "trace_null_02_unmodeled_external_shock",
         ]
 
-        # 4. Method diagnostic verification
-        for ev in report.evaluations:
-            # Active DD should isolate exact ground truth trigger in all 3 trace tasks
+        # 4. Method diagnostic verification for active tasks
+        for ev in report.evaluations[:3]:
+            # Active DD should isolate exact ground truth trigger in all 3 active trace tasks
             assert ev.active_dd_outcome.is_valid_diagnosis is True
             assert ev.active_dd_outcome.exact_recovery_indicator == 1
             assert ev.active_dd_outcome.false_attribution_indicator == 0
             assert ev.active_dd_outcome.predicted_candidate_set == ev.ground_truth_trigger
 
-            # Greedy ablation should also recover the single trigger in all 3 trace tasks
+            # Greedy ablation should also recover the single trigger in all 3 active trace tasks
             assert ev.greedy_ablation_outcome.is_valid_diagnosis is True
             assert ev.greedy_ablation_outcome.exact_recovery_indicator == 1
             assert ev.greedy_ablation_outcome.predicted_candidate_set == ev.ground_truth_trigger
@@ -334,17 +351,34 @@ class TestTraceBenchmarkExecutionEndToEnd:
             # LLM Judge returns empty list from mock handler
             assert ev.llm_judge_outcome.is_valid_diagnosis is True
 
-        # 5. Exact recovery rates in secondary metrics
-        sec = report.secondary_metrics
-        assert sec["exact_recovery_rate"]["active_dd"] == 1.0
-        assert sec["exact_recovery_rate"]["greedy_ablation"] == 1.0
+        # Null task 1: clean execution -> baseline succeeds, active DD and greedy predict ()
+        ev_clean = report.evaluations[3]
+        assert ev_clean.mechanism_id == "trace_null_01_clean_execution"
+        assert ev_clean.is_null_case is True
+        assert ev_clean.active_dd_outcome.exact_recovery_indicator == 1
+        assert ev_clean.active_dd_outcome.false_attribution_indicator == 0
+        assert ev_clean.active_dd_outcome.predicted_candidate_set == ()
+        assert ev_clean.greedy_ablation_outcome.exact_recovery_indicator == 1
+        assert ev_clean.greedy_ablation_outcome.false_attribution_indicator == 0
+        assert ev_clean.greedy_ablation_outcome.predicted_candidate_set == ()
 
-        # 6. Markdown report generation succeeds and includes trace task IDs
+        # Null task 2: unmodeled external shock -> target always fails, minimality check fails
+        ev_shock = report.evaluations[4]
+        assert ev_shock.mechanism_id == "trace_null_02_unmodeled_external_shock"
+        assert ev_shock.is_null_case is True
+        assert ev_shock.active_dd_outcome.is_valid_diagnosis is True
+        assert ev_shock.active_dd_outcome.verification_status == "not_minimal"
+        assert ev_shock.greedy_ablation_outcome.is_valid_diagnosis is True
+        assert ev_shock.greedy_ablation_outcome.verification_status == "not_minimal"
+
+        # 5. Markdown report generation succeeds and includes trace task IDs
         md = format_exploratory_benchmark_markdown(report)
         assert "# Phase_4_6K_Trace_Evaluated_Integration_Test — Research Summary" in md
         assert "trace_prompt_01_tool_prohibition" in md
         assert "trace_schema_01_param_key_mismatch" in md
         assert "trace_env_01_service_http_500" in md
+        assert "trace_null_01_clean_execution" in md
+        assert "trace_null_02_unmodeled_external_shock" in md
 
 
 class TestTraceBenchmarkInfrastructureAndBudgetResilience:
@@ -359,11 +393,10 @@ class TestTraceBenchmarkInfrastructureAndBudgetResilience:
             all_content = " ".join(m.content for m in messages)
             # If the request is associated with prompt_task, simulate persistent provider failure
             if (
-                "Strict constraint" in all_content
-                or "Formatting guideline" in all_content
-                or "Tone guideline" in all_content
-                or "Audit guideline" in all_content
-                or "trace_prompt_01" in all_content
+                "Direct arithmetic" in all_content
+                or "Monetary precision" in all_content
+                or "Professional styling" in all_content
+                or "Voucher verification" in all_content
             ):
                 raise ProviderTimeoutError("Upstream API gateway timeout (504 Gateway Timeout)")
             return healthy_handler(messages, tools)
