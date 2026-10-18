@@ -6,7 +6,11 @@ import os
 from pathlib import Path
 from typing import Any
 
-from agentxray.agent_harness.cost_tracker import CostTracker, ExperimentBudgetConfig
+from agentxray.agent_harness.cost_tracker import (
+    CostTracker,
+    ExperimentBudgetConfig,
+    IsolatedAlgorithmCostTracker,
+)
 from agentxray.models import (
     AccessMode,
     ExecutionTier,
@@ -250,13 +254,12 @@ def run_model_pilot_benchmark(
         )
 
     # 2. Configure Cost Tracker and Budgets
-    budget_cfg = ExperimentBudgetConfig(
+    algo_budget_cfg = ExperimentBudgetConfig(
         max_model_requests=max_model_requests,
         max_spend_usd=max_spend_usd,
         model_name=resolved_model,
         request_timeout_seconds=timeout_seconds,
     )
-    cost_tracker = CostTracker(budget_cfg)
 
     config = ExperimentConfig(
         experiment_name=f"ModelPilot_{tier.value}_{resolved_model}",
@@ -272,17 +275,37 @@ def run_model_pilot_benchmark(
             "trials_per_candidate": trials_per_candidate,
             "failure_threshold": failure_threshold,
             "seed": seed,
+            "max_model_requests_per_algorithm": max_model_requests,
         },
     )
 
     # 3. Load Pilot Benchmark Tasks
-    tasks = get_model_pilot_tasks(provider=provider, cost_tracker=cost_tracker, task_filter=task_filter)
+    tasks = get_model_pilot_tasks(provider=provider, task_filter=task_filter)
+
+    # Centralized global tracker accumulating resource consumption across all tasks and algorithms
+    total_planned_runs = max(1, len(tasks) * 3)
+    global_budget_cfg = ExperimentBudgetConfig(
+        max_model_requests=max_model_requests * total_planned_runs,
+        max_spend_usd=max_spend_usd,
+        model_name=resolved_model,
+        request_timeout_seconds=timeout_seconds,
+    )
+    global_cost_tracker = CostTracker(global_budget_cfg)
+
     evaluations: list[ModelPilotEvaluationResult] = []
     total_calls = 0
+    algo_breakdown: list[dict[str, Any]] = []
 
     for target, initial_input, ground_truth in tasks:
         # 1. Run Stochastic Delta Debugging Minimizer
         target.reset_call_count()
+        tracker_dd = IsolatedAlgorithmCostTracker(
+            algorithm_config=algo_budget_cfg,
+            global_tracker=global_cost_tracker,
+            enforce_global_requests=True,
+        )
+        target.agent.cost_tracker = tracker_dd
+
         runner_dd = InterventionRunner(config=config, target_fn=target.execute)
         minimizer = StochasticDeltaDebugMinimizer(
             runner=runner_dd,
@@ -293,11 +316,25 @@ def run_model_pilot_benchmark(
         )
         discovered_dd = minimizer.minimize(initial_input)
         total_calls += runner_dd.trial_count
+        algo_breakdown.append({
+            "task_name": ground_truth.name,
+            "algorithm": "delta_debugging",
+            "model_requests": tracker_dd.total_requests,
+            "target_calls": runner_dd.trial_count,
+            "estimated_spend_usd": tracker_dd.estimated_spend_usd,
+        })
 
         matches_gt, prec, rec, excess, missing = evaluate_model_pilot_ground_truth(ground_truth, discovered_dd)
 
         # 2. Run Stochastic Greedy Ablation Baseline
         target.reset_call_count()
+        tracker_greedy = IsolatedAlgorithmCostTracker(
+            algorithm_config=algo_budget_cfg,
+            global_tracker=global_cost_tracker,
+            enforce_global_requests=True,
+        )
+        target.agent.cost_tracker = tracker_greedy
+
         runner_greedy = InterventionRunner(config=config, target_fn=target.execute)
         greedy_comp = run_stochastic_greedy_ablation(
             initial_input=initial_input,
@@ -308,6 +345,13 @@ def run_model_pilot_benchmark(
             confidence=confidence,
         )
         total_calls += runner_greedy.trial_count
+        algo_breakdown.append({
+            "task_name": ground_truth.name,
+            "algorithm": "stochastic_greedy_ablation",
+            "model_requests": tracker_greedy.total_requests,
+            "target_calls": runner_greedy.trial_count,
+            "estimated_spend_usd": tracker_greedy.estimated_spend_usd,
+        })
         g_matches, _, _, g_excess, _ = evaluate_model_pilot_ground_truth(ground_truth, greedy_comp)
         greedy_comp = greedy_comp.model_copy(update={
             "matches_ground_truth": g_matches,
@@ -316,6 +360,13 @@ def run_model_pilot_benchmark(
 
         # 3. Run Stochastic Seeded Random Search Baseline
         target.reset_call_count()
+        tracker_random = IsolatedAlgorithmCostTracker(
+            algorithm_config=algo_budget_cfg,
+            global_tracker=global_cost_tracker,
+            enforce_global_requests=True,
+        )
+        target.agent.cost_tracker = tracker_random
+
         runner_random = InterventionRunner(config=config, target_fn=target.execute)
         random_comp = run_stochastic_random_search(
             initial_input=initial_input,
@@ -327,6 +378,13 @@ def run_model_pilot_benchmark(
             seed=seed,
         )
         total_calls += runner_random.trial_count
+        algo_breakdown.append({
+            "task_name": ground_truth.name,
+            "algorithm": "stochastic_seeded_random",
+            "model_requests": tracker_random.total_requests,
+            "target_calls": runner_random.trial_count,
+            "estimated_spend_usd": tracker_random.estimated_spend_usd,
+        })
         r_matches, _, _, r_excess, _ = evaluate_model_pilot_ground_truth(ground_truth, random_comp)
         random_comp = random_comp.model_copy(update={
             "matches_ground_truth": r_matches,
@@ -361,13 +419,17 @@ def run_model_pilot_benchmark(
     summary_parts.extend(format_cohort_summary_sentences(metrics))
     summary_text = " ".join(summary_parts)
 
+    budget_summary = global_cost_tracker.get_summary()
+    budget_summary["max_requests_per_algorithm"] = max_model_requests
+    budget_summary["per_algorithm_usage"] = algo_breakdown
+
     report = ModelPilotExperimentReport(
         experiment_name=config.experiment_name,
         execution_tier=tier,
         provider_name=provider.provider_name,
         model_name=resolved_model,
         config=config,
-        budget_summary=cost_tracker.get_summary(),
+        budget_summary=budget_summary,
         trials_per_candidate=trials_per_candidate,
         total_target_calls=total_calls,
         evaluations=tuple(evaluations),

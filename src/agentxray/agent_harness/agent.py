@@ -132,6 +132,7 @@ class ControlledAgent:
             session_cost += response.usage.estimated_cost_usd
 
             # Record in cost tracker (which will raise CostBudgetExceededError if budget breached)
+            budget_exc_caught: CostBudgetExceededError | None = None
             try:
                 self.cost_tracker.record_usage(
                     response.usage,
@@ -139,12 +140,22 @@ class ControlledAgent:
                     retries=response.usage.retries,
                 )
             except CostBudgetExceededError as budget_exc:
-                error_msg = str(budget_exc)
+                budget_exc_caught = budget_exc
+
+            # If CostBudgetExceededError was raised, only allow completion if spend is intact,
+            # requests did not strictly exceed (> cap), and no tool calls require another turn.
+            if budget_exc_caught is not None and (
+                getattr(self.cost_tracker, "is_spend_exceeded", False)
+                or getattr(self.cost_tracker, "is_request_cap_exceeded", False)
+                or bool(response.tool_calls)
+            ):
+                error_msg = str(budget_exc_caught)
                 finish_reason = "budget_exhausted"
                 break
 
             # Check if model emitted tool calls
             if response.tool_calls:
+
                 messages.append(
                     Message(
                         role="assistant",

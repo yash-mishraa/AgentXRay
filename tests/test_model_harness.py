@@ -12,6 +12,7 @@ from agentxray.agent_harness.cost_tracker import (
     CostBudgetExceededError,
     CostTracker,
     ExperimentBudgetConfig,
+    IsolatedAlgorithmCostTracker,
 )
 from agentxray.agent_harness.evaluator import ToolCallingTaskEvaluator
 from agentxray.agent_harness.target import ModelBackedAgentTarget
@@ -394,7 +395,11 @@ def test_model_backed_target_halts_immediately_on_budget_exhaustion():
     res1 = target.execute(input_case)
     assert tracker.total_requests == 1
 
-    # Trial 2: must raise CostBudgetExceededError (and BudgetExhaustedError)
+    # Trial 2: succeeds (consumes 2nd allowed request, bringing total to limit 2)
+    res2 = target.execute(input_case)
+    assert tracker.total_requests == 2
+
+    # Trial 3: must raise CostBudgetExceededError (and BudgetExhaustedError) pre-flight
     from agentxray.runner import BudgetExhaustedError
     with pytest.raises(BudgetExhaustedError):
         target.execute(input_case)
@@ -655,8 +660,14 @@ def test_agent_retries_bounded_by_budget_headroom():
     # generate must have been called with max_retries=0 (since headroom was 2 - 1 = 1, so 0 retries allowed)
     mock_provider.generate.assert_called_once()
     assert mock_provider.generate.call_args.kwargs["max_retries"] == 0
-    assert trace.finish_reason == "budget_exhausted"
+    assert trace.finish_reason == "stop"
+    assert trace.final_response == "success"
     assert tracker.total_requests == 2  # exactly at limit, not exceeded
+
+    # Any subsequent request is blocked pre-flight
+    trace2 = agent.run_session(system_prompt="sys", user_prompt="user")
+    assert trace2.finish_reason == "budget_exhausted"
+    assert trace2.final_response == ""
 
 
 def test_model_pilot_benchmark_seed_propagation(tmp_path: Path):
@@ -789,3 +800,781 @@ def test_cli_model_pilot_seed_forwarding(monkeypatch: pytest.MonkeyPatch, capsys
         main()
     assert exc_info.value.code == 1
     assert captured_args.get("seed") == 9876
+
+
+def test_model_pilot_per_algorithm_budget_isolation():
+    """Verify that each algorithm receives its intended request allowance independently."""
+    # Under conflicting_prompt, DD needs ~17-20 calls. With max_model_requests=10, DD will breach.
+    # But Greedy and Random must start with fresh allowances and execute their own trials (>0).
+    report = run_model_pilot_benchmark(
+        provider_type="fake",
+        task_filter="conflicting_prompt",
+        max_model_requests=10,
+        max_trials=20,
+    )
+    assert len(report.evaluations) == 1
+    eval_res = report.evaluations[0]
+
+    # Algorithm 1: DD was capped by its own budget
+    assert eval_res.minimizer_condition.target_calls_used > 0
+    assert eval_res.minimizer_condition.status == SearchStatus.BUDGET_EXHAUSTED
+
+    # Algorithm 2: Greedy started fresh and made non-zero calls
+    greedy_res = eval_res.baseline_comparisons[0]
+    assert greedy_res.target_calls > 0
+
+    # Algorithm 3: Seeded Random started fresh and made non-zero calls
+    random_res = eval_res.baseline_comparisons[1]
+    assert random_res.target_calls > 0
+
+
+def test_first_algorithm_exhaustion_does_not_starve_subsequent_algorithms():
+    """Verify that earlier algorithms consuming their full budget cannot starve later algorithms."""
+    report = run_model_pilot_benchmark(
+        provider_type="fake",
+        task_filter="conflicting_prompt",
+        max_model_requests=8,
+        max_trials=15,
+    )
+    eval_res = report.evaluations[0]
+
+    # DD exhausts at 8 requests
+    assert eval_res.minimizer_condition.status == SearchStatus.BUDGET_EXHAUSTED
+
+    # In the old flawed implementation, Greedy and Random were starved with target_calls=0.
+    # In the isolated implementation, both receive independent quotas and execute trials.
+    assert eval_res.baseline_comparisons[0].target_calls > 0
+    assert eval_res.baseline_comparisons[1].target_calls > 0
+
+
+def test_budget_exhaustion_accurate_attribution():
+    """Verify that budget exhaustion is not falsely attributed to algorithms that operated within their allowance."""
+    # On baseline task, each algorithm requires 5 target calls (10 model requests with 2 turns/call).
+    # With max_model_requests=12, each algorithm requires 10 <= 12 requests.
+    # Under a shared budget, 10 + 10 = 20 > 12, so Greedy and Random would falsely record budget_exhausted=True.
+    # Under isolated budgets, every algorithm operates within its allowance and budget_exhausted is False.
+    report = run_model_pilot_benchmark(
+        provider_type="fake",
+        task_filter="baseline",
+        max_model_requests=12,
+        max_trials=10,
+    )
+    eval_res = report.evaluations[0]
+
+    assert eval_res.minimizer_condition.status == SearchStatus.NO_TRIGGER_FOUND
+    assert eval_res.baseline_comparisons[0].budget_exhausted is False
+    assert eval_res.baseline_comparisons[1].budget_exhausted is False
+
+
+def test_cumulative_budget_summary_accurate_and_no_double_counting():
+    """Verify that global budget summary aggregates all algorithm requests without duplication."""
+    report = run_model_pilot_benchmark(
+        provider_type="fake",
+        task_filter="baseline",
+        max_model_requests=25,
+        max_trials=10,
+    )
+    bs = report.budget_summary
+    assert bs["max_requests_per_algorithm"] == 25
+    assert "per_algorithm_usage" in bs
+
+    sum_algo_reqs = sum(item["model_requests"] for item in bs["per_algorithm_usage"])
+    assert bs["total_requests"] == sum_algo_reqs
+    sum_algo_calls = sum(item["target_calls"] for item in bs["per_algorithm_usage"])
+    assert report.total_target_calls == sum_algo_calls
+    # Each target trial executes a 2-turn agent session (calculator tool call + final response)
+    assert bs["total_requests"] == report.total_target_calls * 2
+    assert bs["successful_requests"] == bs["total_requests"]
+    assert bs["failed_requests"] == 0
+
+
+def test_global_spend_safety_cap_halts_execution():
+    """Verify that cumulative global spend limit is enforced across isolated algorithm trackers."""
+    from agentxray.providers.base import UsageMetadata
+
+    global_cfg = ExperimentBudgetConfig(
+        max_model_requests=100,
+        max_spend_usd=0.001,
+        model_name="fake-model",
+        custom_pricing_per_1m=(100.0, 100.0),
+    )
+    global_tracker = CostTracker(global_cfg)
+
+    algo_cfg = ExperimentBudgetConfig(
+        max_model_requests=50,
+        max_spend_usd=1.0,
+        model_name="fake-model",
+        custom_pricing_per_1m=(100.0, 100.0),
+    )
+
+    t1 = IsolatedAlgorithmCostTracker(algo_cfg, global_tracker=global_tracker, enforce_global_spend=True)
+    t2 = IsolatedAlgorithmCostTracker(algo_cfg, global_tracker=global_tracker, enforce_global_spend=True)
+
+    # 4 prompt tokens + 4 completion tokens at $100/1M = $0.0008 USD (< $0.0010 USD)
+    usage = UsageMetadata(prompt_tokens=4, completion_tokens=4, total_tokens=8)
+    t1.check_budget_before_request(est_prompt_tokens=4)
+    t1.record_usage(usage)
+    assert t1.total_requests == 1
+    assert global_tracker.total_requests == 1
+    assert global_tracker.estimated_spend_usd == 0.0008
+
+    # Now t2 runs and attempts a call with est_prompt_tokens=4 ($0.0004 USD), which would push total spend to $0.0012 >= $0.0010
+    with pytest.raises(CostBudgetExceededError, match="Global estimated spend budget"):
+        t2.check_budget_before_request(est_prompt_tokens=4)
+
+
+def test_provider_failure_recorded_in_both_local_and_global_trackers():
+    """Verify failed request attempts and retries are mirrored to global tracker and maintain counter integrity."""
+    global_cfg = ExperimentBudgetConfig(
+        max_model_requests=10,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    global_tracker = CostTracker(global_cfg)
+
+    algo_cfg = ExperimentBudgetConfig(
+        max_model_requests=5,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    tracker = IsolatedAlgorithmCostTracker(
+        algo_cfg,
+        global_tracker=global_tracker,
+        enforce_global_requests=True,
+    )
+
+    # 1. Non-exhausting failure with retries
+    tracker.record_failed_request(retries=2)
+    assert tracker.total_requests == 3
+    assert tracker.failed_requests == 3
+    assert tracker.retries == 2
+    assert global_tracker.total_requests == 3
+    assert global_tracker.failed_requests == 3
+    assert global_tracker.retries == 2
+
+    # 2. Local budget exhaustion on failure
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted"):
+        tracker.record_failed_request(retries=1)
+
+    # Counters must be mutated despite exception (exception-safety and counter consistency)
+    assert tracker.total_requests == 5
+    assert tracker.failed_requests == 5
+    assert tracker.retries == 3
+    assert global_tracker.total_requests == 5
+    assert global_tracker.failed_requests == 5
+    assert global_tracker.retries == 3
+
+
+def test_multiturn_agent_request_headroom_and_retry_bounding():
+    """Verify agent bounds retries by remaining headroom and blocks requests pre-flight once budget is reached."""
+    cfg = ExperimentBudgetConfig(
+        max_model_requests=2,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    tracker = CostTracker(cfg)
+    provider = FakeProvider(model_name="fake-model")
+    env = MockToolEnvironment()
+    agent = ControlledAgent(
+        provider=provider,
+        mock_env=env,
+        cost_tracker=tracker,
+        max_turns=3,
+    )
+
+    # Headroom retry bounding check: with 2 requests remaining, allowed retries is 1
+    remaining_requests = tracker.config.max_model_requests - tracker.total_requests
+    assert max(0, remaining_requests - 1) == 1
+
+    # Prompt triggers calculator tool call on turn 1 and final answer on turn 2
+    trace = agent.run_session(
+        system_prompt="You are an automated accounting agent. Always use available tools for calculations.",
+        user_prompt="Calculate the total expense reimbursement for receipts of $150 and $250 using the calculator tool.",
+        tools=[CALCULATOR_TOOL_DEF],
+    )
+
+    # Turn 1 executed tool; turn 2 completed answer and hit the request cap of 2
+    assert len(trace.tool_executions) == 1
+    assert trace.tool_executions[0].tool_name == "calculator"
+    assert tracker.total_requests == 2
+    assert trace.finish_reason == "stop"
+    assert "400" in trace.final_response
+
+    # With remaining headroom = 0, retry bounding produces 0
+    remaining_now = tracker.config.max_model_requests - tracker.total_requests
+    assert max(0, remaining_now - 1) == 0
+
+    # Any subsequent request is blocked pre-flight without sending network calls
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted before request"):
+        tracker.check_budget_before_request()
+
+    # Agent running a new session aborts on turn 1 pre-flight without incrementing requests
+    trace2 = agent.run_session(
+        system_prompt="",
+        user_prompt="Follow-up question",
+        tools=[],
+    )
+    assert trace2.finish_reason == "budget_exhausted"
+    assert "budget exhausted before request" in trace2.error_message
+    assert tracker.total_requests == 2
+
+
+def test_suite_wide_request_limit_enforced_across_algorithms():
+    """Verify that cumulative suite-wide request limit is enforced across multiple algorithms."""
+    from agentxray.providers.base import UsageMetadata
+
+    # Suite cap: 6 total requests across all algorithms
+    global_cfg = ExperimentBudgetConfig(
+        max_model_requests=6,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    global_tracker = CostTracker(global_cfg)
+
+    # Each algorithm has local allowance of 5 requests
+    algo_cfg = ExperimentBudgetConfig(
+        max_model_requests=5,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+
+    t1 = IsolatedAlgorithmCostTracker(
+        algo_cfg,
+        global_tracker=global_tracker,
+        enforce_global_requests=True,
+    )
+    t2 = IsolatedAlgorithmCostTracker(
+        algo_cfg,
+        global_tracker=global_tracker,
+        enforce_global_requests=True,
+    )
+
+    usage = UsageMetadata(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+
+    # Algorithm 1 executes 4 requests (within local limit 5 and global limit 6)
+    for _ in range(4):
+        t1.check_budget_before_request()
+        t1.record_usage(usage)
+
+    assert t1.total_requests == 4
+    assert global_tracker.total_requests == 4
+
+    # Algorithm 2 starts fresh locally. First request succeeds (global reaches 5).
+    t2.check_budget_before_request()
+    t2.record_usage(usage)
+    assert t2.total_requests == 1
+    assert global_tracker.total_requests == 5
+
+    # 2nd request for algorithm 2 raises CostBudgetExceededError on record_usage because global limit (6) is hit
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted"):
+        t2.check_budget_before_request()
+        t2.record_usage(usage)
+
+    assert t2.total_requests == 2
+    assert global_tracker.total_requests == 6
+
+    # Subsequent request is blocked pre-flight by check_budget_before_request
+    with pytest.raises(CostBudgetExceededError, match="Global benchmark model request budget exhausted before request"):
+        t2.check_budget_before_request()
+
+
+def test_local_usage_recording_exhaustion_updates_global_tracker_before_raising():
+    """Verify global tracker records usage even when local tracker raises CostBudgetExceededError on exhaustion."""
+    from agentxray.providers.base import UsageMetadata
+
+    global_cfg = ExperimentBudgetConfig(
+        max_model_requests=10,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    global_tracker = CostTracker(global_cfg)
+
+    algo_cfg = ExperimentBudgetConfig(
+        max_model_requests=2,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    tracker = IsolatedAlgorithmCostTracker(
+        algo_cfg,
+        global_tracker=global_tracker,
+        enforce_global_requests=True,
+    )
+
+    usage = UsageMetadata(prompt_tokens=50, completion_tokens=25, total_tokens=75)
+
+    # Request 1: succeeds locally and globally
+    tracker.check_budget_before_request(est_prompt_tokens=50)
+    tracker.record_usage(usage)
+    assert tracker.total_requests == 1
+    assert tracker.successful_requests == 1
+    assert tracker.total_tokens == 75
+    assert global_tracker.total_requests == 1
+    assert global_tracker.successful_requests == 1
+    assert global_tracker.total_tokens == 75
+
+    # Request 2: reaches local limit (2 >= 2) -> record_usage raises CostBudgetExceededError
+    tracker.check_budget_before_request(est_prompt_tokens=50)
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted: executed 2 requests"):
+        tracker.record_usage(usage)
+
+    # Counter mutation & exception safety: global tracker MUST record request 2 and its tokens
+    assert tracker.total_requests == 2
+    assert tracker.successful_requests == 2
+    assert tracker.total_tokens == 150
+    assert global_tracker.total_requests == 2
+    assert global_tracker.successful_requests == 2
+    assert global_tracker.total_tokens == 150
+
+    # Subsequent request is blocked pre-flight before sending any provider request
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted before request"):
+        tracker.check_budget_before_request(est_prompt_tokens=50)
+
+    # Counters remain unchanged after pre-flight block
+    assert tracker.total_requests == 2
+    assert global_tracker.total_requests == 2
+
+
+def test_global_usage_recording_exhaustion_halts_local_execution_and_updates_counters():
+    """Verify local tracker halts when global request limit is hit, with consistent counter mutation."""
+    from agentxray.providers.base import UsageMetadata
+
+    global_cfg = ExperimentBudgetConfig(
+        max_model_requests=2,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    global_tracker = CostTracker(global_cfg)
+
+    algo_cfg = ExperimentBudgetConfig(
+        max_model_requests=10,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    tracker = IsolatedAlgorithmCostTracker(
+        algo_cfg,
+        global_tracker=global_tracker,
+        enforce_global_requests=True,
+    )
+
+    usage = UsageMetadata(prompt_tokens=40, completion_tokens=20, total_tokens=60)
+
+    # Request 1: OK
+    tracker.check_budget_before_request(est_prompt_tokens=40)
+    tracker.record_usage(usage)
+    assert tracker.total_requests == 1
+    assert global_tracker.total_requests == 1
+
+    # Request 2: reaches global limit (2 >= 2) -> record_usage raises CostBudgetExceededError from global tracker
+    tracker.check_budget_before_request(est_prompt_tokens=40)
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted"):
+        tracker.record_usage(usage)
+
+    # Both counters are updated to 2
+    assert tracker.total_requests == 2
+    assert tracker.total_tokens == 120
+    assert global_tracker.total_requests == 2
+    assert global_tracker.total_tokens == 120
+
+    # Subsequent request is blocked pre-flight by global check
+    with pytest.raises(CostBudgetExceededError, match="Global benchmark model request budget exhausted before request"):
+        tracker.check_budget_before_request(est_prompt_tokens=40)
+
+    # No phantom requests
+    assert tracker.total_requests == 2
+    assert global_tracker.total_requests == 2
+
+
+def test_spend_post_response_enforcement_and_subsequent_request_prevention():
+    """Verify spend is enforced post-response when completion tokens exceed limit, blocking subsequent requests."""
+    from agentxray.providers.base import UsageMetadata
+
+    # $100 per 1M input, $100 per 1M output ($0.0001 per 1 token)
+    cfg = ExperimentBudgetConfig(
+        max_model_requests=10,
+        max_spend_usd=0.0010,
+        model_name="fake-model",
+        custom_pricing_per_1m=(100.0, 100.0),
+    )
+    tracker = CostTracker(cfg)
+
+    # Pre-request check: 4 prompt tokens ($0.0004 USD < $0.0010 USD) passes
+    tracker.check_budget_before_request(est_prompt_tokens=4)
+
+    # Response returns 4 prompt tokens + 10 completion tokens = 14 tokens ($0.0014 USD > $0.0010 USD)
+    usage = UsageMetadata(prompt_tokens=4, completion_tokens=10, total_tokens=14)
+
+    # Post-response enforcement: record_usage records the incurred spend and raises CostBudgetExceededError
+    with pytest.raises(CostBudgetExceededError, match="Estimated spend budget exhausted"):
+        tracker.record_usage(usage)
+
+    assert tracker.total_requests == 1
+    assert tracker.estimated_spend_usd == 0.0014
+
+    # Any subsequent request with projected tokens is blocked pre-flight before sending
+    with pytest.raises(CostBudgetExceededError, match="Estimated spend budget would be exceeded before request"):
+        tracker.check_budget_before_request(est_prompt_tokens=4)
+
+    # Even a request with 0 estimated prompt tokens is blocked because current spend >= max_spend_usd
+    with pytest.raises(CostBudgetExceededError, match="Estimated spend budget exhausted before request"):
+        tracker.check_budget_before_request(est_prompt_tokens=0)
+
+    assert tracker.total_requests == 1  # No phantom requests attempted
+
+
+def test_failed_request_global_accounting_and_subsequent_call_prevention():
+    """Demonstrate local exhaustion cannot prevent global accounting and global exhaustion halts further calls."""
+    global_cfg = ExperimentBudgetConfig(
+        max_model_requests=5,
+        max_spend_usd=10.0,
+        model_name="fake-model",
+    )
+    global_tracker = CostTracker(global_cfg)
+
+    # Local tracker 1 has quota 2
+    algo1_cfg = ExperimentBudgetConfig(
+        max_model_requests=2,
+        max_spend_usd=10.0,
+        model_name="fake-model",
+    )
+    t1 = IsolatedAlgorithmCostTracker(algo1_cfg, global_tracker=global_tracker, enforce_global_requests=True)
+
+    # 1. t1 experiences a failure with 1 retry (2 requests attempted). Hits local cap (2 >= 2).
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted: executed 2 requests"):
+        t1.record_failed_request(retries=1)
+
+    # Local exhaustion DID NOT prevent global accounting:
+    assert t1.total_requests == 2
+    assert t1.failed_requests == 2
+    assert t1.retries == 1
+    assert global_tracker.total_requests == 2
+    assert global_tracker.failed_requests == 2
+    assert global_tracker.retries == 1
+
+    # Local tracker 1 is blocked pre-flight
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted before request"):
+        t1.check_budget_before_request()
+
+    # 2. Local tracker 2 starts for next algorithm with quota 5, attached to the same global tracker
+    algo2_cfg = ExperimentBudgetConfig(
+        max_model_requests=5,
+        max_spend_usd=10.0,
+        model_name="fake-model",
+    )
+    t2 = IsolatedAlgorithmCostTracker(algo2_cfg, global_tracker=global_tracker, enforce_global_requests=True)
+
+    # t2 pre-flight check passes initially (local 0 < 5, global 2 < 5)
+    t2.check_budget_before_request()
+
+    # t2 experiences a failed request with 2 retries (3 requests attempted).
+    # Global tracker reaches 2 + 3 = 5 >= 5!
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted: executed 5 requests"):
+        t2.record_failed_request(retries=2)
+
+    assert t2.total_requests == 3
+    assert t2.failed_requests == 3
+    assert t2.retries == 2
+    assert global_tracker.total_requests == 5
+    assert global_tracker.failed_requests == 5
+    assert global_tracker.retries == 3
+
+    # Now global exhaustion prevents ALL subsequent calls across all trackers pre-flight
+    with pytest.raises(CostBudgetExceededError, match="Global benchmark model request budget exhausted before request"):
+        t2.check_budget_before_request()
+
+    # Counter remains at 5: no subsequent provider calls attempted
+    assert global_tracker.total_requests == 5
+    assert t2.total_requests == 3
+
+
+def test_exact_boundary_final_answer_vs_tool_call_exhaustion():
+    """Verify exact boundary behavior when total_requests reaches max_model_requests.
+
+    1. Case A (final answer): when response has no tool calls and brings total_requests == max_model_requests,
+       ControlledAgent preserves and returns its content with finish_reason='stop'. No extra request is issued.
+    2. Case B (tool call): when response requests a tool call but remaining budget is 0,
+       ControlledAgent reports budget_exhausted appropriately and blocks further turns.
+    3. Safety Rule: in both cases, no further provider request can start after limit is reached.
+    """
+    from agentxray.providers.base import ModelResponse, UsageMetadata
+
+    # Case A: Model gives a complete final answer on the single allowed request
+    cfg_a = ExperimentBudgetConfig(max_model_requests=1, max_spend_usd=5.0, model_name="fake-model")
+    tracker_a = CostTracker(cfg_a)
+    provider_a = FakeProvider(custom_handler=lambda msgs, tools: ModelResponse(
+        content="The answer is 42.",
+        tool_calls=(),
+        finish_reason="stop",
+        model_identifier="fake-model",
+        usage=UsageMetadata(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+    ))
+    agent_a = ControlledAgent(
+        provider=provider_a,
+        mock_env=MockToolEnvironment(),
+        cost_tracker=tracker_a,
+        max_turns=3,
+    )
+    trace_a = agent_a.run_session(system_prompt="", user_prompt="What is 40 + 2?")
+
+    # Preserved final answer:
+    assert trace_a.finish_reason == "stop"
+    assert trace_a.final_response == "The answer is 42."
+    assert trace_a.error_message is None
+    assert tracker_a.total_requests == 1
+    assert provider_a.request_count == 1  # Exactly 1 request issued
+
+    # Safety rule: subsequent request is blocked pre-flight without sending extra provider request
+    with pytest.raises(CostBudgetExceededError, match="budget exhausted before request"):
+        tracker_a.check_budget_before_request()
+
+    trace_a2 = agent_a.run_session(system_prompt="", user_prompt="Follow-up question")
+    assert trace_a2.finish_reason == "budget_exhausted"
+    assert trace_a2.final_response == ""
+    assert provider_a.request_count == 1  # Still 1: no extra provider request was attempted!
+
+    # Case B: Model requests tool call, but budget is 1 (so remaining budget for Turn 2 is zero)
+    cfg_b = ExperimentBudgetConfig(max_model_requests=1, max_spend_usd=5.0, model_name="fake-model")
+    tracker_b = CostTracker(cfg_b)
+    provider_b = FakeProvider(model_name="fake-model")
+    agent_b = ControlledAgent(
+        provider=provider_b,
+        mock_env=MockToolEnvironment(),
+        cost_tracker=tracker_b,
+        max_turns=3,
+    )
+    trace_b = agent_b.run_session(
+        system_prompt="Always use tools.",
+        user_prompt="Calculate 150 + 250 using calculator",
+        tools=[CALCULATOR_TOOL_DEF],
+    )
+
+    # In Case B, exhaustion reporting is legitimate because Turn 2 cannot proceed
+    assert trace_b.finish_reason == "budget_exhausted"
+    assert trace_b.final_response == ""
+    assert tracker_b.total_requests == 1
+    assert provider_b.request_count == 1  # Exactly 1 request issued, no subsequent turns
+
+    # Safety rule: subsequent request blocked pre-flight
+    with pytest.raises(CostBudgetExceededError, match="budget exhausted before request"):
+        tracker_b.check_budget_before_request()
+
+
+def test_spend_cap_breach_on_final_text_response_halts_with_budget_exhausted():
+    """Verify that a final text response exceeding max_spend_usd is NOT suppressed as successful.
+
+    Even if tool_calls is empty, if estimated spend meets or exceeds the spend cap,
+    ControlledAgent halts with finish_reason='budget_exhausted' and empty final_response.
+    """
+    from agentxray.providers.base import ModelResponse, UsageMetadata
+
+    # $100 per 1M tokens = $0.0001 per token.
+    # Cap is $0.0030 USD.
+    cfg = ExperimentBudgetConfig(
+        max_model_requests=5,
+        max_spend_usd=0.0030,
+        custom_pricing_per_1m=(100.0, 100.0),
+        model_name="fake-model",
+    )
+    tracker = CostTracker(cfg)
+    # Pre-flight for "Generate response" (17 chars // 4 + 20 = 24 tokens) projects $0.0024 < $0.0030 USD (passes).
+    # Actual response returns 24 prompt tokens + 20 completion tokens = 44 tokens ($0.0044 USD >= $0.0030 USD).
+    provider = FakeProvider(
+        custom_handler=lambda msgs, tools: ModelResponse(
+            content="Expensive final answer",
+            tool_calls=(),
+            finish_reason="stop",
+            model_identifier="fake-model",
+            usage=UsageMetadata(prompt_tokens=24, completion_tokens=20, total_tokens=44),
+        )
+    )
+    agent = ControlledAgent(
+        provider=provider,
+        mock_env=MockToolEnvironment(),
+        cost_tracker=tracker,
+        max_turns=3,
+    )
+    trace = agent.run_session(system_prompt="", user_prompt="Generate response")
+
+    assert trace.finish_reason == "budget_exhausted"
+    assert trace.final_response == ""
+    assert "Estimated spend budget exhausted" in trace.error_message
+    assert tracker.total_requests == 1
+    assert provider.request_count == 1  # Request completed before spend breach was detected post-response
+    assert tracker.estimated_spend_usd == 0.0044
+    assert tracker.is_spend_exceeded is True
+
+    # Pre-flight guard blocks further requests
+    with pytest.raises(CostBudgetExceededError, match="Estimated spend budget exhausted before request"):
+        tracker.check_budget_before_request(est_prompt_tokens=0)
+
+
+def test_global_spend_cap_breach_on_final_text_response_halts_with_budget_exhausted():
+    """Verify that an enforced global spend breach on a final text response halts with budget_exhausted.
+
+    Even if local spend and request budget are well within limits, if global spend cap is
+    breached by the response, ControlledAgent reports budget_exhausted.
+    """
+    from agentxray.providers.base import ModelResponse, UsageMetadata
+
+    # $100 per 1M tokens = $0.0001 per token.
+    # Global cap is $0.0050 USD.
+    global_cfg = ExperimentBudgetConfig(
+        max_model_requests=10,
+        max_spend_usd=0.0050,
+        custom_pricing_per_1m=(100.0, 100.0),
+        model_name="fake-model",
+    )
+    global_tracker = CostTracker(global_cfg)
+
+    algo_cfg = ExperimentBudgetConfig(
+        max_model_requests=5,
+        max_spend_usd=1.0,
+        custom_pricing_per_1m=(100.0, 100.0),
+        model_name="fake-model",
+    )
+
+    # Prior algorithm consumed $0.0020 USD (20 tokens)
+    prior_usage = UsageMetadata(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+    global_tracker.record_usage(prior_usage)
+    assert global_tracker.estimated_spend_usd == 0.0020
+
+    algo2_tracker = IsolatedAlgorithmCostTracker(
+        algo_cfg,
+        global_tracker=global_tracker,
+        enforce_global_spend=True,
+    )
+
+    # Pre-flight for "Question" (8 chars // 4 + 20 = 22 tokens) projects $0.0022 USD.
+    # Global spend $0.0020 + projected $0.0022 = $0.0042 < $0.0050 USD (passes pre-flight).
+    # Next algorithm response: 20 prompt + 20 completion = 40 tokens ($0.0040 USD).
+    # Global spend reaches $0.0020 + $0.0040 = $0.0060 >= $0.0050 USD.
+    provider = FakeProvider(
+        custom_handler=lambda msgs, tools: ModelResponse(
+            content="Answer breaching global spend",
+            tool_calls=(),
+            finish_reason="stop",
+            model_identifier="fake-model",
+            usage=UsageMetadata(prompt_tokens=20, completion_tokens=20, total_tokens=40),
+        )
+    )
+    agent = ControlledAgent(
+        provider=provider,
+        mock_env=MockToolEnvironment(),
+        cost_tracker=algo2_tracker,
+        max_turns=3,
+    )
+    trace = agent.run_session(system_prompt="", user_prompt="Question")
+
+    assert trace.finish_reason == "budget_exhausted"
+    assert trace.final_response == ""
+    assert "spend budget exhausted" in trace.error_message
+    assert algo2_tracker.total_requests == 1
+    assert provider.request_count == 1  # Request completed before global spend breach was detected post-response
+    assert global_tracker.total_requests == 2
+    assert global_tracker.estimated_spend_usd == 0.0060
+    assert algo2_tracker.is_spend_exceeded is True
+
+    # Pre-flight guard blocks further requests
+    with pytest.raises(CostBudgetExceededError, match="Global estimated spend budget"):
+        algo2_tracker.check_budget_before_request(est_prompt_tokens=0)
+
+
+def test_request_count_overflow_via_retries_halts_with_budget_exhausted():
+    """Verify that request count strictly exceeding limit via retries halts with budget_exhausted.
+
+    If max_model_requests is 1, but the provider call required 1 retry (2 attempted requests),
+    total_requests strictly exceeds the limit (2 > 1). Even though the final answer succeeded
+    without tool calls, ControlledAgent must not treat it as a valid under-budget completion.
+    """
+    from agentxray.providers.base import ModelResponse, UsageMetadata
+
+    cfg = ExperimentBudgetConfig(
+        max_model_requests=1,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    tracker = CostTracker(cfg)
+    provider = FakeProvider(
+        custom_handler=lambda msgs, tools: ModelResponse(
+            content="Recovered answer after 1 retry",
+            tool_calls=(),
+            finish_reason="stop",
+            model_identifier="fake-model",
+            usage=UsageMetadata(prompt_tokens=10, completion_tokens=5, total_tokens=15, retries=1),
+        )
+    )
+    agent = ControlledAgent(
+        provider=provider,
+        mock_env=MockToolEnvironment(),
+        cost_tracker=tracker,
+        max_turns=3,
+    )
+    trace = agent.run_session(system_prompt="", user_prompt="Compute something")
+
+    assert trace.finish_reason == "budget_exhausted"
+    assert trace.final_response == ""
+    assert "Model request budget exhausted: executed 2 requests (limit: 1)" in trace.error_message
+    assert tracker.total_requests == 2
+    assert tracker.retries == 1
+    assert tracker.is_request_cap_exceeded is True
+
+    # Pre-flight guard blocks subsequent requests
+    with pytest.raises(CostBudgetExceededError, match="Model request budget exhausted before request"):
+        tracker.check_budget_before_request()
+
+
+def test_enforced_global_request_overflow_halts_with_budget_exhausted():
+    """Verify that enforced global request count strictly exceeding limit halts with budget_exhausted.
+
+    When enforce_global_requests=True and global total_requests strictly exceeds global limit
+    (e.g., via retries), ControlledAgent halts with finish_reason='budget_exhausted'.
+    """
+    from agentxray.providers.base import ModelResponse, UsageMetadata
+
+    global_cfg = ExperimentBudgetConfig(
+        max_model_requests=2,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+    global_tracker = CostTracker(global_cfg)
+
+    algo_cfg = ExperimentBudgetConfig(
+        max_model_requests=5,
+        max_spend_usd=5.0,
+        model_name="fake-model",
+    )
+
+    # Algorithm 1 executes 1 request
+    t1 = IsolatedAlgorithmCostTracker(algo_cfg, global_tracker=global_tracker, enforce_global_requests=True)
+    t1.record_usage(UsageMetadata(prompt_tokens=10, completion_tokens=10, total_tokens=20))
+    assert global_tracker.total_requests == 1
+
+    # Algorithm 2 executes a call with 1 retry (2 attempted requests)
+    # Global requests become 1 + 2 = 3 > 2 (strictly exceeded)
+    t2 = IsolatedAlgorithmCostTracker(algo_cfg, global_tracker=global_tracker, enforce_global_requests=True)
+    provider = FakeProvider(
+        custom_handler=lambda msgs, tools: ModelResponse(
+            content="Answer after retry breaching global request cap",
+            tool_calls=(),
+            finish_reason="stop",
+            model_identifier="fake-model",
+            usage=UsageMetadata(prompt_tokens=10, completion_tokens=5, total_tokens=15, retries=1),
+        )
+    )
+    agent = ControlledAgent(
+        provider=provider,
+        mock_env=MockToolEnvironment(),
+        cost_tracker=t2,
+        max_turns=3,
+    )
+    trace = agent.run_session(system_prompt="", user_prompt="Compute something")
+
+    assert trace.finish_reason == "budget_exhausted"
+    assert trace.final_response == ""
+    assert "Model request budget exhausted: executed 3 requests (limit: 2)" in trace.error_message
+    assert t2.total_requests == 2
+    assert global_tracker.total_requests == 3
+    assert t2.is_request_cap_exceeded is True
+
+    # Pre-flight guard blocks further requests
+    with pytest.raises(CostBudgetExceededError, match="Global benchmark model request budget exhausted before request"):
+        t2.check_budget_before_request()
