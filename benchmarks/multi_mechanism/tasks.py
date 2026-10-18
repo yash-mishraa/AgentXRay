@@ -19,7 +19,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from agentxray.agent_harness.agent import AgentExecutionTrace, ControlledAgent
-from agentxray.agent_harness.cost_tracker import CostTracker, ExperimentBudgetConfig
+from agentxray.agent_harness.cost_tracker import (
+    CostBudgetExceededError,
+    CostTracker,
+    ExperimentBudgetConfig,
+)
 from agentxray.agent_harness.evaluator import AgentOutcomeEvaluator, ToolCallingTaskEvaluator
 from agentxray.agent_harness.target import ModelBackedAgentTarget
 from agentxray.agent_harness.tools import (
@@ -60,7 +64,6 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
 
     def execute(self, input_case: InputCase) -> TargetResult:
         """Execute the agent on the given input_case and determine outcome."""
-        self._call_count += 1
         system_prompt, user_prompt = self._compose_prompts(input_case)
 
         # Run agent to generate realistic trace and consume tokens/budget
@@ -69,6 +72,15 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
             user_prompt=user_prompt,
             tools=self.tools,
         )
+        self._last_trace = trace
+
+        # Immediately halt on hard budget breach
+        if trace.finish_reason == "budget_exhausted":
+            raise CostBudgetExceededError(
+                trace.error_message or "Model request or cost budget exhausted during target execution."
+            )
+
+        self._call_count += 1
 
         # Check failure predicate for observable mechanism symptoms
         if self._failure_predicate is not None:

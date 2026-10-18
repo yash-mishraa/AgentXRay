@@ -9,7 +9,11 @@ import random
 from typing import Any, Callable, Sequence
 
 from agentxray.agent_harness.agent import AgentExecutionTrace
-from agentxray.agent_harness.cost_tracker import CostTracker, ExperimentBudgetConfig
+from agentxray.agent_harness.cost_tracker import (
+    CostBudgetExceededError,
+    CostTracker,
+    ExperimentBudgetConfig,
+)
 from agentxray.llm_judge import LLMJudgeBaseline
 from agentxray.models import (
     DiagnosticOutcome,
@@ -278,16 +282,35 @@ def evaluate_mechanism_three_way(
     initial_input = spec.create_initial_input(seed=mech_seed)
 
     # 2. Run initial unablated execution (Trial 1) to generate baseline trace
-    base_res = target.execute(initial_input)
-    init_trace = target.last_trace or AgentExecutionTrace(
-        messages=(),
-        final_response=base_res.output_message,
-        finish_reason="stop",
-        error_message=base_res.output_message if not base_res.is_success else None,
-    )
-    init_requests = target.call_count
-    init_tokens = init_trace.total_tokens
-    init_cost = init_trace.estimated_cost_usd
+    init_req_start = cost_tracker.total_requests if cost_tracker is not None else 0
+    init_tok_start = cost_tracker.total_tokens if cost_tracker is not None else 0
+    init_spend_start = cost_tracker.estimated_spend_usd if cost_tracker is not None else 0.0
+    prov_start = getattr(prov, "request_count", 0)
+
+    try:
+        base_res = target.execute(initial_input)
+        init_trace = target.last_trace or AgentExecutionTrace(
+            messages=(),
+            final_response=base_res.output_message,
+            finish_reason="stop",
+            error_message=base_res.output_message if not base_res.is_success else None,
+        )
+    except CostBudgetExceededError as exc:
+        init_trace = target.last_trace or AgentExecutionTrace(
+            messages=(),
+            final_response="Initial execution skipped: budget exhausted.",
+            finish_reason="budget_exhausted",
+            error_message=str(exc),
+        )
+
+    if cost_tracker is not None:
+        init_requests = cost_tracker.total_requests - init_req_start
+        init_tokens = cost_tracker.total_tokens - init_tok_start
+        init_cost = round(cost_tracker.estimated_spend_usd - init_spend_start, 7)
+    else:
+        init_requests = getattr(prov, "request_count", 0) - prov_start
+        init_tokens = init_trace.total_tokens
+        init_cost = round(init_trace.estimated_cost_usd, 7)
 
     # ----------------------------------------------------
     # Method A: Active Stochastic Delta Debugging
@@ -301,14 +324,45 @@ def evaluate_mechanism_three_way(
             trials_per_candidate=trials_per_candidate,
             failure_threshold=0.30,
         )
+        req_start = cost_tracker.total_requests if cost_tracker is not None else 0
+        p_tok_start = cost_tracker.prompt_tokens if cost_tracker is not None else 0
+        c_tok_start = cost_tracker.completion_tokens if cost_tracker is not None else 0
+        t_tok_start = cost_tracker.total_tokens if cost_tracker is not None else 0
+        spend_start = cost_tracker.estimated_spend_usd if cost_tracker is not None else 0.0
+        prov_start = getattr(prov, "request_count", 0)
+
         cond = minimizer.minimize(initial_input)
+
+        if cost_tracker is not None:
+            model_reqs = cost_tracker.total_requests - req_start
+            p_tok = cost_tracker.prompt_tokens - p_tok_start
+            c_tok = cost_tracker.completion_tokens - c_tok_start
+            t_tok = cost_tracker.total_tokens - t_tok_start
+            spend = cost_tracker.estimated_spend_usd - spend_start
+        elif hasattr(prov, "request_count"):
+            model_reqs = getattr(prov, "request_count", 0) - prov_start
+            p_tok = 0
+            c_tok = 0
+            t_tok = 0
+            spend = 0.0
+        else:
+            model_reqs = 0
+            p_tok = 0
+            c_tok = 0
+            t_tok = 0
+            spend = 0.0
 
         # Task-semantic validity determination:
         if cond.status == SearchStatus.INFRA_FAILURE:
             is_valid = False
             cand_set = None
             term_reason = "infra_failure"
-        elif cond.status in (SearchStatus.BUDGET_EXHAUSTED, SearchStatus.TIMEOUT) and len(cond.subset_elements) == 0:
+        elif cond.status in (SearchStatus.BUDGET_EXHAUSTED, SearchStatus.TIMEOUT) and (
+            len(cond.subset_elements) == 0
+            or cond.target_calls_used == 0
+            or cond.candidate_evaluation.trials == 0
+            or not cond.is_failure
+        ):
             is_valid = False
             cand_set = None
             term_reason = "budget_exhausted" if cond.status == SearchStatus.BUDGET_EXHAUSTED else "timeout"
@@ -331,7 +385,11 @@ def evaluate_mechanism_three_way(
             verification_status=cond.minimality_status.value,
             termination_reason=term_reason,
             target_calls_used=cond.target_calls_used,
-            model_requests=cond.total_model_requests or cond.target_calls_used,
+            model_requests=model_reqs,
+            prompt_tokens=p_tok,
+            completion_tokens=c_tok,
+            total_tokens=t_tok,
+            estimated_cost_usd=spend,
             diagnostics=cond.status_message,
         )
 
@@ -350,13 +408,45 @@ def evaluate_mechanism_three_way(
         greedy_target = spec.create_target(provider=prov, cost_tracker=cost_tracker)
         cfg = ExperimentConfig(experiment_name=f"{spec.mechanism_id}_greedy", max_trials=max_trials)
         runner = InterventionRunner(config=cfg, target_fn=greedy_target.execute)
+        req_start = cost_tracker.total_requests if cost_tracker is not None else 0
+        p_tok_start = cost_tracker.prompt_tokens if cost_tracker is not None else 0
+        c_tok_start = cost_tracker.completion_tokens if cost_tracker is not None else 0
+        t_tok_start = cost_tracker.total_tokens if cost_tracker is not None else 0
+        spend_start = cost_tracker.estimated_spend_usd if cost_tracker is not None else 0.0
+        prov_start = getattr(prov, "request_count", 0)
+
         res = run_stochastic_greedy_ablation(
             initial_input=initial_input,
             runner=runner,
             trials_per_candidate=trials_per_candidate,
             failure_threshold=0.30,
         )
-        if res.budget_exhausted and len(res.discovered_elements) == 0:
+
+        if cost_tracker is not None:
+            model_reqs = cost_tracker.total_requests - req_start
+            p_tok = cost_tracker.prompt_tokens - p_tok_start
+            c_tok = cost_tracker.completion_tokens - c_tok_start
+            t_tok = cost_tracker.total_tokens - t_tok_start
+            spend = cost_tracker.estimated_spend_usd - spend_start
+        elif hasattr(prov, "request_count"):
+            model_reqs = getattr(prov, "request_count", 0) - prov_start
+            p_tok = 0
+            c_tok = 0
+            t_tok = 0
+            spend = 0.0
+        else:
+            model_reqs = 0
+            p_tok = 0
+            c_tok = 0
+            t_tok = 0
+            spend = 0.0
+
+        if res.budget_exhausted and (
+            len(res.discovered_elements) == 0
+            or res.target_calls == 0
+            or res.candidate_evaluation.trials == 0
+            or not res.failure_reproduced
+        ):
             is_valid = False
             cand_set = None
             term_reason = "budget_exhausted"
@@ -375,7 +465,11 @@ def evaluate_mechanism_three_way(
             verification_status=res.minimality_status.value,
             termination_reason=term_reason,
             target_calls_used=res.target_calls,
-            model_requests=res.total_model_requests or res.target_calls,
+            model_requests=model_reqs,
+            prompt_tokens=p_tok,
+            completion_tokens=c_tok,
+            total_tokens=t_tok,
+            estimated_cost_usd=spend,
         )
 
     greedy_outcome = run_with_infra_guard(
@@ -517,6 +611,10 @@ def run_multi_mechanism_benchmark(
     req_greedy = [ev.greedy_ablation_outcome.model_requests for ev in evaluable_evs]
     req_judge = [ev.llm_judge_outcome.model_requests for ev in evaluable_evs]
 
+    tc_dd = [ev.active_dd_outcome.target_calls_used for ev in evaluable_evs]
+    tc_greedy = [ev.greedy_ablation_outcome.target_calls_used for ev in evaluable_evs]
+    tc_judge = [ev.llm_judge_outcome.target_calls_used for ev in evaluable_evs]
+
     secondary = {
         "pooled_fdr": {"active_dd": fdr_dd, "greedy_ablation": fdr_greedy, "llm_judge": fdr_judge},
         "mean_fdp": {"active_dd": fdp_dd, "greedy_ablation": fdp_greedy, "llm_judge": fdp_judge},
@@ -529,6 +627,11 @@ def run_multi_mechanism_benchmark(
             "active_dd": round(sum(req_dd) / max(1, len(req_dd)), 2),
             "greedy_ablation": round(sum(req_greedy) / max(1, len(req_greedy)), 2),
             "llm_judge": round(sum(req_judge) / max(1, len(req_judge)), 2),
+        },
+        "mean_target_calls": {
+            "active_dd": round(sum(tc_dd) / max(1, len(tc_dd)), 2),
+            "greedy_ablation": round(sum(tc_greedy) / max(1, len(tc_greedy)), 2),
+            "llm_judge": round(sum(tc_judge) / max(1, len(tc_judge)), 2),
         },
         "protocol_deviations": deviation_log,
     }
