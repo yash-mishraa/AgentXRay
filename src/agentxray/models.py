@@ -262,8 +262,12 @@ class StochasticDiscoveredCondition(BaseModel):
     verification_status: str | None = Field(default=None, description="Execution status of verification.")
     evidence_tier: str | None = Field(default=None, description="Evidence tier ('exploratory' or 'confirmatory').")
     sample_size_rationale: str | None = Field(default=None, description="Sample size rationale ('exploratory_default', 'unresolved_user_specified', etc.).")
-    sample_size_validation_status: str = Field(default="not_applicable", description="Validation status of sample size / statistical power ('not_applicable', 'not_implemented', 'unresolved', 'validated').")
+    sample_size_validation_status: str = Field(default="not_applicable", description="Validation status of sample size / statistical power ('not_applicable', 'not_implemented', 'unresolved', 'validated', 'range_exhausted', 'invalid_inputs').")
     confirmatory_power_established: bool = Field(default=False, description="Whether confirmatory power was established by an approved sample size rationale.")
+    planned_sample_size_adequate: bool = Field(default=False, description="Whether planned sample size was >= required n*.")
+    prospective_power_validated: bool = Field(default=False, description="Whether prospective sample size solver validated the design.")
+    execution_protocol_adherent: bool = Field(default=True, description="Whether all planned trials completed without crashes/timeouts/missingness.")
+    missingness_sensitivity_status: str = Field(default="not_applicable", description="Status of worst-case sensitivity imputation: 'not_applicable', 'robust', 'fragile'.")
     subsets_examined: int = Field(default=0, ge=0, description="Count of distinct candidate subsets evaluated.")
     status_message: str = Field(default="", description="Detailed narrative.")
 
@@ -278,16 +282,16 @@ class StochasticDiscoveredCondition(BaseModel):
                 f"with evidence_tier={self.evidence_tier!r}."
             )
 
-        if self.confirmatory_power_established and val_status in ("unresolved", "not_implemented", "not_applicable", ""):
+        if self.confirmatory_power_established and val_status in ("unresolved", "not_implemented", "not_applicable", "range_exhausted", "invalid_inputs", ""):
             raise ValueError(
                 f"Invalid evidentiary state: confirmatory_power_established=True cannot coexist "
                 f"with sample_size_validation_status={self.sample_size_validation_status!r}."
             )
 
-        if self.confirmatory_power_established:
+        if self.confirmatory_power_established and not self.planned_sample_size_adequate:
             raise ValueError(
-                "Invalid evidentiary claim: confirmatory_power_established cannot be True because "
-                "automated prospective power analysis is not implemented in AgentXRay."
+                "Invalid evidentiary claim: confirmatory_power_established cannot be True without "
+                "validated prospective power and adequate planned sample size (planned_sample_size_adequate=True)."
             )
 
         if self.evidence_tier is None and self.verification_status is None and val_status == "validated":
@@ -316,9 +320,12 @@ class StochasticBaselineComparison(BaseModel):
     total_model_requests: int = Field(default=0, ge=0, description="Total model provider requests consumed.")
     verification_status: str | None = Field(default=None, description="Execution status of verification.")
     evidence_tier: str | None = Field(default=None, description="Evidence tier ('exploratory' or 'confirmatory').")
-    sample_size_rationale: str | None = Field(default=None, description="Sample size rationale ('exploratory_default', 'unresolved_user_specified', etc.).")
-    sample_size_validation_status: str = Field(default="not_applicable", description="Validation status of sample size / statistical power ('not_applicable', 'not_implemented', 'unresolved', 'validated').")
+    sample_size_validation_status: str = Field(default="not_applicable", description="Validation status of sample size / statistical power ('not_applicable', 'not_implemented', 'unresolved', 'validated', 'range_exhausted', 'invalid_inputs').")
     confirmatory_power_established: bool = Field(default=False, description="Whether confirmatory power was established by an approved sample size rationale.")
+    planned_sample_size_adequate: bool = Field(default=False, description="Whether planned sample size was >= required n*.")
+    prospective_power_validated: bool = Field(default=False, description="Whether prospective sample size solver validated the design.")
+    execution_protocol_adherent: bool = Field(default=True, description="Whether all planned trials completed without crashes/timeouts/missingness.")
+    missingness_sensitivity_status: str = Field(default="not_applicable", description="Status of worst-case sensitivity imputation: 'not_applicable', 'robust', 'fragile'.")
     subsets_examined: int = Field(default=0, ge=0, description="Count of distinct candidate subsets evaluated.")
     candidate_evaluation: CandidateEvaluation = Field(..., description="Statistical evaluation of isolated candidate.")
     irrelevant_elements_remaining: int = Field(default=0, ge=0, description="Count of non-causal distractor elements retained.")
@@ -336,16 +343,16 @@ class StochasticBaselineComparison(BaseModel):
                 f"with evidence_tier={self.evidence_tier!r}."
             )
 
-        if self.confirmatory_power_established and val_status in ("unresolved", "not_implemented", "not_applicable", ""):
+        if self.confirmatory_power_established and val_status in ("unresolved", "not_implemented", "not_applicable", "range_exhausted", "invalid_inputs", ""):
             raise ValueError(
                 f"Invalid evidentiary state: confirmatory_power_established=True cannot coexist "
                 f"with sample_size_validation_status={self.sample_size_validation_status!r}."
             )
 
-        if self.confirmatory_power_established:
+        if self.confirmatory_power_established and not self.planned_sample_size_adequate:
             raise ValueError(
-                "Invalid evidentiary claim: confirmatory_power_established cannot be True because "
-                "automated prospective power analysis is not implemented in AgentXRay."
+                "Invalid evidentiary claim: confirmatory_power_established cannot be True without "
+                "validated prospective power and adequate planned sample size (planned_sample_size_adequate=True)."
             )
 
         if self.evidence_tier is None and self.verification_status is None and val_status == "validated":

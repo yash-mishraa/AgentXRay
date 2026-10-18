@@ -444,6 +444,19 @@ def format_model_pilot_markdown_report(report: ModelPilotExperimentReport) -> st
             f"- **Rationale Validation Status**: `{val_stat}`",
             f"- **Confirmatory Power Established**: `{'YES' if power_est else 'NO (Unresolved / Unvalidated)'}`",
         ]
+        prospective_val = getattr(cond, "prospective_power_validated", False)
+        planned_adeq = getattr(cond, "planned_sample_size_adequate", False)
+        proto_adh = getattr(cond, "execution_protocol_adherent", True)
+        miss_stat = getattr(cond, "missingness_sensitivity_status", "not_applicable")
+
+        if prospective_val or planned_adeq or not proto_adh or miss_stat != "not_applicable":
+            task_eval_lines.extend([
+                f"- **Prospective Power Validated**: `{'YES' if prospective_val else 'NO'}`",
+                f"- **Planned Sample Size Adequate**: `{'YES' if planned_adeq else 'NO'}`",
+                f"- **Protocol Adherence**: `{'YES (100% complete)' if proto_adh else 'NO (Protocol deviation / attrition)'}`",
+                f"- **Missingness Sensitivity**: `{miss_stat}`",
+            ])
+
         if e_tier == "confirmatory" and (not power_est or val_stat in ("unresolved", "not_implemented")):
             task_eval_lines.append(
                 "- **Evidentiary Validity Disclosure**: Confirmatory power has not been established (sample-size rationale is unresolved/not implemented; results should not be interpreted as adequately powered confirmatory evidence)."
