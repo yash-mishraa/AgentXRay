@@ -21,6 +21,7 @@ from agentxray.models import (
 from agentxray.providers.base import ModelProvider
 from agentxray.providers.fake import FakeProvider
 from agentxray.providers.ollama_adapter import OllamaProvider
+from agentxray.providers.openai_adapter import OpenAIProvider
 from agentxray.reporting import (
     compute_stochastic_aggregate_metrics,
     format_cohort_summary_sentences,
@@ -232,7 +233,7 @@ def run_model_pilot_benchmark(
                 "Use '--dry-run' to inspect configuration or '--provider fake' for offline testing."
             )
         resolved_model = model_name or "gpt-4o-mini"
-        provider = OpenAIProvider(model_name=resolved_model, timeout_seconds=timeout_seconds)
+        provider = OpenAIProvider(model_name=resolved_model, timeout_seconds=timeout_seconds, seed=seed)
         provider.validate_configuration()
         tier = ExecutionTier.LIVE_MODEL
     elif provider_type == "ollama":

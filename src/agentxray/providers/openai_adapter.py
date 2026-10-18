@@ -49,6 +49,8 @@ class OpenAIProvider(ModelProvider):
 
     Implemented using Python standard library `urllib.request` to avoid third-party
     networking dependencies and ensure complete deployment portability.
+    Supports best-effort sampling reproducibility via the optional `seed` parameter.
+    Note that OpenAI does not guarantee absolute determinism across requests.
     """
 
     def __init__(
@@ -58,11 +60,13 @@ class OpenAIProvider(ModelProvider):
         base_url: str = "https://api.openai.com/v1",
         timeout_seconds: float = 20.0,
         max_retries: int = 2,
+        seed: int | None = None,
     ) -> None:
         self._model_name = model_name
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
+        self._seed = seed
 
         # Credentials must only come from explicit parameter, OPENAI_API_KEY env var, or local gitignored .env
         if api_key is not None:
@@ -88,6 +92,11 @@ class OpenAIProvider(ModelProvider):
     @property
     def model_name(self) -> str:
         return self._model_name
+
+    @property
+    def seed(self) -> int | None:
+        """Configured random seed for best-effort sampling reproducibility."""
+        return self._seed
 
     def validate_configuration(self) -> None:
         """Verify that provider credentials and configuration are valid before live requests."""
@@ -140,6 +149,8 @@ class OpenAIProvider(ModelProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if self._seed is not None:
+            payload["seed"] = self._seed
 
         if tools:
             payload["tools"] = [

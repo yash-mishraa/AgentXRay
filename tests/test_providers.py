@@ -249,4 +249,73 @@ def test_provider_error_attributes():
     assert rl_err.retries == 2
 
 
+def test_openai_request_payload_includes_configured_seed() -> None:
+    """Verify that configured seed reaches the outgoing OpenAI HTTP request payload."""
+    import urllib.request
+    from typing import Any
+    from unittest.mock import MagicMock, patch
 
+    provider = OpenAIProvider(api_key="sk-testmockkey", model_name="gpt-4o-mini", seed=42)
+    assert provider.seed == 42
+
+    captured_requests: list[urllib.request.Request] = []
+    mock_resp_data = {
+        "choices": [{"message": {"role": "assistant", "content": "Seeded response"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps(mock_resp_data).encode("utf-8")
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.__exit__.return_value = False
+
+    def fake_urlopen(req: urllib.request.Request, *args: Any, **kwargs: Any) -> MagicMock:
+        captured_requests.append(req)
+        return mock_resp
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        resp = provider.generate([Message(role="user", content="Hello")], temperature=0.0)
+
+    assert isinstance(resp, ModelResponse)
+    assert len(captured_requests) == 1
+    payload = json.loads(captured_requests[0].data.decode("utf-8"))
+    assert "seed" in payload
+    assert payload["seed"] == 42
+    assert isinstance(payload["seed"], int)
+
+
+def test_openai_request_payload_omits_seed_when_none() -> None:
+    """Verify that when seed is explicitly None, outgoing OpenAI payload omits the seed key."""
+    import urllib.request
+    from typing import Any
+    from unittest.mock import MagicMock, patch
+
+    provider = OpenAIProvider(api_key="sk-testmockkey", model_name="gpt-4o-mini", seed=None)
+    assert provider.seed is None
+
+    captured_requests: list[urllib.request.Request] = []
+    mock_resp_data = {
+        "choices": [{"message": {"role": "assistant", "content": "Unseeded response"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps(mock_resp_data).encode("utf-8")
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.__exit__.return_value = False
+
+    def fake_urlopen(req: urllib.request.Request, *args: Any, **kwargs: Any) -> MagicMock:
+        captured_requests.append(req)
+        return mock_resp
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        resp = provider.generate([Message(role="user", content="Hello")])
+
+    assert isinstance(resp, ModelResponse)
+    assert len(captured_requests) == 1
+    payload = json.loads(captured_requests[0].data.decode("utf-8"))
+    assert "seed" not in payload
+
+
+def test_openai_provider_caller_compatibility_without_seed() -> None:
+    """Verify backwards compatibility for callers instantiating OpenAIProvider without seed."""
+    provider = OpenAIProvider(api_key="sk-testmockkey")
+    assert provider.seed is None

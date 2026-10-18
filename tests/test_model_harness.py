@@ -767,6 +767,36 @@ def test_model_pilot_benchmark_ollama_receives_seed(monkeypatch: pytest.MonkeyPa
     assert captured_init_kwargs.get("seed") == 4321
 
 
+def test_model_pilot_benchmark_openai_receives_seed(monkeypatch: pytest.MonkeyPatch):
+    """Verify run_model_pilot_benchmark passes seed to OpenAIProvider constructor."""
+    from agentxray.providers.openai_adapter import OpenAIProvider
+
+    class MockInitStop(Exception):
+        pass
+
+    captured_init_kwargs: dict = {}
+
+    def mock_init(self, *args, **kwargs):
+        captured_init_kwargs.update(kwargs)
+        raise MockInitStop("OpenAIProvider instantiated with seed")
+
+    monkeypatch.setattr(OpenAIProvider, "__init__", mock_init)
+
+    with pytest.raises(MockInitStop):
+        run_model_pilot_benchmark(
+            provider_type="openai",
+            model_name="gpt-4o-mini",
+            live=True,
+            task_filter="baseline",
+            max_trials=10,
+            max_model_requests=50,
+            seed=9876,
+            output_dir=None,
+        )
+
+    assert captured_init_kwargs.get("seed") == 9876
+
+
 def test_dry_run_model_pilot_seed():
     """Verify dry_run_model_pilot accepts and returns the specified seed."""
     res_default = dry_run_model_pilot()
