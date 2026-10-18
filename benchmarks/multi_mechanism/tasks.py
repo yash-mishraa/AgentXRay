@@ -33,7 +33,7 @@ from agentxray.agent_harness.tools import (
     MockToolEnvironment,
 )
 from agentxray.models import InputCase, TargetOutcome, TargetResult
-from agentxray.providers.base import Message, ModelProvider, ToolCall
+from agentxray.providers.base import Message, ModelProvider, ToolCall, ToolDefinition
 from agentxray.providers.fake import FakeProvider
 from benchmarks.multi_mechanism.ground_truth import MultiMechanismGroundTruthSpec
 
@@ -59,6 +59,8 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
         name: str = "MechanismTarget",
         failure_predicate: Callable[[InputCase], tuple[bool, str]] | None = None,
         target_mode: TargetMode | str = TargetMode.SYNTHETIC_CONTROL,
+        prompt_builder: Callable[[InputCase, str, str], tuple[str, str]] | None = None,
+        tool_builder: Callable[[InputCase, Sequence[ToolDefinition]], Sequence[ToolDefinition]] | None = None,
     ) -> None:
         super().__init__(
             agent=agent,
@@ -67,20 +69,29 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
             base_system_prompt=base_system_prompt,
             tools=tools,
             name=name,
+            prompt_builder=prompt_builder,
         )
         self.mechanism_id = mechanism_id
         self._failure_predicate = failure_predicate
         self.target_mode = TargetMode(target_mode)
+        self._tool_builder = tool_builder
+
+    def _compose_tools(self, input_case: InputCase) -> Sequence[ToolDefinition]:
+        """Compose tools incorporating input_case elements if a tool_builder is provided."""
+        if self._tool_builder is not None:
+            return self._tool_builder(input_case, self.tools)
+        return self.tools
 
     def execute(self, input_case: InputCase) -> TargetResult:
         """Execute the agent on the given input_case and determine outcome."""
         system_prompt, user_prompt = self._compose_prompts(input_case)
+        active_tools = self._compose_tools(input_case)
 
         # Run agent to generate realistic trace and consume tokens/budget
         trace = self.agent.run_session(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            tools=self.tools,
+            tools=active_tools,
         )
         self._last_trace = trace
 
@@ -746,3 +757,167 @@ def create_trace_evaluated_prompt_task() -> TraceEvaluatedPromptTaskSpec:
         is_null_case=False,
         is_conjunctive=False,
     )
+
+
+@dataclass(frozen=True)
+class TraceEvaluatedSchemaTaskSpec:
+    """Specification for an isolated trace-evaluated schema benchmark task (Phase 4.6K.5).
+
+    NOTE: This specification is strictly for offline methodological and pipeline validation
+    using scripted or mock providers. It does NOT represent real LLM diagnostic performance.
+    """
+
+    mechanism_id: str
+    name: str
+    category: str
+    candidate_elements: tuple[str, ...]
+    planted_trigger_elements: tuple[str, ...]
+    description: str = ""
+    observable_failure_symptom: str = ""
+    is_null_case: bool = False
+    is_conjunctive: bool = False
+
+    def create_initial_input(self, seed: int | None = None) -> InputCase:
+        """Return the unablated initial InputCase with optional seeded candidate permutation."""
+        if seed is None:
+            elements = self.candidate_elements
+        else:
+            rng = random.Random(seed)
+            elements = tuple(rng.sample(self.candidate_elements, len(self.candidate_elements)))
+        return InputCase(
+            case_id=self.mechanism_id,
+            elements=elements,
+            description=self.description,
+            metadata={"benchmark_tier": "trace_evaluated_validation"},
+        )
+
+    def get_ground_truth(self) -> MultiMechanismGroundTruthSpec:
+        """Return the isolated ground-truth specification for post-hoc scoring."""
+        distractors = tuple(e for e in self.candidate_elements if e not in self.planted_trigger_elements)
+        return MultiMechanismGroundTruthSpec(
+            mechanism_id=self.mechanism_id,
+            name=self.name,
+            category=self.category,
+            is_null_case=self.is_null_case,
+            is_conjunctive=self.is_conjunctive,
+            trigger_elements=self.planted_trigger_elements,
+            distractor_elements=distractors,
+            description=self.description,
+        )
+
+    def create_target(
+        self,
+        provider: ModelProvider | None = None,
+        cost_tracker: CostTracker | None = None,
+        max_turns: int = 3,
+        failure_predicate: Callable[[InputCase], tuple[bool, str]] | None = None,
+    ) -> MechanismTargetAdapter:
+        """Create target adapter configured in TargetMode.TRACE_EVALUATED for schema fault."""
+        prov = provider or FakeProvider(model_name="fake-trace-schema")
+        tracker = cost_tracker or CostTracker(
+            ExperimentBudgetConfig(max_model_requests=100, max_spend_usd=1.00, model_name=prov.model_name)
+        )
+        env = MockToolEnvironment()
+        agent = ControlledAgent(provider=prov, mock_env=env, cost_tracker=tracker, max_turns=max_turns)
+        evaluator = ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400")
+
+        trigger_elem = self.planted_trigger_elements[0]
+
+        def _tool_builder(input_case: InputCase, base_tools: Sequence[ToolDefinition]) -> Sequence[ToolDefinition]:
+            has_trigger = trigger_elem in input_case.elements
+            derived_tools: list[ToolDefinition] = []
+            for tool in base_tools:
+                if tool.name == "calculator":
+                    if has_trigger:
+                        derived_tools.append(
+                            ToolDefinition(
+                                name="calculator",
+                                description=tool.description,
+                                parameters={
+                                    "type": "object",
+                                    "properties": {
+                                        "expr": {
+                                            "type": "string",
+                                            "description": "Mathematical expression to evaluate, e.g. '150 + 250' or '42 * 10'.",
+                                        }
+                                    },
+                                    "required": ["expr"],
+                                },
+                            )
+                        )
+                    else:
+                        derived_tools.append(
+                            ToolDefinition(
+                                name="calculator",
+                                description=tool.description,
+                                parameters={
+                                    "type": "object",
+                                    "properties": {
+                                        "expression": {
+                                            "type": "string",
+                                            "description": "Mathematical expression to evaluate, e.g. '150 + 250' or '42 * 10'.",
+                                        }
+                                    },
+                                    "required": ["expression"],
+                                },
+                            )
+                        )
+                else:
+                    derived_tools.append(
+                        ToolDefinition(
+                            name=tool.name,
+                            description=tool.description,
+                            parameters=dict(tool.parameters),
+                        )
+                    )
+            return tuple(derived_tools)
+
+        def _clean_prompt_builder(ic: InputCase, base_sys: str, user: str) -> tuple[str, str]:
+            return base_sys, user
+
+        return MechanismTargetAdapter(
+            mechanism_id=self.mechanism_id,
+            agent=agent,
+            evaluator=evaluator,
+            user_prompt="Calculate the sum of receipts $150 and $250 using calculator.",
+            base_system_prompt="You are an automated accounting bot.",
+            tools=[CALCULATOR_TOOL_DEF, DATABASE_LOOKUP_TOOL_DEF],
+            name=f"Target_{self.mechanism_id}",
+            failure_predicate=failure_predicate,
+            target_mode=TargetMode.TRACE_EVALUATED,
+            prompt_builder=_clean_prompt_builder,
+            tool_builder=_tool_builder,
+        )
+
+
+def create_trace_evaluated_schema_task() -> TraceEvaluatedSchemaTaskSpec:
+    """Create an isolated trace-evaluated schema mechanism (Phase 4.6K.5).
+
+    Task design:
+    - User Prompt: "Calculate the sum of receipts $150 and $250 using calculator."
+    - Canonical tool schema: calculator(expression: str) -> str
+    - Planted trigger element: Renames calculator parameter from 'expression' to 'expr' in tool schema.
+    - Distractors: 3 benign schema/documentation guidelines that do NOT alter parameter contracts.
+    - Mode: TargetMode.TRACE_EVALUATED.
+    - Evaluator: ToolCallingTaskEvaluator(required_tool="calculator", expected_substring="400").
+    - Isolation: Not registered in MECHANISM_REGISTRY.
+    """
+    trigger = "schema_calculator_param_expr: Tool 'calculator' requires parameter 'expr' instead of 'expression'."
+    distractor_1 = "schema_calculator_desc: Tool 'calculator' description notes standard operator precedence rules."
+    distractor_2 = "schema_calculator_precision: Tool 'calculator' documentation specifies 6-decimal-place rounding precision."
+    distractor_3 = "schema_db_timeout: Database lookup tool operates with default 5-second connection timeout."
+
+    candidates = (trigger, distractor_1, distractor_2, distractor_3)
+
+    return TraceEvaluatedSchemaTaskSpec(
+        mechanism_id="trace_schema_01_param_key_mismatch",
+        name="Trace-Evaluated Schema Parameter Key Mismatch (Offline Validation)",
+        category="schema",
+        candidate_elements=candidates,
+        planted_trigger_elements=(trigger,),
+        observable_failure_symptom="Missing required argument(s): expression",
+        description="Isolated trace-evaluated schema mismatch fault where calculator parameter is renamed from 'expression' to 'expr'.",
+        is_null_case=False,
+        is_conjunctive=False,
+    )
+
