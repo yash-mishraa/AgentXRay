@@ -20,7 +20,7 @@ class ExperimentBudgetConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     max_model_requests: int = Field(default=50, gt=0, description="Hard cap on model calls.")
-    max_spend_usd: float = Field(default=0.50, gt=0.0, description="Hard cap on estimated spend in USD.")
+    max_spend_usd: float = Field(default=0.50, ge=0.0, description="Hard cap on estimated spend in USD.")
     max_retries_per_request: int = Field(default=2, ge=0, description="Max retries for transient errors.")
     request_timeout_seconds: float = Field(default=20.0, gt=0.0, description="Per-request HTTP timeout.")
     model_name: str = Field(default="gpt-4o-mini", description="Target model identifier.")
@@ -38,8 +38,9 @@ class ExperimentBudgetConfig(BaseModel):
 class CostTracker:
     """Tracks token consumption, records model requests, and halts when budgets are breached."""
 
-    def __init__(self, config: ExperimentBudgetConfig) -> None:
+    def __init__(self, config: ExperimentBudgetConfig, provider: Any = None) -> None:
         self.config = config
+        self._provider = provider
         self.total_requests = 0
         self.successful_requests = 0
         self.failed_requests = 0
@@ -70,7 +71,25 @@ class CostTracker:
                 f"custom_pricing_per_1m=(input_usd_per_1m, output_usd_per_1m) or choose from {list(MODEL_PRICING_PER_1M.keys())}."
             )
 
-    def check_budget_before_request(self, est_prompt_tokens: int = 0) -> None:
+    def bind_provider(self, provider: Any) -> None:
+        """Bind an active provider instance to this cost tracker."""
+        self._provider = provider
+
+    def is_guaranteed_local_provider(self, provider: Any = None) -> bool:
+        """Verify that the given or bound provider is an exact approved local OllamaProvider on loopback."""
+        prov = provider if provider is not None else self._provider
+        if prov is None:
+            return False
+        from agentxray.providers.ollama_adapter import OllamaProvider
+        if type(prov) is not OllamaProvider:
+            return False
+        base_url = getattr(prov, "base_url", getattr(prov, "_base_url", ""))
+        import urllib.parse
+        parsed = urllib.parse.urlparse(base_url)
+        hostname = (parsed.hostname or "").lower()
+        return hostname in ("127.0.0.1", "localhost", "::1")
+
+    def check_budget_before_request(self, est_prompt_tokens: int = 0, provider: Any = None) -> None:
         """Verify that request count and projected spend are within limits before initiating a call."""
         if self.total_requests >= self.config.max_model_requests:
             raise CostBudgetExceededError(
@@ -78,24 +97,48 @@ class CostTracker:
                 f"(limit: {self.config.max_model_requests})."
             )
 
-        if est_prompt_tokens > 0:
-            est_call_cost = (est_prompt_tokens * self._pricing[0]) / 1_000_000.0
-            if (self.estimated_spend_usd + est_call_cost) >= self.config.max_spend_usd:
+        if self.config.max_spend_usd == 0.0:
+            if not self.is_guaranteed_local_provider(provider):
+                prov_name = type(provider or self._provider).__name__ if (provider or self._provider) else "None"
                 raise CostBudgetExceededError(
-                    f"Estimated spend budget would be exceeded before request: current ${self.estimated_spend_usd:.4f} USD + "
-                    f"projected ${est_call_cost:.4f} USD >= limit ${self.config.max_spend_usd:.4f} USD."
+                    f"Zero-spend budget (max_spend_usd=0.0) is strictly restricted to local execution using an approved "
+                    f"OllamaProvider bound to local loopback (127.0.0.1, localhost, or ::1). Got provider: '{prov_name}'."
                 )
-        elif self.estimated_spend_usd >= self.config.max_spend_usd:
-            raise CostBudgetExceededError(
-                f"Estimated spend budget exhausted before request: reached ${self.estimated_spend_usd:.4f} USD "
-                f"(limit: ${self.config.max_spend_usd:.4f} USD)."
-            )
+            if self._pricing != (0.0, 0.0):
+                raise CostBudgetExceededError(
+                    f"Zero-spend budget (max_spend_usd=0.0) requires zero pricing (0.0, 0.0), but model "
+                    f"'{self.config.model_name}' has non-zero pricing {self._pricing}."
+                )
+            if self.estimated_spend_usd > 0.0:
+                raise CostBudgetExceededError(
+                    f"Estimated spend budget exhausted before request: reached ${self.estimated_spend_usd:.4f} USD "
+                    f"(limit: $0.0000 USD)."
+                )
+            est_call_cost = (est_prompt_tokens * self._pricing[0]) / 1_000_000.0 if est_prompt_tokens > 0 else 0.0
+            if est_call_cost > 0.0:
+                raise CostBudgetExceededError(
+                    f"Estimated spend budget would be exceeded before request: projected call cost ${est_call_cost:.4f} USD > $0.0000 USD."
+                )
+        else:
+            if est_prompt_tokens > 0:
+                est_call_cost = (est_prompt_tokens * self._pricing[0]) / 1_000_000.0
+                if (self.estimated_spend_usd + est_call_cost) >= self.config.max_spend_usd:
+                    raise CostBudgetExceededError(
+                        f"Estimated spend budget would be exceeded before request: current ${self.estimated_spend_usd:.4f} USD + "
+                        f"projected ${est_call_cost:.4f} USD >= limit ${self.config.max_spend_usd:.4f} USD."
+                    )
+            elif self.estimated_spend_usd >= self.config.max_spend_usd:
+                raise CostBudgetExceededError(
+                    f"Estimated spend budget exhausted before request: reached ${self.estimated_spend_usd:.4f} USD "
+                    f"(limit: ${self.config.max_spend_usd:.4f} USD)."
+                )
 
     def record_usage(
         self,
         usage: UsageMetadata,
         success: bool = True,
         retries: int = 0,
+        provider: Any = None,
     ) -> None:
         """Record model request outcomes and verify safety budgets.
 
@@ -135,11 +178,24 @@ class CostTracker:
             )
 
         # Enforce spend cap
-        if self.estimated_spend_usd >= self.config.max_spend_usd:
-            raise CostBudgetExceededError(
-                f"Estimated spend budget exhausted: reached ${self.estimated_spend_usd:.4f} USD "
-                f"(limit: ${self.config.max_spend_usd:.4f} USD)."
-            )
+        if self.config.max_spend_usd == 0.0:
+            if not self.is_guaranteed_local_provider(provider):
+                prov_name = type(provider or self._provider).__name__ if (provider or self._provider) else "None"
+                raise CostBudgetExceededError(
+                    f"Zero-spend budget (max_spend_usd=0.0) is strictly restricted to local execution using an approved "
+                    f"OllamaProvider bound to local loopback (127.0.0.1, localhost, or ::1). Got provider: '{prov_name}'."
+                )
+            if self.estimated_spend_usd > 0.0 or self._pricing != (0.0, 0.0):
+                raise CostBudgetExceededError(
+                    f"Estimated spend budget exhausted: reached ${self.estimated_spend_usd:.4f} USD "
+                    f"(limit: $0.0000 USD)."
+                )
+        else:
+            if self.estimated_spend_usd >= self.config.max_spend_usd:
+                raise CostBudgetExceededError(
+                    f"Estimated spend budget exhausted: reached ${self.estimated_spend_usd:.4f} USD "
+                    f"(limit: ${self.config.max_spend_usd:.4f} USD)."
+                )
 
     def record_failed_request(self, retries: int = 0) -> None:
         """Record a request attempt that failed before receiving usage telemetry."""
@@ -165,6 +221,12 @@ class CostTracker:
         total_comp = total_requests * est_completion_tokens_per_turn
         est_spend = (total_prompt * self._pricing[0] + total_comp * self._pricing[1]) / 1_000_000.0
 
+        within_spend = (
+            est_spend == 0.0
+            if self.config.max_spend_usd == 0.0
+            else est_spend <= self.config.max_spend_usd
+        )
+
         return {
             "model_name": self.config.model_name,
             "planned_trials": planned_trials,
@@ -177,7 +239,7 @@ class CostTracker:
             "pricing_per_1m_output": f"${self._pricing[1]:.2f}",
             "estimated_spend_usd": round(est_spend, 5),
             "max_allowed_spend_usd": self.config.max_spend_usd,
-            "within_budget": (total_requests <= self.config.max_model_requests and est_spend <= self.config.max_spend_usd),
+            "within_budget": (total_requests <= self.config.max_model_requests and within_spend),
         }
 
     def get_summary(self) -> dict[str, Any]:
@@ -198,6 +260,8 @@ class CostTracker:
     @property
     def is_spend_exceeded(self) -> bool:
         """Return True if estimated spend has reached or exceeded configured budget."""
+        if self.config.max_spend_usd == 0.0:
+            return self.estimated_spend_usd > 0.0
         return self.estimated_spend_usd >= self.config.max_spend_usd
 
     @property
@@ -236,6 +300,12 @@ class IsolatedAlgorithmCostTracker(CostTracker):
         self.enforce_global_spend = enforce_global_spend
         self.enforce_global_requests = enforce_global_requests
 
+    def bind_provider(self, provider: Any) -> None:
+        """Bind an active provider instance to this cost tracker and global tracker."""
+        super().bind_provider(provider)
+        if self.global_tracker is not None and hasattr(self.global_tracker, "bind_provider"):
+            self.global_tracker.bind_provider(provider)
+
     @property
     def is_spend_exceeded(self) -> bool:
         """Return True if local spend or enforced global spend has reached or exceeded budget."""
@@ -271,10 +341,10 @@ class IsolatedAlgorithmCostTracker(CostTracker):
             return min(local_hr, self.global_tracker.remaining_request_headroom)
         return local_hr
 
-    def check_budget_before_request(self, est_prompt_tokens: int = 0) -> None:
+    def check_budget_before_request(self, est_prompt_tokens: int = 0, provider: Any = None) -> None:
         """Verify local algorithm allowance and global safety limits before request."""
         # 1. Enforce local algorithm request and spend allowance
-        super().check_budget_before_request(est_prompt_tokens)
+        super().check_budget_before_request(est_prompt_tokens, provider=provider)
 
         # 2. Enforce global safety limits if global_tracker is attached
         if self.global_tracker is not None:
@@ -288,41 +358,64 @@ class IsolatedAlgorithmCostTracker(CostTracker):
                     f"(global limit: {self.global_tracker.config.max_model_requests})."
                 )
             if self.enforce_global_spend:
-                if est_prompt_tokens > 0:
-                    est_call_cost = (est_prompt_tokens * self.global_tracker._pricing[0]) / 1_000_000.0
-                    if (self.global_tracker.estimated_spend_usd + est_call_cost) >= self.global_tracker.config.max_spend_usd:
+                if self.global_tracker.config.max_spend_usd == 0.0:
+                    if not self.global_tracker.is_guaranteed_local_provider(provider):
+                        prov_name = type(provider or self.global_tracker._provider).__name__ if (provider or self.global_tracker._provider) else "None"
                         raise CostBudgetExceededError(
-                            f"Global estimated spend budget would be exceeded before request: "
-                            f"current ${self.global_tracker.estimated_spend_usd:.4f} USD + "
-                            f"projected ${est_call_cost:.4f} USD >= limit ${self.global_tracker.config.max_spend_usd:.4f} USD."
+                            "Global zero-spend budget (max_spend_usd=0.0) is strictly restricted to local execution "
+                            f"using an approved OllamaProvider bound to local loopback. Got provider: '{prov_name}'."
                         )
-                elif self.global_tracker.estimated_spend_usd >= self.global_tracker.config.max_spend_usd:
-                    raise CostBudgetExceededError(
-                        f"Global estimated spend budget exhausted before request: "
-                        f"reached ${self.global_tracker.estimated_spend_usd:.4f} USD "
-                        f"(global limit: ${self.global_tracker.config.max_spend_usd:.4f} USD)."
-                    )
+                    if self.global_tracker._pricing != (0.0, 0.0):
+                        raise CostBudgetExceededError(
+                            f"Global zero-spend budget requires zero pricing (0.0, 0.0), but model has non-zero pricing {self.global_tracker._pricing}."
+                        )
+                    if self.global_tracker.estimated_spend_usd > 0.0:
+                        raise CostBudgetExceededError(
+                            f"Global estimated spend budget exhausted before request: "
+                            f"reached ${self.global_tracker.estimated_spend_usd:.4f} USD (limit: $0.0000 USD)."
+                        )
+                    est_call_cost = (est_prompt_tokens * self.global_tracker._pricing[0]) / 1_000_000.0 if est_prompt_tokens > 0 else 0.0
+                    if est_call_cost > 0.0:
+                        raise CostBudgetExceededError(
+                            f"Global estimated spend budget would be exceeded before request: projected call cost ${est_call_cost:.4f} USD > $0.0000 USD."
+                        )
+                else:
+                    if est_prompt_tokens > 0:
+                        est_call_cost = (est_prompt_tokens * self.global_tracker._pricing[0]) / 1_000_000.0
+                        if (self.global_tracker.estimated_spend_usd + est_call_cost) >= self.global_tracker.config.max_spend_usd:
+                            raise CostBudgetExceededError(
+                                f"Global estimated spend budget would be exceeded before request: "
+                                f"current ${self.global_tracker.estimated_spend_usd:.4f} USD + "
+                                f"projected ${est_call_cost:.4f} USD >= limit ${self.global_tracker.config.max_spend_usd:.4f} USD."
+                            )
+                    elif self.global_tracker.estimated_spend_usd >= self.global_tracker.config.max_spend_usd:
+                        raise CostBudgetExceededError(
+                            f"Global estimated spend budget exhausted before request: "
+                            f"reached ${self.global_tracker.estimated_spend_usd:.4f} USD "
+                            f"(global limit: ${self.global_tracker.config.max_spend_usd:.4f} USD)."
+                        )
 
     def record_usage(
         self,
         usage: UsageMetadata,
         success: bool = True,
         retries: int = 0,
+        provider: Any = None,
     ) -> None:
         """Record model request outcomes in both local algorithm tracker and global tracker."""
         local_exc: CostBudgetExceededError | None = None
         try:
-            super().record_usage(usage, success=success, retries=retries)
+            super().record_usage(usage, success=success, retries=retries, provider=provider)
         except CostBudgetExceededError as exc:
             local_exc = exc
 
         # Always mirror into global tracker so cumulative resource consumption is fully accounted
         if self.global_tracker is not None:
             try:
-                self.global_tracker.record_usage(usage, success=success, retries=retries)
+                self.global_tracker.record_usage(usage, success=success, retries=retries, provider=provider)
             except CostBudgetExceededError as g_exc:
                 if (
-                    self.global_tracker.estimated_spend_usd >= self.global_tracker.config.max_spend_usd
+                    self.global_tracker.is_spend_exceeded
                     and self.enforce_global_spend
                 ):
                     if local_exc is None or not super().is_spend_exceeded:
@@ -420,10 +513,31 @@ class IsolatedPhaseCostTracker(IsolatedAlgorithmCostTracker):
             return min(local_hr, self.global_tracker.remaining_request_headroom)
         return local_hr
 
-    def check_budget_before_request(self, est_prompt_tokens: int = 0) -> None:
+    def check_budget_before_request(self, est_prompt_tokens: int = 0, provider: Any = None) -> None:
         """Verify local phase request allowance and global safety limits before request."""
         # Check local spend limit
-        if self.estimated_spend_usd >= self.config.max_spend_usd:
+        if self.config.max_spend_usd == 0.0:
+            if not self.is_guaranteed_local_provider(provider):
+                prov_name = type(provider or self._provider).__name__ if (provider or self._provider) else "None"
+                raise CostBudgetExceededError(
+                    "Phase zero-spend budget (max_spend_usd=0.0) is strictly restricted to local execution "
+                    f"using an approved OllamaProvider bound to local loopback. Got provider: '{prov_name}'."
+                )
+            if self._pricing != (0.0, 0.0):
+                raise CostBudgetExceededError(
+                    f"Phase zero-spend budget requires zero pricing (0.0, 0.0), but model has non-zero pricing {self._pricing}."
+                )
+            if self.estimated_spend_usd > 0.0:
+                raise CostBudgetExceededError(
+                    f"Estimated spend budget exhausted before request: "
+                    f"reached ${self.estimated_spend_usd:.4f} USD (limit: $0.0000 USD)."
+                )
+            est_call_cost = (est_prompt_tokens * self._pricing[0]) / 1_000_000.0 if est_prompt_tokens > 0 else 0.0
+            if est_call_cost > 0.0:
+                raise CostBudgetExceededError(
+                    f"Estimated spend budget would be exceeded before request: projected call cost ${est_call_cost:.4f} USD > $0.0000 USD."
+                )
+        elif self.estimated_spend_usd >= self.config.max_spend_usd:
             raise CostBudgetExceededError(
                 f"Estimated spend budget exhausted before request: "
                 f"reached ${self.estimated_spend_usd:.4f} USD (limit: ${self.config.max_spend_usd:.4f} USD)."
@@ -448,26 +562,49 @@ class IsolatedPhaseCostTracker(IsolatedAlgorithmCostTracker):
                     f"(global limit: {self.global_tracker.config.max_model_requests})."
                 )
             if self.enforce_global_spend:
-                if est_prompt_tokens > 0:
-                    est_call_cost = (est_prompt_tokens * self.global_tracker._pricing[0]) / 1_000_000.0
-                    if (self.global_tracker.estimated_spend_usd + est_call_cost) >= self.global_tracker.config.max_spend_usd:
+                if self.global_tracker.config.max_spend_usd == 0.0:
+                    if not self.global_tracker.is_guaranteed_local_provider(provider):
+                        prov_name = type(provider or self.global_tracker._provider).__name__ if (provider or self.global_tracker._provider) else "None"
                         raise CostBudgetExceededError(
-                            f"Global estimated spend budget would be exceeded before request: "
-                            f"current ${self.global_tracker.estimated_spend_usd:.4f} USD + "
-                            f"projected ${est_call_cost:.4f} USD >= limit ${self.global_tracker.config.max_spend_usd:.4f} USD."
+                            "Global zero-spend budget (max_spend_usd=0.0) is strictly restricted to local execution "
+                            f"using an approved OllamaProvider bound to local loopback. Got provider: '{prov_name}'."
                         )
-                elif self.global_tracker.estimated_spend_usd >= self.global_tracker.config.max_spend_usd:
-                    raise CostBudgetExceededError(
-                        f"Global estimated spend budget exhausted before request: "
-                        f"reached ${self.global_tracker.estimated_spend_usd:.4f} USD "
-                        f"(global limit: ${self.global_tracker.config.max_spend_usd:.4f} USD)."
-                    )
+                    if self.global_tracker._pricing != (0.0, 0.0):
+                        raise CostBudgetExceededError(
+                            f"Global zero-spend budget requires zero pricing (0.0, 0.0), but model has non-zero pricing {self.global_tracker._pricing}."
+                        )
+                    if self.global_tracker.estimated_spend_usd > 0.0:
+                        raise CostBudgetExceededError(
+                            f"Global estimated spend budget exhausted before request: "
+                            f"reached ${self.global_tracker.estimated_spend_usd:.4f} USD (limit: $0.0000 USD)."
+                        )
+                    est_call_cost = (est_prompt_tokens * self.global_tracker._pricing[0]) / 1_000_000.0 if est_prompt_tokens > 0 else 0.0
+                    if est_call_cost > 0.0:
+                        raise CostBudgetExceededError(
+                            f"Global estimated spend budget would be exceeded before request: projected call cost ${est_call_cost:.4f} USD > $0.0000 USD."
+                        )
+                else:
+                    if est_prompt_tokens > 0:
+                        est_call_cost = (est_prompt_tokens * self.global_tracker._pricing[0]) / 1_000_000.0
+                        if (self.global_tracker.estimated_spend_usd + est_call_cost) >= self.global_tracker.config.max_spend_usd:
+                            raise CostBudgetExceededError(
+                                f"Global estimated spend budget would be exceeded before request: "
+                                f"current ${self.global_tracker.estimated_spend_usd:.4f} USD + "
+                                f"projected ${est_call_cost:.4f} USD >= limit ${self.global_tracker.config.max_spend_usd:.4f} USD."
+                            )
+                    elif self.global_tracker.estimated_spend_usd >= self.global_tracker.config.max_spend_usd:
+                        raise CostBudgetExceededError(
+                            f"Global estimated spend budget exhausted before request: "
+                            f"reached ${self.global_tracker.estimated_spend_usd:.4f} USD "
+                            f"(global limit: ${self.global_tracker.config.max_spend_usd:.4f} USD)."
+                        )
 
     def record_usage(
         self,
         usage: UsageMetadata,
         success: bool = True,
         retries: int = 0,
+        provider: Any = None,
     ) -> None:
         """Record model request outcomes in phase tracker and mirror to global tracker."""
         self.total_requests += (1 + retries)
@@ -486,7 +623,19 @@ class IsolatedPhaseCostTracker(IsolatedAlgorithmCostTracker):
         self.estimated_spend_usd = round(self.estimated_spend_usd + call_cost, 7)
 
         local_exc: CostBudgetExceededError | None = None
-        if self.estimated_spend_usd >= self.config.max_spend_usd:
+        if self.config.max_spend_usd == 0.0:
+            if not self.is_guaranteed_local_provider(provider):
+                prov_name = type(provider or self._provider).__name__ if (provider or self._provider) else "None"
+                local_exc = CostBudgetExceededError(
+                    f"Phase zero-spend budget (max_spend_usd=0.0) is strictly restricted to local execution using an approved "
+                    f"OllamaProvider bound to local loopback (127.0.0.1, localhost, or ::1). Got provider: '{prov_name}'."
+                )
+            elif self.estimated_spend_usd > 0.0 or self._pricing != (0.0, 0.0):
+                local_exc = CostBudgetExceededError(
+                    f"Phase estimated spend budget exhausted: reached ${self.estimated_spend_usd:.4f} USD "
+                    f"(limit: $0.0000 USD)."
+                )
+        elif self.estimated_spend_usd >= self.config.max_spend_usd:
             local_exc = CostBudgetExceededError(
                 f"Estimated spend budget exhausted: reached ${self.estimated_spend_usd:.4f} USD "
                 f"(limit: ${self.config.max_spend_usd:.4f} USD)."
@@ -499,13 +648,13 @@ class IsolatedPhaseCostTracker(IsolatedAlgorithmCostTracker):
 
         if self.global_tracker is not None:
             try:
-                self.global_tracker.record_usage(usage, success=success, retries=retries)
+                self.global_tracker.record_usage(usage, success=success, retries=retries, provider=provider)
             except CostBudgetExceededError as g_exc:
                 if (
-                    self.global_tracker.estimated_spend_usd >= self.global_tracker.config.max_spend_usd
+                    self.global_tracker.is_spend_exceeded
                     and self.enforce_global_spend
                 ):
-                    if local_exc is None or not (self.estimated_spend_usd >= self.config.max_spend_usd):
+                    if local_exc is None or not self.is_spend_exceeded:
                         local_exc = g_exc
                 elif self.enforce_global_requests:
                     if local_exc is None or not (self.total_requests > self.max_phase_requests):

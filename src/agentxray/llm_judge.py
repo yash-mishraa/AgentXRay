@@ -96,6 +96,8 @@ class LLMJudgeBaseline:
     ) -> None:
         self.provider = provider
         self.cost_tracker = cost_tracker
+        if self.cost_tracker is not None and hasattr(self.cost_tracker, "bind_provider"):
+            self.cost_tracker.bind_provider(provider)
         self.max_retries = max_retries  # At most 1 initial + max_retries retries = 3 total attempts
 
     def diagnose(
@@ -145,7 +147,7 @@ class LLMJudgeBaseline:
             # Budget guard before request
             if self.cost_tracker is not None:
                 try:
-                    self.cost_tracker.check_budget_before_request(est_prompt_tokens=250)
+                    self.cost_tracker.check_budget_before_request(est_prompt_tokens=250, provider=self.provider)
                 except CostBudgetExceededError:
                     return LLMJudgeResult(
                         predicted_candidate_set=None,
@@ -176,7 +178,7 @@ class LLMJudgeBaseline:
 
             if self.cost_tracker is not None:
                 try:
-                    self.cost_tracker.record_usage(response.usage, success=True, retries=0)
+                    self.cost_tracker.record_usage(response.usage, success=True, retries=0, provider=self.provider)
                 except CostBudgetExceededError:
                     return LLMJudgeResult(
                         predicted_candidate_set=None,

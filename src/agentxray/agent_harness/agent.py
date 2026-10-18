@@ -154,6 +154,8 @@ class ControlledAgent:
         self.provider = provider
         self.mock_env = mock_env
         self.cost_tracker = cost_tracker
+        if hasattr(cost_tracker, "bind_provider"):
+            cost_tracker.bind_provider(provider)
         self.max_turns = max_turns
 
     def run_session(
@@ -184,7 +186,7 @@ class ControlledAgent:
             # Pre-flight budget check before initiating request
             est_prompt = sum(len(m.content) for m in messages) // 4 + 20
             try:
-                self.cost_tracker.check_budget_before_request(est_prompt_tokens=est_prompt)
+                self.cost_tracker.check_budget_before_request(est_prompt_tokens=est_prompt, provider=self.provider)
             except CostBudgetExceededError as budget_exc:
                 error_msg = str(budget_exc)
                 finish_reason = "budget_exhausted"
@@ -262,6 +264,7 @@ class ControlledAgent:
                     response.usage,
                     success=True,
                     retries=response.usage.retries,
+                    provider=self.provider,
                 )
             except CostBudgetExceededError as budget_exc:
                 budget_exc_caught = budget_exc
