@@ -476,3 +476,139 @@ class ModelPilotExperimentReport(BaseModel):
     )
 
 
+class DiagnosticOutcome(BaseModel):
+    """Normalized diagnostic result for a single fault localization method on a single mechanism."""
+
+    model_config = ConfigDict(frozen=True)
+
+    mechanism_id: str = Field(..., description="Unique identifier of the independent mechanism.")
+    method_name: str = Field(..., description="Method evaluated: 'active_dd', 'greedy_ablation', or 'llm_judge'.")
+    predicted_candidate_set: tuple[str, ...] | None = Field(
+        default=None,
+        description="Isolated candidate element IDs, empty tuple () for null prediction, or None if no evaluable set produced.",
+    )
+    is_valid_diagnosis: bool = Field(
+        ...,
+        description="True if method produced an evaluable candidate set (including ()). False if unparseable or aborted.",
+    )
+    false_attribution_indicator: int | None = Field(
+        default=None,
+        description="Primary binary metric Y in {0, 1}. None (NA) if and only if is_valid_diagnosis is False.",
+    )
+    exact_recovery_indicator: int | None = Field(
+        default=None,
+        description="Secondary metric R_exact in {0, 1}. 1 if predicted_candidate_set == S_true, 0 if != S_true, None if infra failure.",
+    )
+    verification_status: str = Field(
+        default="not_applicable",
+        description="Classification: 'statistically_supported', 'observed_only', 'inconclusive', 'not_verified', or 'not_applicable'.",
+    )
+    termination_reason: str = Field(
+        default="normal_completion",
+        description="Reason: 'normal_completion', 'budget_exhausted', 'malformed_output', 'timeout', or 'infra_failure'.",
+    )
+    target_calls_used: int = Field(default=0, ge=0, description="Target calls consumed by this method.")
+    model_requests: int = Field(default=0, ge=0, description="Model provider requests consumed.")
+    prompt_tokens: int = Field(default=0, ge=0, description="Prompt tokens consumed.")
+    completion_tokens: int = Field(default=0, ge=0, description="Completion tokens consumed.")
+    total_tokens: int = Field(default=0, ge=0, description="Total tokens consumed.")
+    estimated_cost_usd: float = Field(default=0.0, ge=0.0, description="Estimated USD expenditure.")
+    diagnostics: str = Field(default="", description="Human-readable execution diagnostics.")
+
+
+class LLMJudgeResult(BaseModel):
+    """Structured result of passive LLM judge fault localization."""
+
+    model_config = ConfigDict(frozen=True)
+
+    predicted_candidate_set: tuple[str, ...] | None = Field(default=None, description="Culprit element IDs, () if empty, or None.")
+    is_valid_diagnosis: bool = Field(default=False, description="Whether output conformed to schema and candidate IDs.")
+    attempts_used: int = Field(default=1, ge=0, le=3, description="Total prompt attempts executed (1 + up to 2 retries).")
+    termination_reason: str = Field(default="normal_completion", description="Termination status.")
+    prompt_tokens: int = Field(default=0, ge=0, description="Prompt tokens consumed across attempts.")
+    completion_tokens: int = Field(default=0, ge=0, description="Completion tokens consumed across attempts.")
+    total_tokens: int = Field(default=0, ge=0, description="Total tokens consumed.")
+    estimated_cost_usd: float = Field(default=0.0, ge=0.0, description="Estimated USD cost.")
+    rationale: str = Field(default="", description="Explanatory rationale emitted by judge.")
+    raw_responses: tuple[str, ...] = Field(default=(), description="Raw text responses across all attempts.")
+
+
+class LLMJudgeComparison(BaseModel):
+    """Comparative outcome from passive LLM judge baseline matching standard baseline schemas."""
+
+    model_config = ConfigDict(frozen=True)
+
+    baseline_name: str = Field(default="llm_judge", description="Baseline identifier.")
+    discovered_elements: tuple[str, ...] = Field(default=(), description="Elements isolated by judge.")
+    predicted_candidate_set: tuple[str, ...] | None = Field(default=None, description="Formal candidate prediction.")
+    is_valid_diagnosis: bool = Field(default=False, description="Whether diagnosis is valid.")
+    false_attribution_indicator: int | None = Field(default=None, description="False-attribution indicator Y.")
+    exact_recovery_indicator: int | None = Field(default=None, description="Exact recovery indicator R_exact.")
+    attempts_used: int = Field(default=1, ge=1, le=3, description="Attempts consumed.")
+    total_model_requests: int = Field(default=1, ge=0, description="Total model requests.")
+    prompt_tokens: int = Field(default=0, ge=0, description="Prompt tokens.")
+    completion_tokens: int = Field(default=0, ge=0, description="Completion tokens.")
+    total_tokens: int = Field(default=0, ge=0, description="Total tokens.")
+    estimated_cost_usd: float = Field(default=0.0, ge=0.0, description="Estimated USD spend.")
+    termination_reason: str = Field(default="normal_completion", description="Termination reason.")
+    matches_ground_truth: bool = Field(default=False, description="Whether discovered elements match ground truth.")
+    rationale: str = Field(default="", description="Explanation emitted by judge.")
+    raw_output: str = Field(default="", description="Raw output text.")
+
+
+class MechanismEvaluationResult(BaseModel):
+    """Three-way evaluation result on an independent benchmark mechanism."""
+
+    model_config = ConfigDict(frozen=True)
+
+    mechanism_id: str = Field(..., description="Unique mechanism identifier.")
+    mechanism_name: str = Field(..., description="Human-readable mechanism name.")
+    category: str = Field(..., description="Category: prompt, schema, environment, conjunctive, null_clean, null_bloat, null_ext.")
+    is_null_case: bool = Field(default=False, description="Whether this is a negative null control.")
+    is_conjunctive: bool = Field(default=False, description="Whether failure requires multiple interacting elements.")
+    initial_elements: tuple[str, ...] = Field(..., description="All candidate elements in initial input.")
+    ground_truth_trigger: tuple[str, ...] = Field(..., description="Planted ground-truth causal elements.")
+    active_dd_outcome: DiagnosticOutcome = Field(..., description="Outcome from Active Delta Debugging.")
+    greedy_ablation_outcome: DiagnosticOutcome = Field(..., description="Outcome from Active Greedy Ablation.")
+    llm_judge_outcome: DiagnosticOutcome = Field(..., description="Outcome from Passive LLM Judge.")
+    initial_trace_requests: int = Field(default=1, ge=0, description="Requests consumed to generate baseline failing trace.")
+    initial_trace_tokens: int = Field(default=0, ge=0, description="Tokens consumed to generate baseline trace.")
+    initial_trace_cost_usd: float = Field(default=0.0, ge=0.0, description="Cost of initial trace generation.")
+
+
+class ExploratoryBenchmarkReport(BaseModel):
+    """Consolidated experimental report for Phase 4.6 exploratory benchmark."""
+
+    model_config = ConfigDict(frozen=True)
+
+    experiment_name: str = Field(..., description="Experiment name.")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Completion timestamp.")
+    n_total: int = Field(default=18, ge=1, description="Total planned mechanisms.")
+    n_infra: int = Field(default=0, ge=0, description="Mechanisms excluded due to unresolved infrastructure failures.")
+    n_evaluable: int = Field(default=18, ge=1, description="Retained analysis cohort denominator (n_total - n_infra).")
+    n_complete: int = Field(default=18, ge=0, description="Jointly evaluable complete pairs.")
+    n_miss_judge: int = Field(default=0, ge=0, description="Missing diagnoses for judge (malformed output).")
+    n_miss_activedd: int = Field(default=0, ge=0, description="Missing diagnoses for active DD (pre-candidate exhaustion).")
+    complete_case_risk_difference: float | None = Field(default=None, description="Observed Delta_Risk on complete cases.")
+    mcnemar_b: int = Field(default=0, ge=0, description="Discordant pairs: Judge false attribution, ActiveDD correct.")
+    mcnemar_c: int = Field(default=0, ge=0, description="Discordant pairs: Judge correct, ActiveDD false attribution.")
+    mcnemar_n_discordant: int = Field(default=0, ge=0, description="Total discordant pairs b + c.")
+    mcnemar_odds_ratio: float | None = Field(default=None, description="Discordant odds ratio b / c.")
+    mcnemar_p_value: float = Field(default=1.0, ge=0.0, le=1.0, description="Exact directional McNemar p-value.")
+    mcnemar_statistically_significant: bool = Field(default=False, description="Whether p_value <= alpha.")
+    sensitivity_upper_bound: float = Field(default=0.0, description="Upper bound on Delta_Risk on evaluable cohort.")
+    sensitivity_lower_bound: float = Field(default=0.0, description="Lower bound on Delta_Risk on evaluable cohort.")
+    evaluations: tuple[MechanismEvaluationResult, ...] = Field(default=(), description="Per-mechanism evaluation results.")
+    secondary_metrics: dict[str, Any] = Field(default_factory=dict, description="Secondary precision, recall, cost, and FDR metrics.")
+    summary: str = Field(default="", description="Executive narrative summary.")
+    limitations: tuple[str, ...] = Field(
+        default=(
+            "The 18-mechanism benchmark is an exploratory pilot; sample size is insufficient to guarantee confirmatory power under modest discordance rates.",
+            "Reported McNemar p-value and odds ratio evaluate differences across the realized sample of mechanisms; generalization beyond the testbed requires defensible assumptions about etiological independence and representativeness.",
+            "Sensitivity bounds [Delta_Risk_min, Delta_Risk_max] describe the retained benchmark cohort under extreme missingness; they do not automatically bound target-population risk if infrastructure attrition is non-random.",
+            "FakeProvider evaluations validate software interfaces, JSON parsing, error recovery, and metric math; they do not measure real-world LLM diagnostic reasoning.",
+        ),
+        description="Explicit scientific and engineering limitations.",
+    )
+
+

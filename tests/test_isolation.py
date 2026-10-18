@@ -73,6 +73,13 @@ class TestArchitecturalIsolation:
         assert "StochasticGroundTruthSpec" not in source
         assert "evaluate_stochastic_ground_truth" not in source
 
+    def test_llm_judge_does_not_import_ground_truth(self) -> None:
+        import agentxray.llm_judge
+        judge_source = inspect.getsource(agentxray.llm_judge)
+        assert "ground_truth" not in judge_source
+        assert "GroundTruthSpec" not in judge_source
+        assert "MultiMechanismGroundTruthSpec" not in judge_source
+
     def test_target_exposes_no_public_rule_attributes(self) -> None:
         def sample_rule(elements: set[str]) -> tuple[bool, str, str | None]:
             return (False, "ok", None)

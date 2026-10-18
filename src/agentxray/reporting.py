@@ -759,3 +759,81 @@ def format_cohort_summary_sentences(metrics: dict[str, Any]) -> list[str]:
         )
     return parts
 
+
+def format_exploratory_benchmark_markdown(report: Any) -> str:
+    """Format an ExploratoryBenchmarkReport into standard GitHub-flavored Markdown."""
+    lines: list[str] = [
+        f"# {report.experiment_name} — Research Summary",
+        "",
+        "> **Methodological Status:** Exploratory Benchmark (Finite-Domain Pilot).",
+        "> **Inferential Scope:** Descriptive bounds describe the retained benchmark cohort.",
+        "> They do not automatically bound target-population risk if infrastructure attrition occurs.",
+        "",
+        "## 1. Analysis Cohort and Attrition Accounting",
+        "",
+        "| Cohort Metric | Count |",
+        "| :--- | :--- |",
+        f"| Total Planned Mechanisms ($N_{{\\text{{total}}}}$) | {report.n_total} |",
+        f"| Excluded: Unresolved Infrastructure Failures ($N_{{\\text{{infra}}}}$) | {report.n_infra} |",
+        f"| **Retained Analysis Cohort Denominator ($N_{{\\text{{evaluable}}}}$)** | **{report.n_evaluable}** |",
+        f"| Jointly Evaluable Complete Pairs ($N_{{\\text{{complete}}}}$) | {report.n_complete} |",
+        f"| Missing Diagnoses: Passive Judge (Malformed Output) | {report.n_miss_judge} |",
+        f"| Missing Diagnoses: Active DD (Pre-Candidate Exhaustion) | {report.n_miss_activedd} |",
+        "",
+        "## 2. Primary Endpoint: Per-Mechanism False-Attribution Risk Difference",
+        "",
+        f"- **Complete-Case Risk Difference ($\\Delta_{{\\text{{Risk, CC}}}}$):** {report.complete_case_risk_difference}",
+        f"- **Discordant Pairs:** $b = {report.mcnemar_b}$ (Judge false attribution, ActiveDD correct), $c = {report.mcnemar_c}$ (Judge correct, ActiveDD false attribution)",
+        f"- **Total Discordant Pairs ($n_d$):** {report.mcnemar_n_discordant}",
+        f"- **Discordant Odds Ratio:** {report.mcnemar_odds_ratio}",
+        f"- **Exact Directional McNemar p-value ($H_1: b > c$):** {report.mcnemar_p_value:.5f}",
+        f"- **Statistically Significant ($\alpha=0.05$):** {'YES' if report.mcnemar_statistically_significant else 'NO'}",
+        "",
+        "## 3. Contrast-Specific Non-Parametric Sensitivity Bounds",
+        "",
+        f"- **Cohort Sensitivity Envelope on $N_{{\\text{{evaluable}}}}$:** $[{report.sensitivity_lower_bound:.4f}, {report.sensitivity_upper_bound:.4f}]$",
+        "- **Upper Bound ($\\Delta_{\\text{Risk}}^{\\max}$):** Imputes missing Judge outcomes as 1, missing ActiveDD outcomes as 0.",
+        "- **Lower Bound ($\\Delta_{\\text{Risk}}^{\\min}$):** Imputes missing Judge outcomes as 0, missing ActiveDD outcomes as 1.",
+        "",
+        "## 4. Per-Mechanism Three-Way Diagnostic Results",
+        "",
+        "| Mechanism ID | Category | Planted Trigger | Active DD ($Y, R$) | Greedy Ablation ($Y, R$) | LLM Judge ($Y, R$) |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- |",
+    ]
+
+    for ev in getattr(report, "evaluations", ()):
+        dd = ev.active_dd_outcome
+        gr = ev.greedy_ablation_outcome
+        jd = ev.llm_judge_outcome
+        gt_str = f"`{list(ev.ground_truth_trigger)}`" if ev.ground_truth_trigger else "*(Null)*"
+        dd_str = f"Y={dd.false_attribution_indicator}, R={dd.exact_recovery_indicator}"
+        gr_str = f"Y={gr.false_attribution_indicator}, R={gr.exact_recovery_indicator}"
+        jd_str = f"Y={jd.false_attribution_indicator}, R={jd.exact_recovery_indicator}"
+        lines.append(f"| `{ev.mechanism_id}` | {ev.category} | {gt_str} | {dd_str} | {gr_str} | {jd_str} |")
+
+    lines.extend([
+        "",
+        "## 5. Secondary Metrics Summary",
+        "",
+    ])
+    sec = getattr(report, "secondary_metrics", {})
+    if "pooled_fdr" in sec:
+        lines.append(f"- **Discovery-Level Pooled FDR:** Active DD={sec['pooled_fdr'].get('active_dd')}, Greedy={sec['pooled_fdr'].get('greedy_ablation')}, Judge={sec['pooled_fdr'].get('llm_judge')}")
+    if "mean_fdp" in sec:
+        lines.append(f"- **Mean Per-Mechanism FDP:** Active DD={sec['mean_fdp'].get('active_dd')}, Greedy={sec['mean_fdp'].get('greedy_ablation')}, Judge={sec['mean_fdp'].get('llm_judge')}")
+    if "exact_recovery_rate" in sec:
+        lines.append(f"- **Exact Recovery Rate ($R_{{\\text{{exact}}}}$):** Active DD={sec['exact_recovery_rate'].get('active_dd')}, Greedy={sec['exact_recovery_rate'].get('greedy_ablation')}, Judge={sec['exact_recovery_rate'].get('llm_judge')}")
+    if "mean_requests" in sec:
+        lines.append(f"- **Mean Model Requests:** Active DD={sec['mean_requests'].get('active_dd')}, Greedy={sec['mean_requests'].get('greedy_ablation')}, Judge={sec['mean_requests'].get('llm_judge')}")
+
+    lines.extend([
+        "",
+        "## 6. Scientific Limitations",
+        "",
+    ])
+    for lim in getattr(report, "limitations", ()):
+        lines.append(f"- {lim}")
+
+    return "\n".join(lines)
+
+

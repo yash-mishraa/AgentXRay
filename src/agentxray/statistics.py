@@ -803,3 +803,203 @@ def compare_paired_differences(
         paired_t_p_value=t_p_ret,
     )
 
+
+class McNemarTestResult(BaseModel):
+    """Result of exact McNemar test on paired binary observations."""
+
+    model_config = ConfigDict(frozen=True)
+
+    b: int = Field(..., ge=0, description="Discordant pairs favoring method 1 (e.g. Judge error, ActiveDD correct).")
+    c: int = Field(..., ge=0, description="Discordant pairs favoring method 2 (e.g. Judge correct, ActiveDD error).")
+    n_discordant: int = Field(..., ge=0, description="Total discordant pairs b + c.")
+    odds_ratio: float | None = Field(default=None, description="Discordant odds ratio b / c (or None/inf).")
+    p_value: float = Field(..., ge=0.0, le=1.0, description="Exact binomial p-value.")
+    alternative: str = Field(default="greater", description="Alternative hypothesis: 'greater' (b > c), 'two-sided', or 'less'.")
+    statistically_significant: bool = Field(..., description="Whether p_value <= alpha.")
+
+
+def mcnemar_exact_test(
+    b: int,
+    c: int,
+    alternative: str = "greater",
+    alpha: float = 0.05,
+) -> McNemarTestResult:
+    """Compute exact McNemar test for paired binary proportions.
+
+    Under H0: P(b) == P(c), the conditional distribution of b given n_d = b + c
+    follows Binomial(n_d, 0.5).
+
+    Parameters
+    ----------
+    b : int
+        Count of discordant pairs where method 1 fails and method 2 succeeds (e.g. Y_judge = 1, Y_activedd = 0).
+    c : int
+        Count of discordant pairs where method 1 succeeds and method 2 fails (e.g. Y_judge = 0, Y_activedd = 1).
+    alternative : str
+        Direction of H1:
+        - "greater": H1 is b > c (favors ActiveDD over Judge).
+        - "two-sided": H1 is b != c.
+        - "less": H1 is b < c.
+    alpha : float
+        Nominal significance level.
+    """
+    if b < 0 or c < 0:
+        raise ValueError(f"b and c must be non-negative integers, got b={b}, c={c}")
+    if alternative not in ("greater", "two-sided", "less"):
+        raise ValueError(f"alternative must be 'greater', 'two-sided', or 'less', got {alternative!r}")
+
+    n_d = b + c
+    if n_d == 0:
+        return McNemarTestResult(
+            b=b,
+            c=c,
+            n_discordant=0,
+            odds_ratio=None,
+            p_value=1.0,
+            alternative=alternative,
+            statistically_significant=False,
+        )
+
+    # Odds ratio
+    if c == 0:
+        odds_ratio = float("inf") if b > 0 else None
+    else:
+        odds_ratio = round(b / c, 4)
+
+    # Compute exact binomial probability: b ~ Binomial(n_d, 0.5)
+    if alternative == "greater":
+        # P(K >= b)
+        prob = sum(math.comb(n_d, k) for k in range(b, n_d + 1)) * (0.5 ** n_d)
+        p_val = min(1.0, max(0.0, prob))
+    elif alternative == "less":
+        # P(K <= b)
+        prob = sum(math.comb(n_d, k) for k in range(0, b + 1)) * (0.5 ** n_d)
+        p_val = min(1.0, max(0.0, prob))
+    else:  # two-sided
+        k_extreme = max(b, c)
+        prob = 2.0 * sum(math.comb(n_d, k) for k in range(k_extreme, n_d + 1)) * (0.5 ** n_d)
+        p_val = min(1.0, max(0.0, prob))
+
+    sig = bool((p_val <= alpha) and (b > c if alternative == "greater" else (b < c if alternative == "less" else b != c)))
+    return McNemarTestResult(
+        b=b,
+        c=c,
+        n_discordant=n_d,
+        odds_ratio=odds_ratio,
+        p_value=p_val,
+        alternative=alternative,
+        statistically_significant=sig,
+    )
+
+
+class ContrastSensitivityResult(BaseModel):
+    """Non-parametric Manski-Horowitz sensitivity bounds for directional contrast Delta_Risk."""
+
+    model_config = ConfigDict(frozen=True)
+
+    n_evaluable: int = Field(..., ge=1, description="Number of mechanisms in retained analysis cohort.")
+    n_complete: int = Field(..., ge=0, description="Number of complete pairs with valid diagnoses for both methods.")
+    n_miss_judge: int = Field(..., ge=0, description="Count of missing diagnoses for Judge.")
+    n_miss_activedd: int = Field(..., ge=0, description="Count of missing diagnoses for ActiveDD.")
+    complete_case_risk_difference: float | None = Field(default=None, description="Observed risk difference on complete cases.")
+    upper_bound: float = Field(..., description="Upper bound on Delta_Risk (imputing missing Judge=1, ActiveDD=0).")
+    lower_bound: float = Field(..., description="Lower bound on Delta_Risk (imputing missing Judge=0, ActiveDD=1).")
+    bounds_disclaimer: str = Field(
+        default="Bounds describe the retained benchmark cohort under extreme missingness; they do not automatically bound target-population risk if infrastructure attrition is non-random.",
+        description="Methodological disclaimer on population generalization.",
+    )
+
+
+def compute_contrast_sensitivity_bounds(
+    y_judge: Sequence[int | None],
+    y_activedd: Sequence[int | None],
+) -> ContrastSensitivityResult:
+    """Compute Manski-Horowitz extreme-value bounds for Delta_Risk = P(Y_judge=1) - P(Y_activedd=1).
+
+    Parameters
+    ----------
+    y_judge : Sequence[int | None]
+        Observed false-attribution indicators for Judge (1, 0, or None if missing).
+    y_activedd : Sequence[int | None]
+        Observed false-attribution indicators for ActiveDD (1, 0, or None if missing).
+    """
+    if len(y_judge) != len(y_activedd):
+        raise ValueError(f"Sequences must have equal length, got {len(y_judge)} and {len(y_activedd)}")
+    n = len(y_judge)
+    if n == 0:
+        raise ValueError("Cohort cannot be empty")
+
+    complete_pairs = [(yj, ya) for yj, ya in zip(y_judge, y_activedd) if yj is not None and ya is not None]
+    n_complete = len(complete_pairs)
+    if n_complete > 0:
+        cc_diff = sum((yj - ya) for yj, ya in complete_pairs) / n_complete
+        cc_diff_val = round(cc_diff, 4)
+    else:
+        cc_diff_val = None
+
+    obs_judge_sum = sum(yj for yj in y_judge if yj is not None)
+    obs_activedd_sum = sum(ya for ya in y_activedd if ya is not None)
+    miss_judge = sum(1 for yj in y_judge if yj is None)
+    miss_activedd = sum(1 for ya in y_activedd if ya is None)
+
+    # Upper bound: Judge worst case (1), ActiveDD best case (0)
+    upper = (obs_judge_sum + miss_judge - (obs_activedd_sum + 0)) / n
+
+    # Lower bound: Judge best case (0), ActiveDD worst case (1)
+    lower = (obs_judge_sum + 0 - (obs_activedd_sum + miss_activedd)) / n
+
+    return ContrastSensitivityResult(
+        n_evaluable=n,
+        n_complete=n_complete,
+        n_miss_judge=miss_judge,
+        n_miss_activedd=miss_activedd,
+        complete_case_risk_difference=cc_diff_val,
+        upper_bound=round(upper, 4),
+        lower_bound=round(lower, 4),
+    )
+
+
+def compute_discovery_level_fdr(
+    predictions: Sequence[Sequence[str] | None],
+    ground_truths: Sequence[Sequence[str]],
+) -> float:
+    r"""Compute conventional discovery-level FDR over pooled declared elements.
+
+    FDR_pooled = sum(V_i) / max(1, sum(R_i))
+    """
+    if len(predictions) != len(ground_truths):
+        raise ValueError("Lengths of predictions and ground truths must match")
+    total_declared = 0
+    total_spurious = 0
+    for pred, gt in zip(predictions, ground_truths):
+        if pred is not None and len(pred) > 0:
+            total_declared += len(pred)
+            true_set = set(gt)
+            spurious = sum(1 for e in pred if e not in true_set)
+            total_spurious += spurious
+    if total_declared == 0:
+        return 0.0
+    return round(total_spurious / total_declared, 4)
+
+
+def compute_mean_mechanism_fdp(
+    predictions: Sequence[Sequence[str] | None],
+    ground_truths: Sequence[Sequence[str]],
+) -> float:
+    r"""Compute mean per-mechanism False Discovery Proportion (FDP).
+
+    FDP_i = |S_pred,i \ S_true,i| / |S_pred,i| if |S_pred,i| > 0 else 0.0.
+    """
+    if len(predictions) != len(ground_truths) or len(predictions) == 0:
+        raise ValueError("Inputs must be non-empty and of equal length")
+    fdps: list[float] = []
+    for pred, gt in zip(predictions, ground_truths):
+        if pred is None or len(pred) == 0:
+            fdps.append(0.0)
+        else:
+            true_set = set(gt)
+            spurious = sum(1 for e in pred if e not in true_set)
+            fdps.append(spurious / len(pred))
+    return round(sum(fdps) / len(fdps), 4)
+
+
