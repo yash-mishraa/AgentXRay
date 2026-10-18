@@ -902,8 +902,8 @@ class ContrastSensitivityResult(BaseModel):
     n_miss_judge: int = Field(..., ge=0, description="Count of missing diagnoses for Judge.")
     n_miss_activedd: int = Field(..., ge=0, description="Count of missing diagnoses for ActiveDD.")
     complete_case_risk_difference: float | None = Field(default=None, description="Observed risk difference on complete cases.")
-    upper_bound: float = Field(..., description="Upper bound on Delta_Risk (imputing missing Judge=1, ActiveDD=0).")
-    lower_bound: float = Field(..., description="Lower bound on Delta_Risk (imputing missing Judge=0, ActiveDD=1).")
+    upper_bound: float = Field(..., description="Upper bound on Delta_Risk (imputing missing Judge=1, ActiveDD=0; wholly missing pairs contribute +1).")
+    lower_bound: float = Field(..., description="Lower bound on Delta_Risk (imputing missing Judge=0, ActiveDD=1; wholly missing pairs contribute -1).")
     bounds_disclaimer: str = Field(
         default="Bounds describe the retained benchmark cohort under extreme missingness; they do not automatically bound target-population risk if infrastructure attrition is non-random.",
         description="Methodological disclaimer on population generalization.",
@@ -914,7 +914,24 @@ def compute_contrast_sensitivity_bounds(
     y_judge: Sequence[int | None],
     y_activedd: Sequence[int | None],
 ) -> ContrastSensitivityResult:
-    """Compute Manski-Horowitz extreme-value bounds for Delta_Risk = P(Y_judge=1) - P(Y_activedd=1).
+    r"""Compute Manski-Horowitz extreme-value bounds for Delta_Risk = P(Y_judge=1) - P(Y_activedd=1).
+
+    The estimand is the mean per-mechanism false-attribution risk difference across
+    the retained evaluable cohort of size n = N_evaluable:
+        Delta_Risk = (1/n) * sum_{i=1}^n (Y_judge,i - Y_activedd,i)
+
+    Observed indicators are held fixed. For missing outcomes:
+    - Upper bound (maximizing Delta_Risk):
+      Imputes missing Y_judge = 1 and missing Y_activedd = 0.
+      Numerator: sum_{obs} Y_judge + miss_judge - sum_{obs} Y_activedd.
+      Wholly missing pairs (both missing) contribute 1 - 0 = +1 to the upper bound.
+    - Lower bound (minimizing Delta_Risk):
+      Imputes missing Y_judge = 0 and missing Y_activedd = 1.
+      Numerator: sum_{obs} Y_judge - (sum_{obs} Y_activedd + miss_activedd).
+      Wholly missing pairs (both missing) contribute 0 - 1 = -1 to the lower bound.
+
+    Consequently, wholly missing pairs do NOT cancel in either extreme-value bound;
+    each wholly missing pair widens the sensitivity interval by 2 / n.
 
     Parameters
     ----------
@@ -922,6 +939,17 @@ def compute_contrast_sensitivity_bounds(
         Observed false-attribution indicators for Judge (1, 0, or None if missing).
     y_activedd : Sequence[int | None]
         Observed false-attribution indicators for ActiveDD (1, 0, or None if missing).
+
+    Returns
+    -------
+    ContrastSensitivityResult
+        Complete-case estimate, extreme imputation bounds [lower_bound, upper_bound],
+        cohort counts, and methodological disclaimers.
+
+    Raises
+    ------
+    ValueError
+        If inputs have mismatched lengths or if the cohort is empty (n == 0).
     """
     if len(y_judge) != len(y_activedd):
         raise ValueError(f"Sequences must have equal length, got {len(y_judge)} and {len(y_activedd)}")

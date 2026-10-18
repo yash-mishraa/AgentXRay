@@ -321,3 +321,181 @@ def test_wilcoxon_extreme_statistics_precision():
     assert 0.0 < p_val < 1e-9
 
 
+# ==============================================================================
+# Phase 4.6C.1 Manski-Horowitz Contrast Sensitivity Bounds Regression Tests
+# ==============================================================================
+
+def test_contrast_sensitivity_bounds_case1_no_missing():
+    """Case 1: Neither method's outcome is missing (complete-case equivalence, zero width)."""
+    from agentxray.statistics import compute_contrast_sensitivity_bounds
+
+    y_j = [1, 0, 1, 0]
+    y_a = [0, 0, 1, 1]
+    res = compute_contrast_sensitivity_bounds(y_judge=y_j, y_activedd=y_a)
+
+    assert res.n_evaluable == 4
+    assert res.n_complete == 4
+    assert res.n_miss_judge == 0
+    assert res.n_miss_activedd == 0
+    assert res.complete_case_risk_difference == 0.0
+    assert res.upper_bound == 0.0
+    assert res.lower_bound == 0.0
+    # Complete-case equals upper and lower bound when there is zero missingness
+    assert res.lower_bound == res.complete_case_risk_difference == res.upper_bound
+
+
+def test_contrast_sensitivity_bounds_case2_judge_only_missing():
+    """Case 2: Only the Judge outcome is missing (asymmetric missingness, upper widens by 1/n)."""
+    from agentxray.statistics import compute_contrast_sensitivity_bounds
+
+    # Complete pairs: (1, 0) and (0, 0) -> cc_diff = (1 + 0) / 2 = 0.50
+    # Missing pair: (None, 1)
+    y_j = [1, None, 0]
+    y_a = [0, 1, 0]
+    res = compute_contrast_sensitivity_bounds(y_judge=y_j, y_activedd=y_a)
+
+    assert res.n_evaluable == 3
+    assert res.n_complete == 2
+    assert res.n_miss_judge == 1
+    assert res.n_miss_activedd == 0
+    assert res.complete_case_risk_difference == 0.50
+    # Upper bound: (obs_J=1 + miss_J=1 - obs_A=1) / 3 = 1 / 3 = 0.3333
+    assert res.upper_bound == pytest.approx(1 / 3, rel=1e-3)
+    # Lower bound: (obs_J=1 + 0 - (obs_A=1 + miss_A=0)) / 3 = 0 / 3 = 0.0
+    assert res.lower_bound == 0.0
+    assert res.lower_bound <= res.upper_bound
+
+
+def test_contrast_sensitivity_bounds_case3_activedd_only_missing():
+    """Case 3: Only the ActiveDD outcome is missing (asymmetric missingness, lower widens by 1/n)."""
+    from agentxray.statistics import compute_contrast_sensitivity_bounds
+
+    # Complete pairs: (1, 0) and (0, 0) -> cc_diff = (1 + 0) / 2 = 0.50
+    # Missing pair: (0, None)
+    y_j = [1, 0, 0]
+    y_a = [0, None, 0]
+    res = compute_contrast_sensitivity_bounds(y_judge=y_j, y_activedd=y_a)
+
+    assert res.n_evaluable == 3
+    assert res.n_complete == 2
+    assert res.n_miss_judge == 0
+    assert res.n_miss_activedd == 1
+    assert res.complete_case_risk_difference == 0.50
+    # Upper bound: (obs_J=1 + miss_J=0 - obs_A=0) / 3 = 1 / 3 = 0.3333
+    assert res.upper_bound == pytest.approx(1 / 3, rel=1e-3)
+    # Lower bound: (obs_J=1 + 0 - (obs_A=0 + miss_A=1)) / 3 = 0 / 3 = 0.0
+    assert res.lower_bound == 0.0
+    assert res.lower_bound <= res.upper_bound
+
+
+def test_contrast_sensitivity_bounds_case4_wholly_missing_pair():
+    """Case 4: Wholly missing pair contributes +1 to upper bound and -1 to lower bound (widens by 2/n)."""
+    from agentxray.statistics import compute_contrast_sensitivity_bounds
+
+    # 1 complete pair: (1, 0) -> diff = 1.0
+    # 1 wholly missing pair: (None, None)
+    # Total n = 2
+    y_j = [1, None]
+    y_a = [0, None]
+    res = compute_contrast_sensitivity_bounds(y_judge=y_j, y_activedd=y_a)
+
+    assert res.n_evaluable == 2
+    assert res.n_complete == 1
+    assert res.n_miss_judge == 1
+    assert res.n_miss_activedd == 1
+    assert res.complete_case_risk_difference == 1.0
+
+    # Wholly missing pair imputation:
+    # Upper bound: Judge imputed as 1, ActiveDD as 0 -> contribution = +1
+    # Total upper numerator = (obs_J=1 - obs_A=0) + (+1) = 2 -> upper = 2 / 2 = 1.0
+    assert res.upper_bound == 1.0
+
+    # Lower bound: Judge imputed as 0, ActiveDD as 1 -> contribution = -1
+    # Total lower numerator = (obs_J=1 - obs_A=0) + (-1) = 0 -> lower = 0 / 2 = 0.0
+    assert res.lower_bound == 0.0
+
+    # Interval width is 1.0 - 0.0 = 1.0, which equals 2 / n = 2 / 2 = 1.0
+    assert pytest.approx(res.upper_bound - res.lower_bound, rel=1e-3) == 1.0
+    assert res.lower_bound <= res.complete_case_risk_difference <= res.upper_bound
+
+
+def test_contrast_sensitivity_bounds_case5_mixed_patterns():
+    """Case 5: Multiple mechanisms with a mixture of all 4 missingness patterns."""
+    from agentxray.statistics import compute_contrast_sensitivity_bounds
+
+    # n = 5
+    # Pair 1: Complete (1, 0) -> diff = +1
+    # Pair 2: Complete (0, 1) -> diff = -1
+    # Pair 3: Judge missing (None, 0) -> upper: 1-0=+1, lower: 0-0=0
+    # Pair 4: ActiveDD missing (1, None) -> upper: 1-0=+1, lower: 1-1=0
+    # Pair 5: Wholly missing (None, None) -> upper: 1-0=+1, lower: 0-1=-1
+    y_j = [1, 0, None, 1, None]
+    y_a = [0, 1, 0, None, None]
+    res = compute_contrast_sensitivity_bounds(y_judge=y_j, y_activedd=y_a)
+
+    assert res.n_evaluable == 5
+    assert res.n_complete == 2
+    assert res.n_miss_judge == 2
+    assert res.n_miss_activedd == 2
+
+    # Complete-case: pairs 1 and 2: (+1 + (-1)) / 2 = 0.0
+    assert res.complete_case_risk_difference == 0.0
+
+    # Upper bound numerator:
+    # Pair 1: 1 - 0 = +1
+    # Pair 2: 0 - 1 = -1
+    # Pair 3: 1 - 0 = +1
+    # Pair 4: 1 - 0 = +1
+    # Pair 5: 1 - 0 = +1
+    # Sum = 3 -> upper = 3 / 5 = 0.60
+    assert res.upper_bound == 0.60
+
+    # Lower bound numerator:
+    # Pair 1: 1 - 0 = +1
+    # Pair 2: 0 - 1 = -1
+    # Pair 3: 0 - 0 = 0
+    # Pair 4: 1 - 1 = 0
+    # Pair 5: 0 - 1 = -1
+    # Sum = -1 -> lower = -1 / 5 = -0.20
+    assert res.lower_bound == -0.20
+
+    # Complete case diff is inside sensitivity envelope
+    assert res.lower_bound <= res.complete_case_risk_difference <= res.upper_bound
+
+
+def test_contrast_sensitivity_bounds_case6_empty_cohort_raises():
+    """Case 6: Empty or zero-sized analysis cohort raises ValueError."""
+    from agentxray.statistics import compute_contrast_sensitivity_bounds
+
+    with pytest.raises(ValueError, match="Cohort cannot be empty"):
+        compute_contrast_sensitivity_bounds(y_judge=[], y_activedd=[])
+
+
+def test_contrast_sensitivity_bounds_mismatched_lengths_raises():
+    """Mismatched sequence lengths must raise ValueError."""
+    from agentxray.statistics import compute_contrast_sensitivity_bounds
+
+    with pytest.raises(ValueError, match="Sequences must have equal length"):
+        compute_contrast_sensitivity_bounds(y_judge=[1, 0], y_activedd=[0])
+
+
+def test_contrast_sensitivity_bounds_all_wholly_missing():
+    """All pairs wholly missing gives [-1.0, 1.0] and complete_case_risk_difference is None."""
+    from agentxray.statistics import compute_contrast_sensitivity_bounds
+
+    y_j = [None, None, None]
+    y_a = [None, None, None]
+    res = compute_contrast_sensitivity_bounds(y_judge=y_j, y_activedd=y_a)
+
+    assert res.n_evaluable == 3
+    assert res.n_complete == 0
+    assert res.n_miss_judge == 3
+    assert res.n_miss_activedd == 3
+    assert res.complete_case_risk_difference is None
+    # Upper: (+3) / 3 = 1.0
+    assert res.upper_bound == 1.0
+    # Lower: (-3) / 3 = -1.0
+    assert res.lower_bound == -1.0
+
+
+
