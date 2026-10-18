@@ -6,7 +6,7 @@ import hashlib
 import json
 import logging
 import random
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Literal, Sequence
 
 from agentxray.agent_harness.agent import AgentExecutionTrace
 from agentxray.agent_harness.cost_tracker import (
@@ -44,11 +44,18 @@ from agentxray.stochastic_baselines import run_stochastic_greedy_ablation
 from agentxray.stochastic_minimizer import StochasticDeltaDebugMinimizer
 from benchmarks.multi_mechanism.tasks import (
     MECHANISM_REGISTRY,
+    TRACE_EVALUATED_REGISTRY,
+    BenchmarkTaskSpec,
     MechanismTaskSpec,
     MechanismTargetAdapter,
     TargetMode,
+    TraceEvaluatedTaskSpec,
+    get_mechanism_task,
+    get_trace_evaluated_task,
     list_mechanism_tasks,
+    list_trace_evaluated_tasks,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -263,7 +270,7 @@ def derive_mechanism_seed(mechanism_id: str, root_seed: int = 42) -> int:
 
 
 def evaluate_mechanism_three_way(
-    spec: MechanismTaskSpec,
+    spec: BenchmarkTaskSpec,
     provider: ModelProvider | None = None,
     cost_tracker: CostTracker | None = None,
     trials_per_candidate: int = 5,
@@ -303,6 +310,14 @@ def evaluate_mechanism_three_way(
             finish_reason="budget_exhausted",
             error_message=str(exc),
         )
+    except (ProviderError, OSError, ConnectionError, TimeoutError, RuntimeError) as exc:
+        init_trace = target.last_trace or AgentExecutionTrace(
+            messages=(),
+            final_response="Initial execution aborted: provider infrastructure error.",
+            finish_reason="infra_failure",
+            error_message=str(exc),
+        )
+
 
     if cost_tracker is not None:
         init_requests = cost_tracker.total_requests - init_req_start
@@ -534,14 +549,49 @@ def evaluate_mechanism_three_way(
 def run_multi_mechanism_benchmark(
     provider: ModelProvider | None = None,
     cost_tracker: CostTracker | None = None,
-    mechanisms: Sequence[MechanismTaskSpec] | None = None,
+    mechanisms: Sequence[BenchmarkTaskSpec] | None = None,
     trials_per_candidate: int = 5,
     max_trials: int = 50,
     seed: int = 42,
     experiment_name: str = "Phase_4_6_Exploratory_Benchmark",
+    tier: Literal["synthetic_control", "trace_evaluated"] = "synthetic_control",
 ) -> ExploratoryBenchmarkReport:
-    """Run full Phase 4.6 exploratory benchmark across all mechanisms."""
-    specs = list(mechanisms) if mechanisms is not None else list_mechanism_tasks()
+    """Run exploratory benchmark across mechanisms for the specified benchmark tier."""
+    if tier not in ("synthetic_control", "trace_evaluated"):
+        raise ValueError(
+            f"Unknown benchmark tier: {tier!r}. Supported tiers: 'synthetic_control', 'trace_evaluated'"
+        )
+
+    if mechanisms is None:
+        if tier == "synthetic_control":
+            specs = list_mechanism_tasks()
+            resolved_tier = "synthetic_control"
+        elif tier == "trace_evaluated":
+            specs = list_trace_evaluated_tasks()
+            resolved_tier = "trace_evaluated"
+        else:
+            raise ValueError(f"Unsupported benchmark tier: {tier!r}")
+    else:
+        specs = list(mechanisms)
+        if tier == "synthetic_control":
+            has_trace = any(s.mechanism_id in TRACE_EVALUATED_REGISTRY for s in specs)
+            if has_trace:
+                raise ValueError(
+                    "Conflicting arguments: mechanisms contains trace-evaluated tasks "
+                    "but tier='synthetic_control' was specified."
+                )
+            resolved_tier = "synthetic_control"
+        elif tier == "trace_evaluated":
+            has_synthetic = any(s.mechanism_id in MECHANISM_REGISTRY for s in specs)
+            if has_synthetic:
+                raise ValueError(
+                    "Conflicting arguments: mechanisms contains synthetic control mechanisms "
+                    "but tier='trace_evaluated' was specified."
+                )
+            resolved_tier = "trace_evaluated"
+        else:
+            resolved_tier = tier
+
     prov = provider or FakeProvider(model_name="fake-multi-mech")
     deviation_log: list[dict[str, Any]] = []
 
@@ -617,7 +667,7 @@ def run_multi_mechanism_benchmark(
     tc_judge = [ev.llm_judge_outcome.target_calls_used for ev in evaluable_evs]
 
     secondary = {
-        "benchmark_tier": "synthetic_control",
+        "benchmark_tier": resolved_tier,
         "pooled_fdr": {"active_dd": fdr_dd, "greedy_ablation": fdr_greedy, "llm_judge": fdr_judge},
         "mean_fdp": {"active_dd": fdp_dd, "greedy_ablation": fdp_greedy, "llm_judge": fdp_judge},
         "exact_recovery_rate": {

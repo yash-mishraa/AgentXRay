@@ -17,7 +17,8 @@ from __future__ import annotations
 import enum
 import random
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Protocol, Sequence, runtime_checkable
+
 
 from agentxray.agent_harness.agent import AgentExecutionTrace, ControlledAgent
 from agentxray.agent_harness.cost_tracker import (
@@ -190,8 +191,33 @@ class MechanismTargetAdapter(ModelBackedAgentTarget):
         )
 
 
+@runtime_checkable
+class BenchmarkTaskSpec(Protocol):
+    """Protocol for benchmark task specifications across synthetic and trace-evaluated tiers."""
+
+    mechanism_id: str
+    name: str
+    category: str
+    is_null_case: bool
+    is_conjunctive: bool
+    candidate_elements: tuple[str, ...]
+    planted_trigger_elements: tuple[str, ...]
+    observable_failure_symptom: str
+    description: str
+
+    def create_initial_input(self, seed: int | None = None) -> InputCase: ...
+    def get_ground_truth(self) -> MultiMechanismGroundTruthSpec: ...
+    def create_target(
+        self,
+        provider: ModelProvider | None = None,
+        cost_tracker: CostTracker | None = None,
+        **kwargs: Any,
+    ) -> MechanismTargetAdapter: ...
+
+
 @dataclass(frozen=True)
 class MechanismTaskSpec:
+
     """Specification of an independent benchmark failure mechanism."""
 
     mechanism_id: str
@@ -1054,4 +1080,38 @@ def create_trace_evaluated_environment_task() -> TraceEvaluatedEnvironmentTaskSp
         is_conjunctive=False,
     )
 
+TraceEvaluatedTaskSpec = (
+    TraceEvaluatedPromptTaskSpec
+    | TraceEvaluatedSchemaTaskSpec
+    | TraceEvaluatedEnvironmentTaskSpec
+)
 
+
+def _build_trace_evaluated_registry() -> dict[str, TraceEvaluatedTaskSpec]:
+    """Construct the registry of trace-evaluated benchmark tasks in deterministic order."""
+    prompt_task = create_trace_evaluated_prompt_task()
+    schema_task = create_trace_evaluated_schema_task()
+    env_task = create_trace_evaluated_environment_task()
+    return {
+        prompt_task.mechanism_id: prompt_task,
+        schema_task.mechanism_id: schema_task,
+        env_task.mechanism_id: env_task,
+    }
+
+
+TRACE_EVALUATED_REGISTRY: dict[str, TraceEvaluatedTaskSpec] = _build_trace_evaluated_registry()
+
+
+def get_trace_evaluated_task(mechanism_id: str) -> TraceEvaluatedTaskSpec:
+    """Retrieve an isolated trace-evaluated benchmark task specification by ID."""
+    if mechanism_id not in TRACE_EVALUATED_REGISTRY:
+        raise KeyError(
+            f"Unknown trace-evaluated mechanism_id: {mechanism_id!r}. Available ({len(TRACE_EVALUATED_REGISTRY)}): "
+            f"{list(TRACE_EVALUATED_REGISTRY.keys())}"
+        )
+    return TRACE_EVALUATED_REGISTRY[mechanism_id]
+
+
+def list_trace_evaluated_tasks() -> list[TraceEvaluatedTaskSpec]:
+    """Return all registered trace-evaluated task specifications in deterministic order."""
+    return list(TRACE_EVALUATED_REGISTRY.values())
