@@ -23,7 +23,7 @@ Verifies:
 5. Trace Null Control 2: Unmodeled External Shock (trace_null_02_unmodeled_external_shock):
    - is_null_case is True, planted_trigger_elements is empty ().
    - Mock calculator always fails with HTTP 500 regardless of candidate ablation, including empty input.
-   - Minimizers verify that dropping elements does not cure failure, classifying as NOT_MINIMAL.
+   - Minimizers verify that dropping elements does not cure failure, establishing verified empty causal set.
    - Spurious attribution of candidate elements to the external shock scores false_attribution=1.
 6. Registry Coherence & Separation:
    - TRACE_EVALUATED_REGISTRY contains exactly 5 tasks in deterministic order.
@@ -412,7 +412,7 @@ class TestTraceNullControlExternalShock:
         assert res_empty.outcome == TargetOutcome.FAILURE
         assert "500 Internal Server Error" in res_empty.output_message
 
-    def test_minimizers_detect_not_minimal_on_external_shock(self) -> None:
+    def test_minimizers_verify_empty_on_external_shock(self) -> None:
         spec = get_trace_evaluated_task("trace_null_02_unmodeled_external_shock")
         initial_input = spec.create_initial_input()
 
@@ -429,9 +429,10 @@ class TestTraceNullControlExternalShock:
         )
         cond = minimizer.minimize(initial_input)
 
-        # Verification must classify condition as NOT_MINIMAL because empty subset still fails
-        assert cond.minimality_status == StochasticMinimalityStatus.NOT_MINIMAL
-        assert "not 1-minimal" in cond.status_message.lower()
+        # Verification must classify condition as VERIFIED_EMPTY because empty subset still fails
+        assert cond.minimality_status == StochasticMinimalityStatus.VERIFIED_EMPTY
+        assert cond.subset_elements == ()
+        assert "empty-set failure rate" in cond.status_message.lower()
 
     def test_spurious_attribution_on_external_shock_penalized(self) -> None:
         spec = get_trace_evaluated_task("trace_null_02_unmodeled_external_shock")

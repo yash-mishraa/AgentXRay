@@ -362,14 +362,20 @@ class TestTraceBenchmarkExecutionEndToEnd:
         assert ev_clean.greedy_ablation_outcome.false_attribution_indicator == 0
         assert ev_clean.greedy_ablation_outcome.predicted_candidate_set == ()
 
-        # Null task 2: unmodeled external shock -> target always fails, minimality check fails
+        # Null task 2: unmodeled external shock -> target always fails, verified empty causal set
         ev_shock = report.evaluations[4]
         assert ev_shock.mechanism_id == "trace_null_02_unmodeled_external_shock"
         assert ev_shock.is_null_case is True
         assert ev_shock.active_dd_outcome.is_valid_diagnosis is True
-        assert ev_shock.active_dd_outcome.verification_status == "not_minimal"
+        assert ev_shock.active_dd_outcome.verification_status == "verified_empty"
+        assert ev_shock.active_dd_outcome.predicted_candidate_set == ()
+        assert ev_shock.active_dd_outcome.false_attribution_indicator == 0
+        assert ev_shock.active_dd_outcome.exact_recovery_indicator == 1
         assert ev_shock.greedy_ablation_outcome.is_valid_diagnosis is True
-        assert ev_shock.greedy_ablation_outcome.verification_status == "not_minimal"
+        assert ev_shock.greedy_ablation_outcome.verification_status == "verified_empty"
+        assert ev_shock.greedy_ablation_outcome.predicted_candidate_set == ()
+        assert ev_shock.greedy_ablation_outcome.false_attribution_indicator == 0
+        assert ev_shock.greedy_ablation_outcome.exact_recovery_indicator == 1
 
         # 5. Markdown report generation succeeds and includes trace task IDs
         md = format_exploratory_benchmark_markdown(report)

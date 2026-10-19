@@ -31,6 +31,12 @@ def _classify_stochastic_minimality(
 ) -> StochasticMinimalityStatus:
     """Helper to classify stochastic minimality for baseline results."""
     if not candidate:
+        if (
+            cand_eval.candidate_elements == ()
+            and cand_eval.trials > 0
+            and cand_eval.failure_rate >= failure_threshold
+        ):
+            return StochasticMinimalityStatus.VERIFIED_EMPTY
         return StochasticMinimalityStatus.NOT_APPLICABLE
 
     # Missing checks
@@ -162,8 +168,6 @@ def run_stochastic_greedy_ablation(
         # Step 2: Sequential removal pass
         i = 0
         while i < len(current_elements):
-            if len(current_elements) <= 1:
-                break
             candidate = tuple(e for idx, e in enumerate(current_elements) if idx != i)
             sub_case = initial_input.subset(candidate)
             step_eval = evaluate_candidate_stochastically(

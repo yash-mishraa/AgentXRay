@@ -87,7 +87,10 @@ def score_diagnostic_outcome(
             # Null task (S_true == ())
             if len(candidate_set) == 0:
                 false_attribution = 0
-                exact_recovery = 1
+                if verification_status in ("unverified", "not_verified", "inconclusive", "not_minimal"):
+                    exact_recovery = 0
+                else:
+                    exact_recovery = 1
             else:
                 false_attribution = 1
                 exact_recovery = 0
@@ -382,6 +385,10 @@ def evaluate_mechanism_three_way(
             is_valid = False
             cand_set = None
             term_reason = "budget_exhausted" if cond.status == SearchStatus.BUDGET_EXHAUSTED else "timeout"
+        elif cond.minimality_status == StochasticMinimalityStatus.NOT_MINIMAL:
+            is_valid = False
+            cand_set = None
+            term_reason = "not_minimal"
         else:
             is_valid = True
             cand_set = tuple(cond.subset_elements)
@@ -466,6 +473,10 @@ def evaluate_mechanism_three_way(
             is_valid = False
             cand_set = None
             term_reason = "budget_exhausted"
+        elif res.minimality_status == StochasticMinimalityStatus.NOT_MINIMAL:
+            is_valid = False
+            cand_set = None
+            term_reason = "not_minimal"
         else:
             is_valid = True
             cand_set = tuple(res.discovered_elements)

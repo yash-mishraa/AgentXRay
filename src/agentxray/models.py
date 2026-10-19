@@ -222,10 +222,12 @@ class StochasticMinimalityStatus(str, Enum):
     NOT_APPLICABLE = "not_applicable"
     BUDGET_EXHAUSTED = "budget_exhausted"
     INFRA_FAILURE = "infra_failure"
+    VERIFIED_EMPTY = "verified_empty"
 
     # Nomenclature aliases matching Protocol v1.3 definitions
     SUPPORTED_1_MINIMAL = "statistically_supported"
     OBSERVED_1_MINIMAL = "observed_only"
+    VERIFIED_EMPTY_CAUSAL_SET = "verified_empty"
 
 
 class CandidateEvaluation(BaseModel):
@@ -501,7 +503,7 @@ class DiagnosticOutcome(BaseModel):
     )
     verification_status: str = Field(
         default="not_applicable",
-        description="Classification: 'statistically_supported', 'observed_only', 'inconclusive', 'not_verified', or 'not_applicable'.",
+        description="Classification: 'statistically_supported', 'observed_only', 'verified_empty', 'inconclusive', 'not_verified', or 'not_applicable'.",
     )
     termination_reason: str = Field(
         default="normal_completion",

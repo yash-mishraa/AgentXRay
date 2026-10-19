@@ -263,13 +263,12 @@ class StochasticDeltaDebugMinimizer:
                     removal_evals[elem] = eval_without
 
                     if eval_without.failure_rate >= self.failure_threshold:
-                        if len(current_candidate) > 1:
-                            # Non-monotonic or further reducible: dropping elem still triggers failure!
-                            current_candidate = candidate_without_elem
-                            current_eval = eval_without
-                            unnecessary_element_found = True
-                            removal_evals.clear()
-                            break
+                        # Dropping elem still triggers failure: elem is unnecessary!
+                        current_candidate = candidate_without_elem
+                        current_eval = eval_without
+                        unnecessary_element_found = True
+                        removal_evals.clear()
+                        break
 
                 if not unnecessary_element_found:
                     verified_minimal = True
@@ -326,6 +325,16 @@ class StochasticDeltaDebugMinimizer:
     ) -> tuple[StochasticMinimalityStatus, str]:
         """Classify 1-minimality of current_candidate against removal evaluations."""
         if not current_candidate:
+            if (
+                current_eval.candidate_elements == ()
+                and current_eval.trials > 0
+                and current_eval.failure_rate >= self.failure_threshold
+            ):
+                return (
+                    StochasticMinimalityStatus.VERIFIED_EMPTY,
+                    f"Failure persists when all candidates are removed (empty-set failure rate "
+                    f"{current_eval.failure_rate:.2f} >= threshold {self.failure_threshold:.2f}); no candidate is causal.",
+                )
             return (
                 StochasticMinimalityStatus.NOT_APPLICABLE,
                 "Candidate set is empty; cannot establish minimality.",
