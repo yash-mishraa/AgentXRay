@@ -484,7 +484,7 @@ class DiagnosticOutcome(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     mechanism_id: str = Field(..., description="Unique identifier of the independent mechanism.")
-    method_name: str = Field(..., description="Method evaluated: 'active_dd', 'greedy_ablation', or 'llm_judge'.")
+    method_name: str = Field(..., description="Method evaluated: 'active_dd', 'greedy_ablation', 'llm_judge', or 'candidate_only_judge'.")
     predicted_candidate_set: tuple[str, ...] | None = Field(
         default=None,
         description="Isolated candidate element IDs, empty tuple () for null prediction, or None if no evaluable set produced.",
@@ -573,6 +573,10 @@ class MechanismEvaluationResult(BaseModel):
     active_dd_outcome: DiagnosticOutcome = Field(..., description="Outcome from Active Delta Debugging.")
     greedy_ablation_outcome: DiagnosticOutcome = Field(..., description="Outcome from Active Greedy Ablation.")
     llm_judge_outcome: DiagnosticOutcome = Field(..., description="Outcome from Passive LLM Judge.")
+    candidate_only_judge_outcome: DiagnosticOutcome | None = Field(
+        default=None,
+        description="Outcome from Candidate-Only LLM Judge baseline (omitting execution traces).",
+    )
     initial_trace_requests: int = Field(default=1, ge=0, description="Requests consumed to generate baseline failing trace.")
     initial_trace_tokens: int = Field(default=0, ge=0, description="Tokens consumed to generate baseline trace.")
     initial_trace_cost_usd: float = Field(default=0.0, ge=0.0, description="Cost of initial trace generation.")

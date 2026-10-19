@@ -796,11 +796,26 @@ def format_exploratory_benchmark_markdown(report: Any) -> str:
         "- **Lower Bound ($\\Delta_{\\text{Risk}}^{\\min}$):** Imputes missing Judge outcomes as 0, missing ActiveDD outcomes as 1 (wholly missing pairs contribute $-1$).",
         "- **Wholly Missing Pair Impact:** Mechanisms where both methods lack valid diagnoses widen the sensitivity interval by $2 / N_{\\text{evaluable}}$ and do not cancel.",
         "",
+    ]
+
+    has_cand_only = any(getattr(ev, "candidate_only_judge_outcome", None) is not None for ev in getattr(report, "evaluations", ()))
+
+    table_header = (
+        "| Mechanism ID | Category | Planted Trigger | Active DD ($Y, R$) | Greedy Ablation ($Y, R$) | LLM Judge ($Y, R$) | Candidate-Only Judge ($Y, R$) |"
+        if has_cand_only
+        else "| Mechanism ID | Category | Planted Trigger | Active DD ($Y, R$) | Greedy Ablation ($Y, R$) | LLM Judge ($Y, R$) |"
+    )
+    table_divider = (
+        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+        if has_cand_only
+        else "| :--- | :--- | :--- | :--- | :--- | :--- |"
+    )
+    lines.extend([
         "## 4. Per-Mechanism Three-Way Diagnostic Results",
         "",
-        "| Mechanism ID | Category | Planted Trigger | Active DD ($Y, R$) | Greedy Ablation ($Y, R$) | LLM Judge ($Y, R$) |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- |",
-    ]
+        table_header,
+        table_divider,
+    ])
 
     for ev in getattr(report, "evaluations", ()):
         dd = ev.active_dd_outcome
@@ -810,7 +825,12 @@ def format_exploratory_benchmark_markdown(report: Any) -> str:
         dd_str = f"Y={dd.false_attribution_indicator}, R={dd.exact_recovery_indicator}"
         gr_str = f"Y={gr.false_attribution_indicator}, R={gr.exact_recovery_indicator}"
         jd_str = f"Y={jd.false_attribution_indicator}, R={jd.exact_recovery_indicator}"
-        lines.append(f"| `{ev.mechanism_id}` | {ev.category} | {gt_str} | {dd_str} | {gr_str} | {jd_str} |")
+        if has_cand_only:
+            cd = getattr(ev, "candidate_only_judge_outcome", None)
+            cd_str = f"Y={cd.false_attribution_indicator}, R={cd.exact_recovery_indicator}" if cd is not None else "N/A"
+            lines.append(f"| `{ev.mechanism_id}` | {ev.category} | {gt_str} | {dd_str} | {gr_str} | {jd_str} | {cd_str} |")
+        else:
+            lines.append(f"| `{ev.mechanism_id}` | {ev.category} | {gt_str} | {dd_str} | {gr_str} | {jd_str} |")
 
     lines.extend([
         "",
@@ -821,13 +841,51 @@ def format_exploratory_benchmark_markdown(report: Any) -> str:
     ])
     sec = getattr(report, "secondary_metrics", {})
     if "pooled_fdr" in sec:
-        lines.append(f"- **Discovery-Level Pooled FDR:** Active DD={sec['pooled_fdr'].get('active_dd')}, Greedy={sec['pooled_fdr'].get('greedy_ablation')}, Judge={sec['pooled_fdr'].get('llm_judge')}")
+        fdr_cand = f", Candidate-Only={sec['pooled_fdr'].get('candidate_only_judge')}" if "candidate_only_judge" in sec['pooled_fdr'] else ""
+        lines.append(f"- **Discovery-Level Pooled FDR:** Active DD={sec['pooled_fdr'].get('active_dd')}, Greedy={sec['pooled_fdr'].get('greedy_ablation')}, Judge={sec['pooled_fdr'].get('llm_judge')}{fdr_cand}")
     if "mean_fdp" in sec:
-        lines.append(f"- **Mean Per-Mechanism FDP:** Active DD={sec['mean_fdp'].get('active_dd')}, Greedy={sec['mean_fdp'].get('greedy_ablation')}, Judge={sec['mean_fdp'].get('llm_judge')}")
+        fdp_cand = f", Candidate-Only={sec['mean_fdp'].get('candidate_only_judge')}" if "candidate_only_judge" in sec['mean_fdp'] else ""
+        lines.append(f"- **Mean Per-Mechanism FDP:** Active DD={sec['mean_fdp'].get('active_dd')}, Greedy={sec['mean_fdp'].get('greedy_ablation')}, Judge={sec['mean_fdp'].get('llm_judge')}{fdp_cand}")
     if "exact_recovery_rate" in sec:
-        lines.append(f"- **Exact Recovery Rate ($R_{{\\text{{exact}}}}$):** Active DD={sec['exact_recovery_rate'].get('active_dd')}, Greedy={sec['exact_recovery_rate'].get('greedy_ablation')}, Judge={sec['exact_recovery_rate'].get('llm_judge')}")
+        rec_cand = f", Candidate-Only={sec['exact_recovery_rate'].get('candidate_only_judge')}" if "candidate_only_judge" in sec['exact_recovery_rate'] else ""
+        lines.append(f"- **Exact Recovery Rate ($R_{{\\text{{exact}}}}$):** Active DD={sec['exact_recovery_rate'].get('active_dd')}, Greedy={sec['exact_recovery_rate'].get('greedy_ablation')}, Judge={sec['exact_recovery_rate'].get('llm_judge')}{rec_cand}")
     if "mean_requests" in sec:
-        lines.append(f"- **Mean Model Requests:** Active DD={sec['mean_requests'].get('active_dd')}, Greedy={sec['mean_requests'].get('greedy_ablation')}, Judge={sec['mean_requests'].get('llm_judge')}")
+        req_cand = f", Candidate-Only={sec['mean_requests'].get('candidate_only_judge')}" if "candidate_only_judge" in sec['mean_requests'] else ""
+        lines.append(f"- **Mean Model Requests:** Active DD={sec['mean_requests'].get('active_dd')}, Greedy={sec['mean_requests'].get('greedy_ablation')}, Judge={sec['mean_requests'].get('llm_judge')}{req_cand}")
+    if "mean_target_calls" in sec:
+        tc_cand = f", Candidate-Only={sec['mean_target_calls'].get('candidate_only_judge')}" if "candidate_only_judge" in sec['mean_target_calls'] else ""
+        lines.append(f"- **Mean Target Calls:** Active DD={sec['mean_target_calls'].get('active_dd')}, Greedy={sec['mean_target_calls'].get('greedy_ablation')}, Judge={sec['mean_target_calls'].get('llm_judge')}{tc_cand}")
+
+    if "arm_summaries" in sec:
+        lines.extend([
+            "",
+            "### Arm-Specific Diagnostic & Error Accounting",
+            "",
+            "| Method Arm | Evaluable / Total | Active Exact Rec ($R_{\\text{act}}$) | Null Exact Rec ($R_{\\text{null}}$) | Null False Attr ($Y_{\\text{null}}$) | Empty Preds (Valid / Total) | Abstentions |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+        ])
+        for arm_name, s in sec["arm_summaries"].items():
+            lines.append(
+                f"| `{arm_name}` | {s.get('evaluable_observations')}/{s.get('total_observations')} | "
+                f"{s.get('active_exact_recovery_rate')} | {s.get('null_exact_recovery_rate')} | "
+                f"{s.get('null_false_attribution_rate')} | {s.get('valid_empty_predictions')}/{s.get('empty_predictions_total')} | "
+                f"{s.get('abstention_count')} ({s.get('abstention_rate')}) |"
+            )
+
+    if "paired_comparisons" in sec:
+        lines.extend([
+            "",
+            "### Paired Method Comparisons",
+            "",
+            "| Comparison | Complete Pairs | Discordant ($b, c$) | Odds Ratio | McNemar $p$-value ($H_1: b > c$) | Risk Diff ($\\Delta_{\\text{Risk}}$) |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- |",
+        ])
+        for comp_name, p in sec["paired_comparisons"].items():
+            p_val_str = f"{p.get('mcnemar_p_value'):.5f}" if p.get('mcnemar_p_value') is not None else "N/A"
+            lines.append(
+                f"| `{comp_name}` | {p.get('n_complete_pairs')} | b={p.get('discordant_b')}, c={p.get('discordant_c')} | "
+                f"{p.get('discordant_odds_ratio')} | {p_val_str} | {p.get('complete_case_risk_difference')} |"
+            )
 
     lines.extend([
         "",

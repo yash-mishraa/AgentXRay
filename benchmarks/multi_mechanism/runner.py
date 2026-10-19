@@ -190,10 +190,18 @@ class ScriptedJudgeProvider(ModelProvider):
         decision_map: dict[str, Sequence[str]] | None = None,
         default_prediction: Sequence[str] = (),
         model_name: str = "fake-scripted-judge",
+        candidate_only_decision_map: dict[str, Sequence[str]] | None = None,
+        candidate_only_default_prediction: Sequence[str] | None = None,
     ) -> None:
         self._decision_map = decision_map or {}
         self._default_prediction = tuple(default_prediction)
         self._model_name = model_name
+        self._candidate_only_decision_map = candidate_only_decision_map
+        self._candidate_only_default_prediction = (
+            tuple(candidate_only_default_prediction)
+            if candidate_only_default_prediction is not None
+            else None
+        )
         self.request_count = 0
 
     @property
@@ -228,8 +236,24 @@ class ScriptedJudgeProvider(ModelProvider):
         prompt_len = sum(len(m.content) for m in messages) // 4 + 20
         user_msg = messages[-1].content if messages else ""
 
-        pred = list(self._default_prediction)
-        for key, p in self._decision_map.items():
+        is_candidate_only = (
+            "Observed Agent Execution Trace:" not in user_msg
+            and ("based only on the candidate specifications" in user_msg
+                 or any("inherently faulty" in m.content for m in messages))
+        )
+
+        if is_candidate_only and self._candidate_only_decision_map is not None:
+            active_map = self._candidate_only_decision_map
+        else:
+            active_map = self._decision_map
+
+        if is_candidate_only and self._candidate_only_default_prediction is not None:
+            active_default = self._candidate_only_default_prediction
+        else:
+            active_default = self._default_prediction
+
+        pred = list(active_default)
+        for key, p in active_map.items():
             if key in user_msg:
                 pred = list(p)
                 break
@@ -540,6 +564,39 @@ def evaluate_mechanism_three_way(
         deviation_log=deviation_log,
     )
 
+    # ----------------------------------------------------
+    # Method D: Candidate-Only LLM Judge (Trace Omitted)
+    # ----------------------------------------------------
+    def _run_candidate_only_judge() -> DiagnosticOutcome:
+        judge = LLMJudgeBaseline(provider=prov, cost_tracker=cost_tracker, max_retries=2)
+        cand_res = judge.diagnose_candidate_only(initial_input)
+
+        return score_diagnostic_outcome(
+            mechanism_id=spec.mechanism_id,
+            method_name="candidate_only_judge",
+            candidate_set=cand_res.predicted_candidate_set,
+            is_valid_diagnosis=cand_res.is_valid_diagnosis,
+            ground_truth_trigger=spec.planted_trigger_elements,
+            is_null_case=spec.is_null_case,
+            verification_status="not_applicable",
+            termination_reason=cand_res.termination_reason,
+            target_calls_used=0,
+            model_requests=cand_res.attempts_used,
+            prompt_tokens=cand_res.prompt_tokens,
+            completion_tokens=cand_res.completion_tokens,
+            total_tokens=cand_res.total_tokens,
+            estimated_cost_usd=cand_res.estimated_cost_usd,
+            diagnostics=cand_res.rationale,
+        )
+
+    cand_judge_outcome = run_with_infra_guard(
+        _run_candidate_only_judge,
+        mechanism_id=spec.mechanism_id,
+        method_name="candidate_only_judge",
+        seed=mech_seed,
+        deviation_log=deviation_log,
+    )
+
     return MechanismEvaluationResult(
         mechanism_id=spec.mechanism_id,
         mechanism_name=spec.name,
@@ -551,10 +608,188 @@ def evaluate_mechanism_three_way(
         active_dd_outcome=dd_outcome,
         greedy_ablation_outcome=greedy_outcome,
         llm_judge_outcome=judge_outcome,
+        candidate_only_judge_outcome=cand_judge_outcome,
         initial_trace_requests=init_requests,
         initial_trace_tokens=init_tokens,
         initial_trace_cost_usd=init_cost,
     )
+
+
+evaluate_mechanism = evaluate_mechanism_three_way
+evaluate_mechanism_four_way = evaluate_mechanism_three_way
+
+
+def compute_arm_summary(
+    evaluations: Sequence[MechanismEvaluationResult],
+    arm_attr: str,
+) -> dict[str, Any]:
+    """Compute distinct diagnostic, recovery, and abstention metrics for a diagnostic arm."""
+    valid_pairs = [
+        (ev, getattr(ev, arm_attr, None))
+        for ev in evaluations
+        if getattr(ev, arm_attr, None) is not None
+    ]
+    if not valid_pairs:
+        return {}
+
+    n_total = len(valid_pairs)
+    infra_failures = sum(
+        1 for _, o in valid_pairs
+        if o.termination_reason == "infra_failure" or o.verification_status == "infra_failure"
+    )
+    evaluable = [
+        (ev, o) for ev, o in valid_pairs
+        if o.is_valid_diagnosis and o.termination_reason != "infra_failure"
+    ]
+    n_evaluable = len(evaluable)
+
+    invalid_outcomes = sum(
+        1 for _, o in valid_pairs
+        if not o.is_valid_diagnosis and o.termination_reason != "infra_failure"
+    )
+
+    inconclusive_outcomes = sum(
+        1 for _, o in valid_pairs
+        if not o.is_valid_diagnosis
+        and o.termination_reason in ("inconclusive", "not_minimal", "budget_exhausted", "timeout")
+    )
+
+    empty_preds = sum(1 for _, o in valid_pairs if o.predicted_candidate_set == ())
+    valid_empty = sum(1 for _, o in valid_pairs if o.predicted_candidate_set == () and o.is_valid_diagnosis)
+    verified_empty = sum(
+        1 for _, o in valid_pairs
+        if o.predicted_candidate_set == () and o.is_valid_diagnosis and o.verification_status == "verified_empty"
+    )
+    unverified_empty = sum(
+        1 for _, o in valid_pairs
+        if o.predicted_candidate_set == ()
+        and (not o.is_valid_diagnosis or o.verification_status in ("unverified", "not_verified", "inconclusive", "not_minimal"))
+    )
+    abstentions = sum(1 for _, o in valid_pairs if not o.is_valid_diagnosis or o.predicted_candidate_set is None)
+    abstention_rate = round(abstentions / n_total, 4) if n_total > 0 else None
+
+    false_attr_count = sum(1 for _, o in evaluable if o.false_attribution_indicator == 1)
+    false_attr_rate = round(false_attr_count / n_evaluable, 4) if n_evaluable > 0 else None
+
+    null_tasks = [(ev, o) for ev, o in valid_pairs if ev.is_null_case]
+    null_evaluable = [(ev, o) for ev, o in evaluable if ev.is_null_case]
+    n_null_total = len(null_tasks)
+    n_null_evaluable = len(null_evaluable)
+    null_false_attr_count = sum(1 for _, o in null_evaluable if o.false_attribution_indicator == 1)
+    null_false_attr_rate = round(null_false_attr_count / n_null_evaluable, 4) if n_null_evaluable > 0 else None
+    null_exact_rec_count = sum(1 for _, o in null_evaluable if o.exact_recovery_indicator == 1)
+    null_exact_rec_rate = round(null_exact_rec_count / n_null_evaluable, 4) if n_null_evaluable > 0 else None
+
+    active_tasks = [(ev, o) for ev, o in valid_pairs if not ev.is_null_case]
+    active_evaluable = [(ev, o) for ev, o in evaluable if not ev.is_null_case]
+    n_active_total = len(active_tasks)
+    n_active_evaluable = len(active_evaluable)
+    active_exact_rec_count = sum(1 for _, o in active_evaluable if o.exact_recovery_indicator == 1)
+    active_exact_rec_rate = round(active_exact_rec_count / n_active_evaluable, 4) if n_active_evaluable > 0 else None
+
+    element_recalls: list[float] = []
+    for ev, o in active_evaluable:
+        if ev.ground_truth_trigger and o.predicted_candidate_set is not None:
+            true_s = set(ev.ground_truth_trigger)
+            pred_s = set(o.predicted_candidate_set)
+            element_recalls.append(len(true_s & pred_s) / len(true_s))
+    active_coverage = round(sum(element_recalls) / len(element_recalls), 4) if element_recalls else None
+
+    return {
+        "total_observations": n_total,
+        "evaluable_observations": n_evaluable,
+        "infrastructure_failures": infra_failures,
+        "invalid_outcomes": invalid_outcomes,
+        "inconclusive_outcomes": inconclusive_outcomes,
+        "false_attribution_count": false_attr_count,
+        "false_attribution_rate": false_attr_rate,
+        "null_tasks_total": n_null_total,
+        "null_tasks_evaluable": n_null_evaluable,
+        "null_false_attribution_count": null_false_attr_count,
+        "null_false_attribution_rate": null_false_attr_rate,
+        "null_exact_recovery_count": null_exact_rec_count,
+        "null_exact_recovery_rate": null_exact_rec_rate,
+        "active_tasks_total": n_active_total,
+        "active_tasks_evaluable": n_active_evaluable,
+        "active_exact_recovery_count": active_exact_rec_count,
+        "active_exact_recovery_rate": active_exact_rec_rate,
+        "active_task_coverage": active_coverage,
+        "empty_predictions_total": empty_preds,
+        "valid_empty_predictions": valid_empty,
+        "verified_empty_predictions": verified_empty,
+        "unverified_empty_predictions": unverified_empty,
+        "abstention_count": abstentions,
+        "abstention_rate": abstention_rate,
+    }
+
+
+def compute_paired_comparison(
+    evaluations: Sequence[MechanismEvaluationResult],
+    arm_attr_a: str,
+    arm_attr_b: str,
+    name_a: str,
+    name_b: str,
+) -> dict[str, Any]:
+    """Compute task-paired comparison metrics and discordant counts between two diagnostic arms."""
+    pairs: list[tuple[MechanismEvaluationResult, DiagnosticOutcome | None, DiagnosticOutcome | None]] = [
+        (ev, getattr(ev, arm_attr_a, None), getattr(ev, arm_attr_b, None))
+        for ev in evaluations
+    ]
+    valid_tasks = [(ev, oa, ob) for ev, oa, ob in pairs if oa is not None and ob is not None]
+    if not valid_tasks:
+        return {}
+
+    n_total = len(valid_tasks)
+    infra_failed_ids = {
+        ev.mechanism_id
+        for ev, oa, ob in valid_tasks
+        if oa.termination_reason == "infra_failure" or ob.termination_reason == "infra_failure"
+    }
+    n_infra = len(infra_failed_ids)
+    cohort = [(ev, oa, ob) for ev, oa, ob in valid_tasks if ev.mechanism_id not in infra_failed_ids]
+    n_evaluable = len(cohort)
+
+    complete_pairs = [
+        (oa.false_attribution_indicator, ob.false_attribution_indicator)
+        for _, oa, ob in cohort
+        if oa.is_valid_diagnosis and ob.is_valid_diagnosis
+        and oa.false_attribution_indicator is not None
+        and ob.false_attribution_indicator is not None
+    ]
+    n_complete = len(complete_pairs)
+    missing_a = sum(1 for _, oa, _ in cohort if not oa.is_valid_diagnosis)
+    missing_b = sum(1 for _, _, ob in cohort if not ob.is_valid_diagnosis)
+
+    b = sum(1 for ya, yb in complete_pairs if yb == 1 and ya == 0)
+    c = sum(1 for ya, yb in complete_pairs if yb == 0 and ya == 1)
+    n_d = b + c
+    odds_ratio = (
+        round(b / c, 4) if c > 0 else (float("inf") if b > 0 else None)
+    )
+    mcnemar_res = mcnemar_exact_test(b=b, c=c, alternative="greater", alpha=0.05)
+    risk_diff = (
+        round((sum(yb for _, yb in complete_pairs) - sum(ya for ya, _ in complete_pairs)) / n_complete, 4)
+        if n_complete > 0
+        else None
+    )
+
+    return {
+        "name_a": name_a,
+        "name_b": name_b,
+        "n_total": n_total,
+        "n_infra_excluded": n_infra,
+        "n_evaluable_cohort": n_evaluable,
+        "n_complete_pairs": n_complete,
+        "missing_a": missing_a,
+        "missing_b": missing_b,
+        "discordant_b": b,
+        "discordant_c": c,
+        "n_discordant": n_d,
+        "discordant_odds_ratio": odds_ratio,
+        "mcnemar_p_value": mcnemar_res.p_value,
+        "mcnemar_statistically_significant": mcnemar_res.statistically_significant,
+        "complete_case_risk_difference": risk_diff,
+    }
 
 
 def run_multi_mechanism_benchmark(
@@ -621,7 +856,7 @@ def run_multi_mechanism_benchmark(
 
     n_total = len(evaluations)
 
-    # Count infrastructure failures (asymmetric or mutual)
+    # Count infrastructure failures for primary Active DD vs LLM Judge contrast
     infra_failed_ids = {
         ev.mechanism_id
         for ev in evaluations
@@ -631,7 +866,7 @@ def run_multi_mechanism_benchmark(
     n_infra = len(infra_failed_ids)
     n_evaluable = n_total - n_infra
 
-    # Filter to retained analysis cohort
+    # Filter to retained analysis cohort for primary contrast
     evaluable_evs = [ev for ev in evaluations if ev.mechanism_id not in infra_failed_ids]
 
     # Extract false attribution indicators for paired contrast
@@ -677,30 +912,93 @@ def run_multi_mechanism_benchmark(
     tc_greedy = [ev.greedy_ablation_outcome.target_calls_used for ev in evaluable_evs]
     tc_judge = [ev.llm_judge_outcome.target_calls_used for ev in evaluable_evs]
 
+    has_cand_only = any(ev.candidate_only_judge_outcome is not None for ev in evaluations)
+
+    pooled_fdr = {"active_dd": fdr_dd, "greedy_ablation": fdr_greedy, "llm_judge": fdr_judge}
+    mean_fdp = {"active_dd": fdp_dd, "greedy_ablation": fdp_greedy, "llm_judge": fdp_judge}
+    exact_rec = {
+        "active_dd": round(rec_dd, 4),
+        "greedy_ablation": round(rec_greedy, 4),
+        "llm_judge": round(rec_judge, 4),
+    }
+    mean_reqs = {
+        "active_dd": round(sum(req_dd) / max(1, len(req_dd)), 2),
+        "greedy_ablation": round(sum(req_greedy) / max(1, len(req_greedy)), 2),
+        "llm_judge": round(sum(req_judge) / max(1, len(req_judge)), 2),
+    }
+    mean_tcs = {
+        "active_dd": round(sum(tc_dd) / max(1, len(tc_dd)), 2),
+        "greedy_ablation": round(sum(tc_greedy) / max(1, len(tc_greedy)), 2),
+        "llm_judge": round(sum(tc_judge) / max(1, len(tc_judge)), 2),
+    }
+
+    if has_cand_only:
+        pred_cand_only = [
+            ev.candidate_only_judge_outcome.predicted_candidate_set
+            for ev in evaluable_evs
+            if ev.candidate_only_judge_outcome is not None
+        ]
+        fdr_cand_only = compute_discovery_level_fdr(pred_cand_only, gts)
+        fdp_cand_only = compute_mean_mechanism_fdp(pred_cand_only, gts)
+        rec_cand_only = (
+            sum(
+                1 for ev in evaluable_evs
+                if ev.candidate_only_judge_outcome and ev.candidate_only_judge_outcome.exact_recovery_indicator == 1
+            )
+            / max(1, n_evaluable)
+        )
+        req_cand_only = [
+            ev.candidate_only_judge_outcome.model_requests
+            for ev in evaluable_evs
+            if ev.candidate_only_judge_outcome is not None
+        ]
+        tc_cand_only = [
+            ev.candidate_only_judge_outcome.target_calls_used
+            for ev in evaluable_evs
+            if ev.candidate_only_judge_outcome is not None
+        ]
+        pooled_fdr["candidate_only_judge"] = fdr_cand_only
+        mean_fdp["candidate_only_judge"] = fdp_cand_only
+        exact_rec["candidate_only_judge"] = round(rec_cand_only, 4)
+        mean_reqs["candidate_only_judge"] = round(sum(req_cand_only) / max(1, len(req_cand_only)), 2)
+        mean_tcs["candidate_only_judge"] = round(sum(tc_cand_only) / max(1, len(tc_cand_only)), 2)
+
+    # Detailed arm summaries and paired comparisons
+    arm_summaries = {
+        "active_dd": compute_arm_summary(evaluations, "active_dd_outcome"),
+        "greedy_ablation": compute_arm_summary(evaluations, "greedy_ablation_outcome"),
+        "llm_judge": compute_arm_summary(evaluations, "llm_judge_outcome"),
+    }
+    if has_cand_only:
+        arm_summaries["candidate_only_judge"] = compute_arm_summary(evaluations, "candidate_only_judge_outcome")
+
+    paired_comparisons = {
+        "active_dd_vs_llm_judge": compute_paired_comparison(
+            evaluations, "active_dd_outcome", "llm_judge_outcome", "active_dd", "llm_judge"
+        )
+    }
+    if has_cand_only:
+        paired_comparisons["active_dd_vs_candidate_only_judge"] = compute_paired_comparison(
+            evaluations, "active_dd_outcome", "candidate_only_judge_outcome", "active_dd", "candidate_only_judge"
+        )
+        paired_comparisons["llm_judge_vs_candidate_only_judge"] = compute_paired_comparison(
+            evaluations, "llm_judge_outcome", "candidate_only_judge_outcome", "llm_judge", "candidate_only_judge"
+        )
+
     secondary = {
         "benchmark_tier": resolved_tier,
-        "pooled_fdr": {"active_dd": fdr_dd, "greedy_ablation": fdr_greedy, "llm_judge": fdr_judge},
-        "mean_fdp": {"active_dd": fdp_dd, "greedy_ablation": fdp_greedy, "llm_judge": fdp_judge},
-        "exact_recovery_rate": {
-            "active_dd": round(rec_dd, 4),
-            "greedy_ablation": round(rec_greedy, 4),
-            "llm_judge": round(rec_judge, 4),
-        },
-        "mean_requests": {
-            "active_dd": round(sum(req_dd) / max(1, len(req_dd)), 2),
-            "greedy_ablation": round(sum(req_greedy) / max(1, len(req_greedy)), 2),
-            "llm_judge": round(sum(req_judge) / max(1, len(req_judge)), 2),
-        },
-        "mean_target_calls": {
-            "active_dd": round(sum(tc_dd) / max(1, len(tc_dd)), 2),
-            "greedy_ablation": round(sum(tc_greedy) / max(1, len(tc_greedy)), 2),
-            "llm_judge": round(sum(tc_judge) / max(1, len(tc_judge)), 2),
-        },
+        "pooled_fdr": pooled_fdr,
+        "mean_fdp": mean_fdp,
+        "exact_recovery_rate": exact_rec,
+        "mean_requests": mean_reqs,
+        "mean_target_calls": mean_tcs,
+        "arm_summaries": arm_summaries,
+        "paired_comparisons": paired_comparisons,
         "protocol_deviations": deviation_log,
     }
 
     summary_text = (
-        f"Evaluated {n_total} mechanisms across 3 methods. Retained {n_evaluable} mechanisms (excluded {n_infra} infra failures). "
+        f"Evaluated {n_total} mechanisms across {4 if has_cand_only else 3} methods. Retained {n_evaluable} mechanisms (excluded {n_infra} infra failures). "
         f"Complete-case risk difference Delta_Risk = {sens_res.complete_case_risk_difference}. "
         f"Exact directional McNemar test p-value = {mcnemar_res.p_value:.5f} (b={b}, c={c}). "
         f"Cohort sensitivity bounds: [{sens_res.lower_bound}, {sens_res.upper_bound}]."
