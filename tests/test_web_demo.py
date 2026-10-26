@@ -148,7 +148,7 @@ class TestWebDemoScenarios:
             run_web_demo("unknown_xyz")
 
     def test_app_formatting_helpers(self) -> None:
-        """Verify that app formatting helpers produce valid markdown and table rows."""
+        """Verify that app formatting helpers produce valid markdown, table rows, and terminal HTML."""
         for scenario_id in SCENARIO_CATALOG:
             info_md = app.format_scenario_info(scenario_id)
             assert SCENARIO_CATALOG[scenario_id].name in info_md
@@ -159,6 +159,14 @@ class TestWebDemoScenarios:
             assert len(traj) >= 1
             assert len(disc) > 10
             assert len(comp) == 3
+
+            # Verify modern CLI terminal studio components
+            banner, stats, term, pipe, matrix = app.execute_scenario_all(scenario_id, seed=42)
+            assert SCENARIO_CATALOG[scenario_id].name in banner
+            assert "stat-box" in stats
+            assert "terminal-window" in term
+            assert "pipeline-flow" in pipe
+            assert "Delta Debugging" in matrix
 
     def test_app_main_graceful_missing_gradio(self) -> None:
         """When gradio is not installed, app.main() exits cleanly with instructions."""
