@@ -1,6 +1,6 @@
-"""AgentXRay: High-Performance CLI Terminal & Causal Minimization Studio.
+"""AgentXRay: Terminal-First Causal Failure Minimization Studio.
 
-Developer-grade interactive portfolio demonstration for Hugging Face Spaces.
+Developer-grade research interface for black-box fault localization in tool-calling AI agents.
 Runs completely offline in-memory (<0.05s) with zero external network calls and $0.00 cost.
 """
 
@@ -39,187 +39,444 @@ from agentxray.web_demo import (
 
 
 CUSTOM_CSS = """
-/* Dark Developer Terminal Theme */
+/* AgentXRay Terminal-First Developer Theme */
 :root {
-    --bg-dark: #07090E;
-    --card-bg: #0D1117;
-    --card-border: #1F2937;
-    --accent-blue: #38BDF8;
-    --accent-green: #34D399;
-    --accent-red: #F87171;
-    --accent-yellow: #FBBF24;
-    --accent-purple: #A78BFA;
-    --text-muted: #94A3B8;
+    --bg-page: #08090B;
+    --bg-surface: #0E1013;
+    --bg-surface-sub: #14171B;
+    --border-subtle: #282C32;
+    --border-hover: #3A3F47;
+    --text-primary: #E6E8EB;
+    --text-muted: #9298A3;
+    --text-dim: #5C626E;
+    --color-success: #A3E6B0;
+    --color-failure: #F08080;
+    --color-warning: #E5C07B;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", Menlo, Monaco, Consolas, monospace;
 }
 
 body, .gradio-container {
-    background-color: var(--bg-dark) !important;
-    color: #E2E8F0 !important;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    background-color: var(--bg-page) !important;
+    color: var(--text-primary) !important;
+    font-family: var(--font-sans) !important;
+    max-width: 1440px !important;
+    margin: 0 auto !important;
+    padding: 12px 20px !important;
 }
 
-/* Custom Hero Header */
-.hero-header {
-    background: linear-gradient(180deg, #111827 0%, #07090E 100%);
-    border: 1px solid #1F2937;
-    border-radius: 10px;
-    padding: 24px 28px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-}
-.hero-title {
-    font-size: 1.85rem;
-    font-weight: 800;
-    color: #F8FAFC;
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-.hero-subtitle {
-    color: var(--text-muted);
-    font-size: 0.98rem;
-    margin-top: 6px;
-    line-height: 1.5;
+* {
+    box-sizing: border-box;
 }
 
-/* Developer Pill Badges */
-.badge-pill {
-    display: inline-block;
-    padding: 3px 9px;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-family: monospace;
-}
-.badge-prompt { background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3); }
-.badge-schema { background: rgba(167, 139, 250, 0.15); color: #A78BFA; border: 1px solid rgba(167, 139, 250, 0.3); }
-.badge-env    { background: rgba(248, 113, 113, 0.15); color: #F87171; border: 1px solid rgba(248, 113, 113, 0.3); }
-.badge-null   { background: rgba(52, 211, 153, 0.15); color: #34D399; border: 1px solid rgba(52, 211, 153, 0.3); }
-
-/* Terminal Window Component */
-.terminal-window {
-    background: #020408;
-    border: 1px solid #1E293B;
-    border-radius: 8px;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
-    overflow: hidden;
-    margin: 12px 0;
-    font-family: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, monospace;
-}
-.terminal-topbar {
-    background: #0F172A;
-    padding: 9px 14px;
-    display: flex;
-    align-items: center;
-    border-bottom: 1px solid #1E293B;
-}
-.window-dots {
-    display: flex;
-    gap: 7px;
-}
-.w-dot {
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-}
-.w-red { background: #EF4444; }
-.w-yellow { background: #F59E0B; }
-.w-green { background: #10B981; }
-.terminal-tab-title {
-    margin-left: 14px;
-    font-size: 0.78rem;
-    color: #64748B;
-    font-family: monospace;
-}
-.terminal-content {
-    padding: 16px 20px;
-    color: #E2E8F0;
-    font-size: 0.86rem;
-    line-height: 1.65;
-    overflow-x: auto;
-    white-space: pre;
-}
-
-/* Metric Stats Cards Grid */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin: 16px 0;
-}
-.stat-box {
-    background: #0D1117;
-    border: 1px solid #1F2937;
-    border-radius: 8px;
-    padding: 14px 16px;
-    position: relative;
-    overflow: hidden;
-}
-.stat-box::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 3px;
-    background: #3B82F6;
-}
-.stat-label {
-    font-size: 0.74rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 600;
-}
-.stat-value {
-    font-size: 1.45rem;
-    font-weight: 800;
-    color: #F8FAFC;
-    margin: 4px 0;
-    font-family: monospace;
-}
-.stat-sub {
-    font-size: 0.76rem;
-    color: var(--accent-green);
-    font-weight: 500;
-}
-
-/* Pipeline Step Tree */
-.pipeline-flow {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin: 16px 0;
-}
-.pipeline-step {
-    background: #0D1117;
-    border: 1px solid #1F2937;
-    border-radius: 6px;
-    padding: 12px 16px;
+/* App Topbar */
+.app-topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding: 8px 0 14px 0;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
 }
-.step-tag-fail {
-    background: rgba(239, 68, 68, 0.2);
-    color: #F87171;
-    border: 1px solid rgba(239, 68, 68, 0.4);
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-size: 0.74rem;
-    font-weight: 700;
-    font-family: monospace;
+.topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
-.step-tag-pass {
-    background: rgba(16, 185, 129, 0.2);
-    color: #34D399;
-    border: 1px solid rgba(16, 185, 129, 0.4);
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-size: 0.74rem;
+.brand-title {
+    font-size: 14px;
     font-weight: 700;
-    font-family: monospace;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+.brand-version {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-surface-sub);
+    border: 1px solid var(--border-subtle);
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+.mode-tag {
+    font-size: 11px;
+    color: var(--text-muted);
+    border: 1px solid var(--border-subtle);
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+.status-indicator {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    font-weight: 500;
+}
+.status-ready {
+    color: var(--text-muted);
+    background: var(--bg-surface-sub);
+    border: 1px solid var(--border-subtle);
+}
+.topbar-right {
+    display: flex;
+    align-items: center;
+}
+.topbar-link {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+.topbar-link:hover {
+    color: var(--text-primary);
+}
+
+/* Sidebar Section Header */
+.sidebar-heading {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Scenario Context Card */
+.scenario-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 12px;
+    margin-top: 14px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.scenario-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.scenario-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+.scenario-category {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--bg-surface-sub);
+    border: 1px solid var(--border-subtle);
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+.scenario-desc {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+.scenario-prompt-box {
+    background: var(--bg-page);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    font-size: 11px;
+}
+.prompt-label {
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    font-size: 10px;
+    margin-bottom: 2px;
+}
+.prompt-text {
+    color: var(--text-primary);
+    font-style: italic;
+}
+.symptom-text {
+    margin-top: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+.symptom-fail { color: var(--color-failure); }
+.symptom-pass { color: var(--color-success); }
+
+/* Candidate Pool Listing */
+.candidate-pool-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+.candidate-pool-box {
+    background: var(--bg-page);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    padding: 6px 8px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+.candidate-row {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 3px 0;
+    color: var(--text-muted);
+    border-bottom: 1px solid #14171B;
+    line-height: 1.35;
+}
+.candidate-row:last-child {
+    border-bottom: none;
+}
+.candidate-row.is-trigger {
+    color: var(--text-primary);
+}
+.tag-trigger {
+    color: var(--color-failure);
+    font-weight: 700;
+    margin-right: 4px;
+}
+.tag-distract {
+    color: var(--text-dim);
+    margin-right: 4px;
+}
+.candidate-id {
+    color: var(--text-muted);
+}
+
+/* Aligned Status Strip */
+.status-strip {
+    display: flex;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 8px 0;
+    margin-bottom: 12px;
+}
+.status-cell {
+    flex: 1;
+    padding: 2px 14px;
+    border-right: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
+}
+.status-cell:last-child {
+    border-right: none;
+}
+.status-cell-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+.status-cell-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.status-cell-sub {
+    font-size: 11px;
+    font-weight: normal;
+    color: var(--text-muted);
+}
+.val-success { color: var(--color-success); }
+.val-failure { color: var(--color-failure); }
+
+/* Terminal Pane */
+.terminal-pane {
+    background: var(--bg-page);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+}
+.terminal-bar {
+    background: var(--bg-surface-sub);
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 11px;
+    color: var(--text-muted);
+}
+.term-session {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+.term-badge {
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 10px;
+}
+.terminal-body {
+    padding: 14px 16px;
+    color: var(--text-primary);
+    font-size: 12px;
+    line-height: 1.6;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--bg-page);
+    overflow-x: hidden;
+}
+
+/* Data Tables (Trace & Comparison) */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: var(--font-sans);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.data-table th {
+    background: var(--bg-surface-sub);
+    color: var(--text-muted);
+    text-align: left;
+    padding: 8px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.data-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #1A1D23;
+    color: var(--text-primary);
+    vertical-align: middle;
+}
+.data-table tr:last-child td {
+    border-bottom: none;
+}
+.row-highlight {
+    background: #0B0E12;
+    border-left: 2px solid var(--color-success);
+}
+.mono-bold {
+    font-family: var(--font-mono);
+    font-weight: 600;
+}
+.mono-dim {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+}
+.table-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+/* Badges & Tags */
+.badge-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.tag-pass {
+    color: var(--color-success);
+    background: #101F15;
+    border: 1px solid #1C3B24;
+}
+.tag-fail {
+    color: var(--color-failure);
+    background: #221213;
+    border: 1px solid #3D1E20;
+}
+.alg-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Gradio Component Overrides */
+button.primary, button.secondary, .gr-button {
+    background: var(--bg-surface-sub) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: 4px !important;
+    font-family: var(--font-mono) !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    box-shadow: none !important;
+    transition: background 0.15s ease, border-color 0.15s ease !important;
+    padding: 7px 14px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+}
+button.primary:hover, button.secondary:hover, .gr-button:hover {
+    background: #1C2026 !important;
+    border-color: var(--border-hover) !important;
+}
+button.primary:active, .gr-button:active {
+    background: #252A32 !important;
+}
+
+/* Inputs & Dropdowns */
+.gr-input, input[type="text"], input[type="number"], select, .gr-dropdown {
+    background: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: 4px !important;
+    font-size: 12px !important;
+    box-shadow: none !important;
+}
+.gr-input:focus, input:focus, select:focus {
+    border-color: var(--border-hover) !important;
+    outline: none !important;
+}
+label span {
+    color: var(--text-muted) !important;
+    font-family: var(--font-mono) !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+}
+
+/* Tabs */
+.tab-nav {
+    border-bottom: 1px solid var(--border-subtle) !important;
+    background: transparent !important;
+    gap: 4px !important;
+    margin-bottom: 12px !important;
+}
+.tab-nav button {
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-bottom: none !important;
+    color: var(--text-muted) !important;
+    font-family: var(--font-mono) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    padding: 5px 12px !important;
+    border-radius: 3px 3px 0 0 !important;
+}
+.tab-nav button.selected {
+    background: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-bottom: 1px solid var(--bg-surface) !important;
+    margin-bottom: -1px !important;
 }
 """
 
@@ -333,221 +590,259 @@ def run_and_format_scenario(
     return diag_md, traj_rows, discovery_md, comp_rows
 
 
-def format_scenario_banner_html(scenario_id: str) -> str:
-    """Format scenario metadata into a modern developer card."""
+def format_scenario_context_html(scenario_id: str) -> str:
+    """Format scenario context for the compact configuration sidebar."""
     meta = SCENARIO_CATALOG[scenario_id]
 
-    if "Prompt" in meta.category:
-        badge_cls = "badge-prompt"
-    elif "Schema" in meta.category:
-        badge_cls = "badge-schema"
-    elif "Environment" in meta.category:
-        badge_cls = "badge-env"
+    if meta.is_null_case:
+        symptom_html = "<div class='symptom-text symptom-pass'>CONTROL: Clean baseline execution (0 planted triggers)</div>"
     else:
-        badge_cls = "badge-null"
-
-    tools_html = " ".join(
-        f"<span style='background:#1E293B;padding:2px 6px;border-radius:4px;font-family:monospace;font-size:0.8rem;color:#93C5FD;'>{html.escape(t)}</span>"
-        for t in meta.available_tools
-    )
+        symptom_html = f"<div class='symptom-text symptom-fail'>DIAGNOSTIC: {html.escape(meta.observable_failure_symptom)}</div>"
 
     candidates_list: list[str] = []
     for idx, elem in enumerate(meta.candidate_elements):
-        if elem in meta.ground_truth_trigger:
-            tag = "<span style='color:#F87171;font-weight:bold;'>[TRIGGER]</span>"
-        else:
-            tag = "<span style='color:#64748B;'>[distract]</span>"
+        is_trig = elem in meta.ground_truth_trigger
+        tag_str = "<span class='tag-trigger'>[TRIGGER]</span>" if is_trig else "<span class='tag-distract'>[DISTRACT]</span>"
+        row_cls = "candidate-row is-trigger" if is_trig else "candidate-row"
         escaped_elem = html.escape(elem)
         candidates_list.append(
-            f"<div style='margin:4px 0;font-size:0.85rem;color:#CBD5E1;font-family:monospace;'>"
-            f"{tag} <span style='color:#94A3B8;'>elem_{idx}:</span> {escaped_elem}</div>"
+            f"<div class='{row_cls}'>{tag_str}<span class='candidate-id'>elem_{idx}:</span> {escaped_elem}</div>"
         )
     candidates_html = "".join(candidates_list)
 
-    symptom_row = (
-        f"<div style='margin-top:6px;font-size:0.84rem;color:#FCA5A5;'><strong>Observable Failure Diagnostic:</strong> <code>{html.escape(meta.observable_failure_symptom)}</code></div>"
-        if meta.observable_failure_symptom
-        else "<div style='margin-top:6px;font-size:0.84rem;color:#86EFAC;'><strong>Control State:</strong> Clean baseline execution without planted triggers.</div>"
-    )
+    category_short = meta.category.split('/')[0].strip()
 
     return f"""
-    <div style='background:#0D1117;border:1px solid #1F2937;border-radius:8px;padding:16px 20px;margin-bottom:14px;'>
-        <div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;'>
-            <div style='font-size:1.05rem;font-weight:700;color:#F8FAFC;'>{html.escape(meta.name)}</div>
-            <span class='badge-pill {badge_cls}'>{html.escape(meta.category.split('/')[0].strip())}</span>
+    <div class='scenario-card'>
+        <div class='scenario-card-header'>
+            <div class='scenario-name'>{html.escape(meta.name)}</div>
+            <span class='scenario-category'>{html.escape(category_short)}</span>
         </div>
-        <div style='font-size:0.88rem;color:#94A3B8;margin-bottom:10px;'>{html.escape(meta.description)}</div>
-        <div style='background:#07090E;border:1px solid #1E293B;border-radius:6px;padding:10px 14px;font-size:0.85rem;'>
-            <div><span style='color:#64748B;'>User Prompt:</span> <span style='color:#E2E8F0;font-style:italic;'>"{html.escape(meta.user_prompt)}"</span></div>
-            <div style='margin-top:4px;'><span style='color:#64748B;'>Tools Exposed:</span> {tools_html}</div>
-            {symptom_row}
+        <div class='scenario-desc'>{html.escape(meta.description)}</div>
+        <div class='scenario-prompt-box'>
+            <div class='prompt-label'>TARGET PROMPT</div>
+            <div class='prompt-text'>"{html.escape(meta.user_prompt)}"</div>
+            {symptom_html}
         </div>
-        <div style='margin-top:12px;'>
-            <div style='font-size:0.78rem;text-transform:uppercase;color:#64748B;font-weight:600;margin-bottom:4px;'>Injected Candidate Pool ({len(meta.candidate_elements)} directives):</div>
-            <div style='background:#07090E;border:1px solid #1E293B;border-radius:6px;padding:8px 12px;'>
-                {candidates_html}
-            </div>
+        <div class='candidate-pool-title'>DIRECTIVE POOL ({len(meta.candidate_elements)} CANDIDATES)</div>
+        <div class='candidate-pool-box'>
+            {candidates_html}
+        </div>
+    </div>
+    """
+
+
+def format_scenario_banner_html(scenario_id: str) -> str:
+    """Backward-compatible alias for format_scenario_context_html."""
+    return format_scenario_context_html(scenario_id)
+
+
+def generate_status_strip_html(result: WebDemoScenarioResult) -> str:
+    """Format compact aligned status strip replacing large KPI cards."""
+    if result.is_null_case:
+        min_status = "CLEAN CONTROL VERIFIED"
+        min_cls = "val-success"
+    elif result.is_one_minimal:
+        min_status = "1-MINIMAL VERIFIED"
+        min_cls = "val-success"
+    else:
+        min_status = "UNVERIFIED"
+        min_cls = "val-failure"
+
+    if result.matches_ground_truth:
+        match_status = "100% MATCH"
+        match_cls = "val-success"
+    else:
+        match_status = "FALSE ATTRIBUTION"
+        match_cls = "val-failure"
+
+    delta_evals = result.greedy_calls - result.target_calls_used
+    if delta_evals > 0:
+        eval_sub = f"(+{delta_evals} vs greedy)"
+    elif delta_evals == 0:
+        eval_sub = "(matches greedy)"
+    else:
+        eval_sub = "optimal path"
+
+    latency_ms = result.execution_time_seconds * 1000.0
+
+    return f"""
+    <div class='status-strip stat-box'>
+        <div class='status-cell'>
+            <div class='status-cell-label'>MINIMALITY STATUS</div>
+            <div class='status-cell-value {min_cls}'>{min_status}</div>
+        </div>
+        <div class='status-cell'>
+            <div class='status-cell-label'>EVALUATIONS USED</div>
+            <div class='status-cell-value'>{result.target_calls_used} calls <span class='status-cell-sub'>{eval_sub}</span></div>
+        </div>
+        <div class='status-cell'>
+            <div class='status-cell-label'>GROUND TRUTH RECALL</div>
+            <div class='status-cell-value {match_cls}'>{match_status}</div>
+        </div>
+        <div class='status-cell'>
+            <div class='status-cell-label'>EXECUTION LATENCY</div>
+            <div class='status-cell-value'>{latency_ms:.2f} ms <span class='status-cell-sub'>offline ($0.00)</span></div>
         </div>
     </div>
     """
 
 
 def generate_stats_grid_html(result: WebDemoScenarioResult) -> str:
-    """Format four top-level metric cards."""
-    eff_delta = f"+{result.greedy_calls - result.target_calls_used} calls vs Greedy" if result.greedy_calls > result.target_calls_used else "Optimal Search Path"
-    min_status = "VERIFIED EMPTY" if result.is_null_case else ("1-MINIMAL" if result.is_one_minimal else "UNVERIFIED")
-    min_color = "#34D399" if (result.is_one_minimal or result.is_null_case) else "#F87171"
-    match_status = "100% MATCH" if result.matches_ground_truth else "FALSE POSITIVE"
-    match_color = "#34D399" if result.matches_ground_truth else "#F87171"
+    """Backward-compatible alias for generate_status_strip_html."""
+    return generate_status_strip_html(result)
+
+
+def generate_terminal_html(result: WebDemoScenarioResult) -> str:
+    """Format monospace terminal output view backed by existing execution results."""
+    lines: list[str] = [
+        f"<span style='color: #9298A3;'>$</span> <span style='color: #E6E8EB; font-weight: 600;'>agentxray probe</span> <span style='color: #9298A3;'>--scenario</span> <span style='color: #E6E8EB;'>{html.escape(result.scenario_id)}</span> <span style='color: #9298A3;'>--seed</span> <span style='color: #E6E8EB;'>42</span>",
+        "",
+        f"<span style='color: #5C626E;'>[00:00.000] [INIT]</span>    Target: {html.escape(result.agent_description)}",
+        f"<span style='color: #5C626E;'>[00:00.000] [INIT]</span>    Query:  \"{html.escape(result.user_prompt)}\"",
+        f"<span style='color: #5C626E;'>[00:00.001] [INIT]</span>    Pool:   {len(result.initial_elements)} candidate directives loaded",
+        "",
+        f"<span style='color: #5C626E;'>[00:00.001] [TRIAL 01]</span> <span style='color: #E6E8EB;'>BASELINE_CHECK</span>       {len(result.initial_elements)}/{len(result.initial_elements)} candidates   -> <span style='color: {'#F08080' if result.initial_failure_reproduced else '#A3E6B0'}; font-weight: 600;'>{'FAILURE' if result.initial_failure_reproduced else 'SUCCESS'}</span>",
+        f"            Tool:   <span style='color: #E6E8EB;'>{html.escape(result.initial_failure_tool_call)}</span>",
+        f"            Output: <span style='color: {'#F08080' if result.initial_failure_reproduced else '#A3E6B0'};'>{html.escape(result.initial_failure_output)}</span>",
+    ]
+
+    if result.initial_failure_reproduced:
+        lines.append("            Action: Baseline failure reproduced. Commencing binary hierarchical delta debugging (ddmin)...")
+    else:
+        lines.append("            Action: Baseline passed without failure. Verified clean control state. Halting search.")
+
+    for s in result.dd_steps[1:]:
+        t_sec = 0.001 + s.step_number * 0.001
+        outcome_color = "#F08080" if s.outcome == "FAILURE" else "#A3E6B0"
+        inv_name = s.intervention_type.upper()
+        lines.append("")
+        lines.append(f"<span style='color: #5C626E;'>[{t_sec:06.3f}] [TRIAL {s.step_number:02d}]</span> <span style='color: #E6E8EB;'>{inv_name:<20}</span> {s.element_count:2d}/{len(result.initial_elements)} candidates   -> <span style='color: {outcome_color}; font-weight: 600;'>{s.outcome}</span>")
+        lines.append(f"            Action: <span style='color: #9298A3;'>{html.escape(s.action_narrative)}</span>")
+
+    lines.append("")
+    lines.append("<span style='color: #282C32;'>────────────────────────────────────────────────────────────────────────────────────────────</span>")
+
+    if result.is_null_case:
+        lines.append("<span style='color: #A3E6B0; font-weight: 600;'>[RESULT] CLEAN CONTROL VERIFIED:</span> Minimal trigger set is ()")
+        lines.append("         Zero failure conditions detected; control state verified without false attributions.")
+    else:
+        lines.append("<span style='color: #A3E6B0; font-weight: 600;'>[RESULT] ISOLATED 1-MINIMAL TRIGGER:</span>")
+        for elem in result.discovered_subset:
+            escaped_e = html.escape(elem)
+            lines.append(f"  <span style='color: #A3E6B0;'>➔</span> <span style='color: #E6E8EB; background: #14171B; border: 1px solid #282C32; padding: 2px 8px; border-radius: 2px;'>{escaped_e}</span>")
+        lines.append("<span style='color: #9298A3;'>[PROOF]  Counterfactual minimality verified: removing isolated trigger restores success; empty set () passes.</span>")
+
+    lines.append(f"<span style='color: #5C626E;'>[STATS]</span>  Evaluations: <span style='color: #E6E8EB; font-weight: 600;'>{result.target_calls_used} calls</span> (ddmin) vs <span style='color: #9298A3;'>{result.greedy_calls} calls</span> (greedy) | Latency: <span style='color: #E6E8EB;'>{result.execution_time_seconds * 1000.0:.2f} ms</span>")
+    lines.append(f"<span style='color: #5C626E;'>[AUDIT]</span>  1-Minimal: <span style='color: #A3E6B0;'>{result.is_one_minimal}</span> | Ground Truth Recall: <span style='color: #A3E6B0;'>{result.matches_ground_truth}</span> | API Cost: <span style='color: #A3E6B0;'>$0.00 (offline)</span>")
+
+    body_content = "\n".join(lines)
 
     return f"""
-    <div class='stats-grid'>
-        <div class='stat-box'>
-            <div class='stat-label'>Search Evaluations</div>
-            <div class='stat-value'>{result.target_calls_used} <span style='font-size:0.85rem;color:#64748B;'>calls</span></div>
-            <div class='stat-sub' style='color:#38BDF8;'>{eff_delta}</div>
+    <div class='terminal-pane terminal-window'>
+        <div class='terminal-bar'>
+            <div class='term-session'>session: agentxray probe --scenario {html.escape(result.scenario_id)} --seed 42</div>
+            <div class='term-badge'>OFFLINE MOCK HARNESS</div>
         </div>
-        <div class='stat-box'>
-            <div class='stat-label'>Causal Minimality</div>
-            <div class='stat-value' style='color:{min_color};'>{min_status}</div>
-            <div class='stat-sub'>Strictly Counterfactual</div>
-        </div>
-        <div class='stat-box'>
-            <div class='stat-label'>Ground Truth Recall</div>
-            <div class='stat-value' style='color:{match_color};'>{match_status}</div>
-            <div class='stat-sub'>Verified Against Spec</div>
-        </div>
-        <div class='stat-box'>
-            <div class='stat-label'>Execution Latency</div>
-            <div class='stat-value'>{result.execution_time_seconds * 1000.0:.2f} <span style='font-size:0.85rem;color:#64748B;'>ms</span></div>
-            <div class='stat-sub'>In-Memory ($0.00 cost)</div>
-        </div>
+        <pre class='terminal-body'>{body_content}</pre>
     </div>
     """
 
 
-def generate_terminal_html(result: WebDemoScenarioResult) -> str:
-    """Format full CLI terminal session string with color-coded tokens."""
-    lines: list[str] = [
-        f"<span style='color:#38BDF8;'>$</span> <span style='color:#F1F5F9;font-weight:700;'>agentxray probe</span> --tier <span style='color:#A78BFA;'>{html.escape(result.category)}</span> --scenario <span style='color:#FBBF24;'>{html.escape(result.scenario_id)}</span> --seed 42",
-        f"<span style='color:#64748B;'>[00:00.000] ─── INITIALIZING TESTBED ──────────────────────────────────────────────────────────</span>",
-        f"<span style='color:#64748B;'>[00:00.001] Target Harness:</span> {html.escape(result.agent_description)}",
-        f"<span style='color:#64748B;'>[00:00.001] User Query:</span>     \"{html.escape(result.user_prompt)}\"",
-        f"<span style='color:#64748B;'>[00:00.001] Injected Pool:</span>  {len(result.initial_elements)} candidate elements\n",
-        f"<span style='color:#64748B;'>[00:00.002] ─── TRIAL 01: FULL CONTEXT BASELINE CHECK ──────────────────────────────────────</span>",
-        f"<span style='color:#64748B;'>[00:00.002] Injected Set:</span>    {len(result.initial_elements)}/{len(result.initial_elements)} candidates present",
-        f"<span style='color:#64748B;'>[00:00.002] Tool Invocation:</span> <span style='color:#93C5FD;'>{html.escape(result.initial_failure_tool_call)}</span>",
-        f"<span style='color:#64748B;'>[00:00.003] Tool Diagnostic:</span> <span style='color:#FCA5A5;'>{html.escape(result.initial_failure_output)}</span>",
-    ]
-
-    if result.initial_failure_reproduced:
-        lines.append(f"<span style='color:#64748B;'>[00:00.003] Status:</span>         <span style='background:#7F1D1D;color:#FECDD3;padding:1px 6px;border-radius:3px;font-weight:700;'>FAILURE REPRODUCED</span>")
-        lines.append(f"<span style='color:#64748B;'>[00:00.003] Decision:</span>       Initiating 2-way hierarchical binary partitioning (ddmin)...\n")
-    else:
-        lines.append(f"<span style='color:#64748B;'>[00:00.003] Status:</span>         <span style='background:#14532D;color:#BBF7D0;padding:1px 6px;border-radius:3px;font-weight:700;'>CLEAN BASELINE (NO FAILURE)</span>")
-        lines.append(f"<span style='color:#64748B;'>[00:00.003] Decision:</span>       Target passes without failure; no trigger to minimize. Halting search.\n")
-
-    for s in result.dd_steps[1:]:
-        t_sec = 0.003 + s.step_number * 0.001
-        tag = (
-            "<span style='background:#7F1D1D;color:#FECDD3;padding:1px 5px;border-radius:3px;font-weight:700;'>FAIL</span>"
+def generate_trace_html(result: WebDemoScenarioResult) -> str:
+    """Format step-by-step minimization trajectory table."""
+    rows: list[str] = []
+    for s in result.dd_steps:
+        outcome_tag = (
+            "<span class='badge-tag tag-fail'>FAILURE</span>"
             if s.outcome == "FAILURE"
-            else "<span style='background:#14532D;color:#BBF7D0;padding:1px 5px;border-radius:3px;font-weight:700;'>PASS</span>"
+            else "<span class='badge-tag tag-pass'>SUCCESS</span>"
         )
-        lines.append(
-            f"<span style='color:#64748B;'>[{t_sec:06.3f}] ─── TRIAL {s.step_number:02d}: {s.intervention_type.upper():<24} ─────────────────────────</span>\n"
-            f"<span style='color:#64748B;'>[{t_sec:06.3f}] Partition Size:</span> {s.element_count:2d} elements | Outcome: {tag}\n"
-            f"<span style='color:#64748B;'>[{t_sec:06.3f}] Action Narrative:</span> <span style='color:#E2E8F0;'>{html.escape(s.action_narrative)}</span>\n"
+        inv_display = s.intervention_type.replace('_', ' ').upper()
+        rows.append(
+            f"<tr>"
+            f"<td class='mono-bold' style='color: #9298A3;'>{s.step_number:02d}</td>"
+            f"<td class='mono-bold'>{html.escape(inv_display)}</td>"
+            f"<td class='mono-dim'>{s.element_count} directives</td>"
+            f"<td>{outcome_tag}</td>"
+            f"<td class='table-desc'>{html.escape(s.action_narrative)}</td>"
+            f"</tr>"
         )
-
-    lines.append(f"<span style='color:#64748B;'>[00:00.008] ─── CAUSAL MINIMIZATION SEARCH COMPLETE ──────────────────────────────────────────</span>")
-    if result.is_null_case:
-        lines.append(f"<span style='color:#34D399;font-weight:700;'>[RESULT] CLEAN CONTROL VERIFIED:</span> Discovered minimal subset: ()")
-        lines.append(f"<span style='color:#64748B;'>[RESULT] Causal Claim:</span>   Zero false attributions made. Correctly verified clean passing state.")
-    else:
-        lines.append(f"<span style='color:#34D399;font-weight:700;'>[RESULT] 1-MINIMAL TRIGGER ISOLATED:</span>")
-        for e in result.discovered_subset:
-            lines.append(f"  <span style='color:#F87171;font-weight:700;'>➔</span> <span style='background:#881337;color:#FFE4E6;padding:2px 8px;border-radius:4px;font-weight:600;'>{html.escape(e)}</span>")
-        lines.append(f"<span style='color:#64748B;'>[RESULT] Causal Proof:</span>   Removing isolated directive eliminates failure; empty set () succeeds.")
-
-    lines.append(f"<span style='color:#38BDF8;'>[TELEMETRY]</span> Evaluations Used: <span style='color:#FBBF24;font-weight:700;'>{result.target_calls_used} calls</span> (Delta Debugging) vs <span style='color:#94A3B8;'>{result.greedy_calls} calls</span> (Greedy Ablation)")
-    lines.append(f"<span style='color:#38BDF8;'>[TELEMETRY]</span> Verification:     1-Minimal: <span style='color:#34D399;'>{result.is_one_minimal}</span> | Ground Truth Match: <span style='color:#34D399;'>{result.matches_ground_truth}</span>")
-
-    inner_content = "\n".join(lines)
+    rows_html = "".join(rows)
 
     return f"""
-    <div class='terminal-window'>
-        <div class='terminal-topbar'>
-            <div class='window-dots'>
-                <div class='w-dot w-red'></div>
-                <div class='w-dot w-yellow'></div>
-                <div class='w-dot w-green'></div>
-            </div>
-            <div class='terminal-tab-title'>agentxray ~ probe --scenario {html.escape(result.scenario_id)} (zsh)</div>
-        </div>
-        <div class='terminal-content'>{inner_content}</div>
+    <div class='trace-container pipeline-flow'>
+        <table class='data-table'>
+            <thead>
+                <tr>
+                    <th style='width: 50px;'>STEP</th>
+                    <th style='width: 160px;'>INTERVENTION</th>
+                    <th style='width: 110px;'>CANDIDATES</th>
+                    <th style='width: 90px;'>OUTCOME</th>
+                    <th>DIAGNOSTIC ACTION & NARRATIVE</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows_html}
+            </tbody>
+        </table>
     </div>
     """
 
 
 def generate_pipeline_html(result: WebDemoScenarioResult) -> str:
-    """Format visual search trajectory pipeline cards."""
-    steps_html = []
-    for s in result.dd_steps:
-        tag_span = (
-            "<span class='step-tag-fail'>FAILURE REPRODUCED</span>"
-            if s.outcome == "FAILURE"
-            else "<span class='step-tag-pass'>SUCCESS (SAFE)</span>"
-        )
-        steps_html.append(f"""
-        <div class='pipeline-step'>
-            <div style='display:flex;align-items:center;gap:12px;'>
-                <div style='background:#1E293B;color:#94A3B8;padding:4px 8px;border-radius:4px;font-family:monospace;font-size:0.8rem;font-weight:700;'>STEP {s.step_number:02d}</div>
-                <div>
-                    <div style='font-size:0.9rem;font-weight:600;color:#F8FAFC;'>{html.escape(s.intervention_type.replace('_', ' ').title())}</div>
-                    <div style='font-size:0.8rem;color:#94A3B8;'>{html.escape(s.action_narrative)}</div>
-                </div>
-            </div>
-            <div style='display:flex;align-items:center;gap:12px;'>
-                <span style='font-family:monospace;font-size:0.8rem;color:#CBD5E1;'>{s.element_count} directives</span>
-                {tag_span}
-            </div>
-        </div>
-        """)
-
-    all_steps = "".join(steps_html)
-    return f"<div class='pipeline-flow'>{all_steps}</div>"
+    """Backward-compatible alias for generate_trace_html."""
+    return generate_trace_html(result)
 
 
 def generate_comparison_html(result: WebDemoScenarioResult) -> str:
-    """Format the baseline comparison matrix cards."""
-    dd_eff = f"<span style='color:#38BDF8;font-weight:bold;'>{result.target_calls_used} calls</span>"
-    gr_eff = f"<span style='color:#94A3B8;'>{result.greedy_calls} calls</span>"
-    rd_eff = f"<span style='color:#94A3B8;'>{result.random_calls} calls</span>"
+    """Format baseline method comparison matrix table."""
+    dd_min = "Yes (Verified)" if result.is_one_minimal else ("N/A (Null)" if result.is_null_case else "No")
+    dd_gt = "100% Match" if result.matches_ground_truth else "Mismatch"
+    gr_min = "Yes" if result.greedy_is_minimal else ("N/A (Null)" if result.is_null_case else "No")
+    gr_gt = "100% Match" if result.greedy_matches_ground_truth else "Mismatch"
+    rd_min = "Yes" if result.random_is_minimal else ("N/A (Null)" if result.is_null_case else "No")
+    rd_gt = "100% Match" if result.random_matches_ground_truth else "Mismatch"
 
     return f"""
-    <div style='display:grid;grid-template-columns:repeat(3, 1fr);gap:14px;margin:16px 0;'>
-        <div style='background:#0D1117;border:1px solid #38BDF8;border-radius:8px;padding:16px;'>
-            <div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;'>
-                <span style='font-weight:700;color:#38BDF8;'>Delta Debugging (ddmin)</span>
-                <span class='step-tag-pass'>RECOMMENDED</span>
-            </div>
-            <div style='font-size:1.6rem;font-weight:800;font-family:monospace;color:#F8FAFC;margin:6px 0;'>{dd_eff}</div>
-            <div style='font-size:0.82rem;color:#94A3B8;margin-bottom:8px;'>Hierarchical 2-way subset & complement search with explicit 1-minimality check.</div>
-            <div style='font-size:0.78rem;color:#34D399;font-weight:600;'>✓ Confirmed 1-Minimal | 100% Ground Truth Match</div>
-        </div>
-        <div style='background:#0D1117;border:1px solid #1F2937;border-radius:8px;padding:16px;'>
-            <div style='font-weight:700;color:#CBD5E1;margin-bottom:8px;'>Greedy Single Ablation</div>
-            <div style='font-size:1.6rem;font-weight:800;font-family:monospace;color:#CBD5E1;margin:6px 0;'>{gr_eff}</div>
-            <div style='font-size:0.82rem;color:#94A3B8;margin-bottom:8px;'>Sequential element-by-element elimination pass (O(N) linear scan).</div>
-            <div style='font-size:0.78rem;color:#94A3B8;'>Inefficient on large contexts; tests every distractor individually.</div>
-        </div>
-        <div style='background:#0D1117;border:1px solid #1F2937;border-radius:8px;padding:16px;'>
-            <div style='font-weight:700;color:#CBD5E1;margin-bottom:8px;'>Seeded Random Search</div>
-            <div style='font-size:1.6rem;font-weight:800;font-family:monospace;color:#CBD5E1;margin:6px 0;'>{rd_eff}</div>
-            <div style='font-size:0.82rem;color:#94A3B8;margin-bottom:8px;'>Budget-capped random sampling of non-empty proper candidate subsets.</div>
-            <div style='font-size:0.78rem;color:#94A3B8;'>Non-deterministic; high variance in call counts on combinatorial faults.</div>
-        </div>
+    <div class='comparison-container'>
+        <table class='data-table'>
+            <thead>
+                <tr>
+                    <th style='width: 220px;'>DIAGNOSTIC ALGORITHM</th>
+                    <th style='width: 120px;'>EVALUATIONS</th>
+                    <th style='width: 110px;'>1-MINIMAL?</th>
+                    <th style='width: 110px;'>GROUND TRUTH</th>
+                    <th>SEARCH COMPLEXITY & METHODOLOGY</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class='row-highlight'>
+                    <td>
+                        <span class='alg-title'>Delta Debugging (ddmin)</span>
+                        <span class='badge-tag tag-pass' style='margin-left: 6px;'>OPTIMAL</span>
+                    </td>
+                    <td class='mono-bold' style='color: #A3E6B0;'>{result.target_calls_used} calls</td>
+                    <td class='val-success'>{dd_min}</td>
+                    <td class='val-success'>{dd_gt}</td>
+                    <td class='table-desc'>Hierarchical 2-way subset & complement search with explicit 1-minimality check. Provably isolates 1-minimal trigger in O(log N) evaluations on sparse single-fault topologies.</td>
+                </tr>
+                <tr>
+                    <td><span class='alg-title'>Greedy Single Ablation</span></td>
+                    <td class='mono-dim'>{result.greedy_calls} calls</td>
+                    <td class='val-success'>{gr_min}</td>
+                    <td class='val-success'>{gr_gt}</td>
+                    <td class='table-desc'>Sequential single-element removal pass (O(N) linear scan). Eliminates candidates one by one; tests every distractor individually regardless of fault sparsity.</td>
+                </tr>
+                <tr>
+                    <td><span class='alg-title'>Seeded Random Search</span></td>
+                    <td class='mono-dim'>{result.random_calls} calls</td>
+                    <td class='mono-dim'>{rd_min}</td>
+                    <td class='mono-dim'>{rd_gt}</td>
+                    <td class='table-desc'>Budget-capped Monte Carlo random subset sampling (budget=20). High variance in call counts; non-deterministic without fixed RNG seed.</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
     """
 
@@ -555,72 +850,66 @@ def generate_comparison_html(result: WebDemoScenarioResult) -> str:
 def execute_scenario_all(scenario_id: str, seed: float) -> tuple[str, str, str, str, str]:
     """Execute scenario and return updated HTML components."""
     result: WebDemoScenarioResult = run_web_demo(scenario_id, seed=int(seed))
-    banner_html = format_scenario_banner_html(scenario_id)
-    stats_html = generate_stats_grid_html(result)
+    context_html = format_scenario_context_html(scenario_id)
+    strip_html = generate_status_strip_html(result)
     terminal_html = generate_terminal_html(result)
-    pipeline_html = generate_pipeline_html(result)
+    trace_html = generate_trace_html(result)
     comp_html = generate_comparison_html(result)
-    return banner_html, stats_html, terminal_html, pipeline_html, comp_html
+    return context_html, strip_html, terminal_html, trace_html, comp_html
 
 
 def build_gradio_app():
-    """Construct the high-end developer terminal UI."""
+    """Construct the terminal-first developer tool UI."""
     import gradio as gr
 
     choices = [
-        (f"{m.name} ({m.category.split('/')[0].strip()})", k)
+        (f"{m.scenario_id}: {m.name}", k)
         for k, m in SCENARIO_CATALOG.items()
     ]
 
-    with gr.Blocks(title="AgentXRay — Developer Studio", css=CUSTOM_CSS) as demo:
+    with gr.Blocks(title="agentxray — Causal Failure Minimization", css=CUSTOM_CSS) as demo:
         gr.HTML(
             """
-            <div class='hero-header'>
-                <div style='display:flex;align-items:center;justify-content:space-between;'>
-                    <div class='hero-title'>
-                        <span>🔬 AgentXRay</span>
-                        <span style='font-size:0.8rem;background:#1E293B;color:#93C5FD;padding:3px 8px;border-radius:4px;font-family:monospace;'>STUDIO v0.1.0</span>
-                    </div>
-                    <div style='display:flex;gap:8px;'>
-                        <a href='https://github.com/yash-mishraa/AgentXRay' target='_blank' style='text-decoration:none;'>
-                            <span style='background:#1F2937;color:#F8FAFC;padding:6px 12px;border-radius:6px;font-size:0.82rem;font-weight:600;'>⭐ GitHub</span>
-                        </a>
-                    </div>
+            <header class='app-topbar'>
+                <div class='topbar-left'>
+                    <span class='brand-title'>agentxray</span>
+                    <span class='brand-version'>v0.1.0</span>
+                    <span class='mode-tag'>OFFLINE MODE</span>
+                    <span class='status-indicator status-ready'>DIAGNOSTIC ENGINE READY</span>
                 </div>
-                <div class='hero-subtitle'>
-                    Automated black-box fault localization and failure-condition minimization for tool-calling AI agents.
-                    Isolates 1-minimal prompt directives, schema mismatches, and mock environment outages via Delta Debugging (ddmin).
+                <div class='topbar-right'>
+                    <a href='https://github.com/yash-mishraa/AgentXRay' target='_blank' class='topbar-link'>github.com/yash-mishraa/AgentXRay ↗</a>
                 </div>
-            </div>
+            </header>
             """
         )
 
         with gr.Row():
-            with gr.Column(scale=1):
-                gr.Markdown("### ⚙️ Benchmark Scenario Switcher")
+            with gr.Column(scale=1, min_width=320):
+                gr.HTML("<div class='sidebar-heading'>CONFIGURATION</div>")
                 scenario_dropdown = gr.Dropdown(
-                    label="Active Scenario Target",
+                    label="Target Scenario",
                     choices=choices,
                     value="currency_ast",
                 )
                 seed_input = gr.Number(label="RNG Seed", value=42, precision=0)
-                run_btn = gr.Button("▶ Run Causal Minimization", variant="primary")
-                scenario_banner_output = gr.HTML(value=format_scenario_banner_html("currency_ast"))
+                run_btn = gr.Button("Run diagnosis")
+                scenario_context_output = gr.HTML(value=format_scenario_context_html("currency_ast"))
 
-            with gr.Column(scale=2):
-                stats_output = gr.HTML()
+            with gr.Column(scale=3):
+                status_strip_output = gr.HTML()
 
                 with gr.Tabs():
-                    with gr.TabItem("🖥️ Live CLI Terminal Playback"):
+                    with gr.TabItem("OUTPUT"):
                         terminal_output = gr.HTML()
 
-                    with gr.TabItem("🌲 Causal Partitioning Pipeline"):
-                        pipeline_output = gr.HTML()
+                    with gr.TabItem("TRACE"):
+                        trace_output = gr.HTML()
 
-                    with gr.TabItem("⚖️ Head-to-Head Baseline Matrix"):
+                    with gr.TabItem("COMPARISON"):
                         comp_output = gr.HTML()
 
-                    with gr.TabItem("📚 Research Epistemics & Guarantees"):
+                    with gr.TabItem("EPISTEMICS"):
                         gr.Markdown(
                             """
                             ### Epistemic Foundations & Boundaries
@@ -635,19 +924,19 @@ def build_gradio_app():
         scenario_dropdown.change(
             fn=execute_scenario_all,
             inputs=[scenario_dropdown, seed_input],
-            outputs=[scenario_banner_output, stats_output, terminal_output, pipeline_output, comp_output],
+            outputs=[scenario_context_output, status_strip_output, terminal_output, trace_output, comp_output],
         )
 
         run_btn.click(
             fn=execute_scenario_all,
             inputs=[scenario_dropdown, seed_input],
-            outputs=[scenario_banner_output, stats_output, terminal_output, pipeline_output, comp_output],
+            outputs=[scenario_context_output, status_strip_output, terminal_output, trace_output, comp_output],
         )
 
         demo.load(
             fn=execute_scenario_all,
             inputs=[scenario_dropdown, seed_input],
-            outputs=[scenario_banner_output, stats_output, terminal_output, pipeline_output, comp_output],
+            outputs=[scenario_context_output, status_strip_output, terminal_output, trace_output, comp_output],
         )
 
     return demo

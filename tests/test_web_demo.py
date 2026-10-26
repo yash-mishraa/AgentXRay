@@ -160,12 +160,16 @@ class TestWebDemoScenarios:
             assert len(disc) > 10
             assert len(comp) == 3
 
-            # Verify modern CLI terminal studio components
+            # Verify terminal-first developer workspace components
             banner, stats, term, pipe, matrix = app.execute_scenario_all(scenario_id, seed=42)
             assert SCENARIO_CATALOG[scenario_id].name in banner
+            assert "scenario-card" in banner
             assert "stat-box" in stats
+            assert "status-strip" in stats
             assert "terminal-window" in term
+            assert "terminal-pane" in term
             assert "pipeline-flow" in pipe
+            assert "data-table" in pipe
             assert "Delta Debugging" in matrix
 
     def test_app_main_graceful_missing_gradio(self) -> None:
