@@ -9,7 +9,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Ensure project root and src/ are available on sys.path
+# Hugging Face ZeroGPU compatibility hook:
+# If the Space was configured with ZeroGPU hardware, Hugging Face mandates an @spaces.GPU hook at startup.
+try:
+    import spaces  # type: ignore
+
+    @spaces.GPU
+    def _hf_zerogpu_compatibility_hook() -> bool:
+        """Satisfies Hugging Face ZeroGPU runtime supervisor check if running on ZeroGPU."""
+        return True
+except Exception:
+    _hf_zerogpu_compatibility_hook = None  # type: ignore
 _project_root = Path(__file__).resolve().parent
 _src_dir = _project_root / "src"
 if str(_src_dir) not in sys.path:
@@ -145,7 +155,7 @@ def build_gradio_app():
         for k, m in SCENARIO_CATALOG.items()
     ]
 
-    with gr.Blocks(title="AgentXRay — Causal Failure Minimization", theme=gr.themes.Soft()) as demo:
+    with gr.Blocks(title="AgentXRay — Causal Failure Minimization") as demo:
         gr.Markdown("# 🔬 AgentXRay: Causal Failure Minimization")
         gr.Markdown(
             "**Automated fault localization for tool-calling AI agents via black-box Delta Debugging (ddmin).**  \n"
@@ -231,11 +241,22 @@ def build_gradio_app():
     return demo
 
 
+# Module-level instance for Hugging Face Spaces reloader
+try:
+    import gradio as gr
+    demo = build_gradio_app()
+except Exception:
+    demo = None
+
+
 def main() -> None:
     """Entry point for launching the web demo."""
+    global demo
     try:
-        demo = build_gradio_app()
-        demo.launch()
+        import gradio as gr
+        if demo is None:
+            demo = build_gradio_app()
+        demo.launch(theme=gr.themes.Soft())
     except ModuleNotFoundError as err:
         if "gradio" in str(err).lower():
             print(
