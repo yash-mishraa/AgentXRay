@@ -351,13 +351,18 @@ def format_scenario_banner_html(scenario_id: str) -> str:
         for t in meta.available_tools
     )
 
-    candidates_html = "".join(
-        f"<div style='margin:4px 0;font-size:0.85rem;color:#CBD5E1;font-family:monospace;'>"
-        f"{'<span style=\"color:#F87171;font-weight:bold;\">[TRIGGER]</span>' if elem in meta.ground_truth_trigger else '<span style=\"color:#64748B;\">[distract]</span>'} "
-        f"<span style='color:#94A3B8;'>elem_{idx}:</span> {html.escape(elem)}"
-        f"</div>"
-        for idx, elem in enumerate(meta.candidate_elements)
-    )
+    candidates_list: list[str] = []
+    for idx, elem in enumerate(meta.candidate_elements):
+        if elem in meta.ground_truth_trigger:
+            tag = "<span style='color:#F87171;font-weight:bold;'>[TRIGGER]</span>"
+        else:
+            tag = "<span style='color:#64748B;'>[distract]</span>"
+        escaped_elem = html.escape(elem)
+        candidates_list.append(
+            f"<div style='margin:4px 0;font-size:0.85rem;color:#CBD5E1;font-family:monospace;'>"
+            f"{tag} <span style='color:#94A3B8;'>elem_{idx}:</span> {escaped_elem}</div>"
+        )
+    candidates_html = "".join(candidates_list)
 
     symptom_row = (
         f"<div style='margin-top:6px;font-size:0.84rem;color:#FCA5A5;'><strong>Observable Failure Diagnostic:</strong> <code>{html.escape(meta.observable_failure_symptom)}</code></div>"
