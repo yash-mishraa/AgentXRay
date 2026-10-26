@@ -47,13 +47,72 @@ pip install -e .
 
 ### Run the Offline Demonstration
 
-Once installed, the demonstration runs entirely offline using an in-memory mock agent—requiring zero external network calls, zero commercial API billing ($0.00), and zero external daemon processes:
+AgentXRay provides two zero-cost offline demonstration interfaces that run entirely in-memory using controlled mock environments with zero external network calls and zero commercial API spend ($0.00):
+
+#### Option A: Terminal CLI Demo (<0.02s)
 
 ```bash
 python -m agentxray demo
 ```
 
-*(Observed runtime: ~0.01s on reference development hardware using an in-memory AST calculator mock agent; no network or external model calls required.)*
+*(Observed runtime: ~0.01s on reference development hardware; executes Delta Debugging, Greedy Ablation, and Random Search on an AST calculator accounting agent.)*
+
+#### Option B: Interactive Streamlit Web Demo
+
+Install the optional demo dependencies and launch the browser interface:
+
+```bash
+# 1. Install optional demo dependencies
+pip install -e .[demo]
+
+# 2. Launch the interactive Streamlit UI
+streamlit run app.py
+```
+
+*(The interface will open locally at `http://localhost:8501`. All scenario runs execute in <0.05s in-memory without making any remote network or model requests.)*
+
+---
+
+### Available Demonstration Scenarios
+
+The web interface exposes five curated benchmark scenarios designed to demonstrate algorithmic failure-condition isolation across distinct fault domains with verified ground truth:
+
+| Scenario Key | Scenario Name | Fault Domain | Description | Initial Observable Symptom |
+| :--- | :--- | :--- | :--- | :--- |
+| `currency_ast` | **AST Calculator Currency Directive** | Prompt Syntax | Prompt constraint forces currency symbols (`$`) into tool arguments, violating AST arithmetic grammar. | AST `SyntaxError: invalid syntax` |
+| `trace_prompt_01` | **Tool Prohibition Directive** | Prompt Steering | Natural-language prompt directive forbids external math utilities; agent answers via mental math and omits required tool. | `Agent failed to invoke required tool 'calculator'` |
+| `trace_schema_01` | **Schema Parameter Key Mismatch** | Schema Contract | Dynamic tool schema renames parameter `expression` to `expr`; agent complies with schema but backend service rejects argument. | `Missing required argument(s): expression` |
+| `trace_env_01` | **Backend Service 500 Outage** | Environment Fault | Mock calculator service cluster experiences node-level failure and returns HTTP 500 error during execution. | `Error: 500 Internal Server Error: Mock calculator service temporarily unavailable` |
+| `trace_null_01` | **Clean Execution Control** | Null Baseline | Passing baseline with 0 planted triggers. Used to evaluate whether diagnostic methods falsely attribute failure when none exists. | Clean passing execution (`SUCCESS`) |
+
+---
+
+### Epistemic Status: Demonstration vs. Confirmatory Evidence
+
+* **Offline Testbed Scope**: The interactive demo executes against controlled mock agents using `FakeProvider` and deterministic tool environments. It demonstrates **exact algorithmic mechanics** (hierarchical subset/complement partitioning, 1-minimality verification, and search call counts).
+* **Not an Assertion of Real LLM Superiority**: Demonstrating sample efficiency on synthetic or mock targets does **not** establish empirical superiority over commercial language models (e.g., GPT-4o, Claude 3.5, LLaMA-3).
+* **Live Model Epistemics**: Live LLMs exhibit non-monotonicity, prompt sensitivity, and probabilistic noise. Confirmatory scientific claims on live models require multi-trial stochastic sampling, Wilson score intervals, and pre-registered McNemar exact tests with Manski sensitivity bounds, as detailed in [`docs/RESEARCH_PROPOSAL.md`](docs/RESEARCH_PROPOSAL.md).
+
+---
+
+### Web Demo Cloud Hosting Plan
+
+The repository root includes a deployment-ready `requirements.txt` (`-e .`, `streamlit`, `pydantic`) compatible with standard community hosting platforms:
+
+#### Deploying to Hugging Face Spaces (Recommended)
+1. Create a new Space on [Hugging Face](https://huggingface.co/new-space).
+2. Select **Streamlit** as the Space SDK and choose the free CPU tier (2 vCPU, 16 GB RAM).
+3. Connect the GitHub repository or push via Git remote.
+4. Hugging Face automatically detects `requirements.txt` and launches `app.py`.
+
+#### Deploying to Streamlit Community Cloud
+1. Sign in to [Streamlit Community Cloud](https://share.streamlit.io/) with GitHub.
+2. Click **New app**, select the `AgentXRay` repository, branch `main`, and main file `app.py`.
+3. Click **Deploy**. Streamlit Cloud installs `requirements.txt` and serves the app.
+
+*(Note: Live deployment links should be published only after the public URL has been verified.)*
+
+---
 
 ### Run the Full Test Suite
 
@@ -61,7 +120,7 @@ python -m agentxray demo
 pytest
 ```
 
-*(Observed runtime: ~0.5s for all 268 automated tests on reference development hardware.)*
+*(Observed runtime: ~2.5s for all 595 automated tests on reference development hardware.)*
 
 ---
 
@@ -269,7 +328,7 @@ AgentXRay maintains a comprehensive, 100% offline test suite:
 
 ```bash
 pytest
-# 268 passed in 0.49s
+# 595 passed in ~2.5s
 ```
 
 *(Timing observed on reference macOS test hardware; runtimes may vary across environments.)*

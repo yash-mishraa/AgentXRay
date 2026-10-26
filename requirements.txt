@@ -1,0 +1,5 @@
+# Requirements manifest for AgentXRay web demo deployment
+# (e.g. Hugging Face Spaces, Streamlit Community Cloud)
+-e .
+streamlit>=1.35.0
+pydantic>=2.7.0
