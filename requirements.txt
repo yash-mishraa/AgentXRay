@@ -1,5 +1,6 @@
 # Requirements manifest for AgentXRay web demo deployment
-# (e.g. Hugging Face Spaces, Streamlit Community Cloud)
+# (Supports Hugging Face Spaces with Gradio SDK and Streamlit Community Cloud)
 -e .
+gradio>=4.0.0
 streamlit>=1.35.0
 pydantic>=2.7.0

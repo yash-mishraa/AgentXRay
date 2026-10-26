@@ -1,3 +1,14 @@
+---
+title: AgentXRay
+emoji: 🔬
+colorFrom: blue
+colorTo: indigo
+sdk: gradio
+app_file: app.py
+pinned: false
+license: apache-2.0
+---
+
 # AgentXRay
 
 > **Automated fault localization and failure-condition minimization for tool-calling AI agents.**
@@ -57,19 +68,27 @@ python -m agentxray demo
 
 *(Observed runtime: ~0.01s on reference development hardware; executes Delta Debugging, Greedy Ablation, and Random Search on an AST calculator accounting agent.)*
 
-#### Option B: Interactive Streamlit Web Demo
+#### Option B: Native Gradio Web Demo (Hugging Face Spaces Default)
 
-Install the optional demo dependencies and launch the browser interface:
+Install demo dependencies and launch the Gradio browser interface:
 
 ```bash
 # 1. Install optional demo dependencies
 pip install -e .[demo]
 
-# 2. Launch the interactive Streamlit UI
-streamlit run app.py
+# 2. Launch the Gradio UI
+python app.py
 ```
 
-*(The interface will open locally at `http://localhost:8501`. All scenario runs execute in <0.05s in-memory without making any remote network or model requests.)*
+*(Opens locally at `http://127.0.0.1:7860`. All scenario runs execute in <0.05s in-memory without making any remote network or model requests.)*
+
+#### Option C: Streamlit Web Demo
+
+```bash
+streamlit run streamlit_app.py
+```
+
+*(Opens locally at `http://localhost:8501`.)*
 
 ---
 
@@ -95,19 +114,18 @@ The web interface exposes five curated benchmark scenarios designed to demonstra
 
 ---
 
-### Web Demo Cloud Hosting Plan
+### Web Demo Cloud Hosting
 
-The repository root includes a deployment-ready `requirements.txt` (`-e .`, `streamlit`, `pydantic`) compatible with standard community hosting platforms:
+The repository root includes a deployment-ready `requirements.txt` (`-e .`, `gradio`, `streamlit`, `pydantic`):
 
-#### Deploying to Hugging Face Spaces (Recommended)
-1. Create a new Space on [Hugging Face](https://huggingface.co/new-space).
-2. Select **Streamlit** as the Space SDK and choose the free CPU tier (2 vCPU, 16 GB RAM).
-3. Connect the GitHub repository or push via Git remote.
-4. Hugging Face automatically detects `requirements.txt` and launches `app.py`.
+#### Deploying to Hugging Face Spaces (Gradio)
+1. In your Hugging Face Space (e.g. `meowshra/AgentXRay`), select **Gradio** SDK on the free CPU tier.
+2. Push or sync this repository.
+3. Hugging Face automatically detects the YAML frontmatter in `README.md`, installs `requirements.txt`, and launches `app.py`.
 
 #### Deploying to Streamlit Community Cloud
 1. Sign in to [Streamlit Community Cloud](https://share.streamlit.io/) with GitHub.
-2. Click **New app**, select the `AgentXRay` repository, branch `main`, and main file `app.py`.
+2. Select the `AgentXRay` repository, branch `main`, and main file `streamlit_app.py` (or `app.py`).
 3. Click **Deploy**. Streamlit Cloud installs `requirements.txt` and serves the app.
 
 *(Note: Live deployment links should be published only after the public URL has been verified.)*
@@ -120,7 +138,7 @@ The repository root includes a deployment-ready `requirements.txt` (`-e .`, `str
 pytest
 ```
 
-*(Observed runtime: ~2.5s for all 595 automated tests on reference development hardware.)*
+*(Observed runtime: ~2.5s for all 597 automated tests on reference development hardware.)*
 
 ---
 
@@ -328,7 +346,7 @@ AgentXRay maintains a comprehensive, 100% offline test suite:
 
 ```bash
 pytest
-# 595 passed in ~2.5s
+# 597 passed in ~2.5s
 ```
 
 *(Timing observed on reference macOS test hardware; runtimes may vary across environments.)*

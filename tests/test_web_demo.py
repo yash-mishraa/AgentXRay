@@ -147,9 +147,28 @@ class TestWebDemoScenarios:
         with pytest.raises(ValueError, match="Unknown scenario_id: 'unknown_xyz'"):
             run_web_demo("unknown_xyz")
 
-    def test_app_main_graceful_missing_streamlit(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When streamlit is not installed, app.main() exits cleanly with instructions."""
-        # Test app.main() handles missing streamlit without crash
+    def test_app_formatting_helpers(self) -> None:
+        """Verify that app formatting helpers produce valid markdown and table rows."""
+        for scenario_id in SCENARIO_CATALOG:
+            info_md = app.format_scenario_info(scenario_id)
+            assert SCENARIO_CATALOG[scenario_id].name in info_md
+            assert "Candidate Pool" in info_md
+
+            diag, traj, disc, comp = app.run_and_format_scenario(scenario_id, seed=42)
+            assert len(diag) > 10
+            assert len(traj) >= 1
+            assert len(disc) > 10
+            assert len(comp) == 3
+
+    def test_app_main_graceful_missing_gradio(self) -> None:
+        """When gradio is not installed, app.main() exits cleanly with instructions."""
         with pytest.raises(SystemExit) as exc_info:
             app.main()
+        assert exc_info.value.code == 1
+
+    def test_streamlit_app_main_graceful_missing_streamlit(self) -> None:
+        """When streamlit is not installed, streamlit_app.main() exits cleanly with instructions."""
+        import streamlit_app
+        with pytest.raises(SystemExit) as exc_info:
+            streamlit_app.main()
         assert exc_info.value.code == 1
