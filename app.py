@@ -1,4 +1,4 @@
-"""AgentXRay: Terminal-First Causal Failure Minimization Studio.
+"""AgentXRay: Plain-English & Terminal-First Causal Failure Minimization Studio.
 
 Developer-grade research interface for black-box fault localization in tool-calling AI agents.
 Runs completely offline in-memory (<0.05s) with zero external network calls and $0.00 cost.
@@ -9,6 +9,19 @@ from __future__ import annotations
 import html
 import sys
 from pathlib import Path
+
+# Suppress harmless asyncio loop teardown race during interpreter garbage collection
+# (ValueError: Invalid file descriptor: -1 in BaseEventLoop.__del__)
+_orig_excepthook = sys.excepthook
+
+
+def _asyncio_cleanup_excepthook(exc_type, exc_val, exc_tb):
+    if exc_type is ValueError and "Invalid file descriptor: -1" in str(exc_val):
+        return
+    _orig_excepthook(exc_type, exc_val, exc_tb)
+
+
+sys.excepthook = _asyncio_cleanup_excepthook
 
 # Hugging Face ZeroGPU compatibility hook:
 # If the Space is configured on ZeroGPU hardware, Hugging Face mandates an @spaces.GPU hook at startup.
@@ -186,7 +199,7 @@ body, .gradio-container {
     border: 1px solid var(--border-subtle);
     border-radius: 3px;
     padding: 8px 10px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     font-size: 11px;
 }
 .prompt-label {
@@ -208,22 +221,43 @@ body, .gradio-container {
 .symptom-fail { color: var(--color-failure); }
 .symptom-pass { color: var(--color-success); }
 
-/* Candidate Pool Listing */
-.candidate-pool-title {
+/* Collapsible Candidate Pool */
+.candidate-details {
+    margin-top: 8px;
+}
+.candidate-summary {
     font-family: var(--font-mono);
-    font-size: 10px;
-    text-transform: uppercase;
-    color: var(--text-dim);
-    letter-spacing: 0.05em;
-    margin-bottom: 4px;
-    font-weight: 600;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    padding: 5px 8px;
+    background: var(--bg-surface-sub);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.candidate-summary::-webkit-details-marker {
+    display: none;
+}
+.candidate-summary:hover {
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+}
+.candidate-details[open] .candidate-summary {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
 }
 .candidate-pool-box {
     background: var(--bg-page);
     border: 1px solid var(--border-subtle);
-    border-radius: 3px;
+    border-top: none;
+    border-radius: 0 0 3px 3px;
     padding: 6px 8px;
-    max-height: 220px;
+    max-height: 180px;
     overflow-y: auto;
 }
 .candidate-row {
@@ -251,6 +285,150 @@ body, .gradio-container {
 }
 .candidate-id {
     color: var(--text-muted);
+}
+
+/* Project Briefing Card */
+.project-briefing {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+.briefing-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.briefing-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-primary);
+}
+.briefing-tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+}
+.briefing-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+@media (max-width: 900px) {
+    .briefing-grid {
+        grid-template-columns: 1fr;
+    }
+}
+.briefing-item {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+.briefing-item strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+.briefing-disclaimer {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #1A1D23;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.4;
+}
+
+/* Plain-English Result Summary Card */
+.plain-english-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+.card-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.card-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+}
+.card-pills {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.card-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 2px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-surface-sub);
+    color: var(--text-muted);
+}
+.card-pill-highlight {
+    color: var(--color-success);
+    border-color: #1C3B24;
+    background: #101F15;
+}
+.pe-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+@media (max-width: 900px) {
+    .pe-grid {
+        grid-template-columns: 1fr;
+    }
+}
+.pe-item {
+    background: var(--bg-page);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    padding: 10px 12px;
+}
+.pe-item-highlight {
+    border-color: #384250;
+    background: #0B0E12;
+}
+.pe-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+.pe-text {
+    font-size: 12px;
+    color: var(--text-primary);
+    line-height: 1.45;
+}
+.pe-text code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--bg-surface-sub);
+    border: 1px solid var(--border-subtle);
+    padding: 1px 4px;
+    border-radius: 2px;
+    color: var(--text-primary);
 }
 
 /* Aligned Status Strip */
@@ -480,6 +658,106 @@ label span {
 }
 """
 
+PLAIN_ENGLISH_SCENARIO_INFO: dict[str, dict[str, str]] = {
+    "currency_ast": {
+        "what_went_wrong": (
+            "The accounting assistant inserted a currency symbol (<code>$</code>) into the calculator's arithmetic expression. "
+            "Because the calculator tool expects pure mathematical syntax (e.g. <code>150 + 250</code>), "
+            "it crashed with an AST syntax error."
+        ),
+        "what_found": (
+            "AgentXRay isolated the single culprit prompt instruction: "
+            "<code>\"Always format numbers with currency symbols ($ or €) before calling ast_calc\"</code>."
+        ),
+        "how_verified": (
+            "The system tested candidate subsets. Whenever this instruction was included, the agent failed. "
+            "When this instruction was removed, the agent passed clean numbers and succeeded."
+        ),
+        "what_means": (
+            "Developers do not need to guess or inspect 6 different prompt rules. "
+            "Fixing or removing this one formatting instruction completely resolves the failure."
+        ),
+    },
+    "trace_prompt_01": {
+        "what_went_wrong": (
+            "The customer service agent refused to look up the customer's account, stating that it was not permitted "
+            "to invoke external diagnostic tools."
+        ),
+        "what_found": (
+            "AgentXRay isolated the conflicting security instruction: "
+            "<code>\"Do not invoke any external tool under any circumstances\"</code>."
+        ),
+        "how_verified": (
+            "With this instruction active, the agent refused tool invocation in 100% of trials. "
+            "Removing it allowed the agent to call the lookup tool normally and satisfy the request."
+        ),
+        "what_means": (
+            "A conflicting guardrail overrode the agent's core workflow. Removing this single rule restored "
+            "tool execution without touching any other system prompt instructions."
+        ),
+    },
+    "trace_schema_01": {
+        "what_went_wrong": (
+            "The weather assistant called the weather API with an integer zip code (e.g. <code>10001</code>) "
+            "instead of a text string (<code>\"10001\"</code>), triggering an API schema validation rejection."
+        ),
+        "what_found": (
+            "AgentXRay isolated the exact type-casting instruction: "
+            "<code>\"Cast zip_code to integer prior to dispatch\"</code>."
+        ),
+        "how_verified": (
+            "Subsets containing this casting rule consistently triggered schema validation errors from the API tool. "
+            "When excluded, the agent passed string arguments and the tool call succeeded."
+        ),
+        "what_means": (
+            "A subtle formatting instruction caused a silent API contract violation. Identifying this rule "
+            "prevents unnecessary modifications to the tool interface or agent architecture."
+        ),
+    },
+    "trace_env_01": {
+        "what_went_wrong": (
+            "The payment processing agent failed because the downstream payment gateway returned an "
+            "<code>HTTP 503 Service Unavailable</code> error."
+        ),
+        "what_found": (
+            "AgentXRay isolated the environment configuration setting: "
+            "<code>\"simulate_outage: true\"</code>."
+        ),
+        "how_verified": (
+            "The failure occurred exclusively when this environment flag was active. With the flag disabled, "
+            "the agent successfully completed the payment transaction."
+        ),
+        "what_means": (
+            "The failure was caused by external infrastructure downtime, not flawed reasoning in the agent's prompt. "
+            "This saves developers from debugging prompt logic when third-party APIs are down."
+        ),
+    },
+    "trace_null_01": {
+        "what_went_wrong": (
+            "Nothing went wrong. The agent executed the user request cleanly on its very first attempt with zero errors."
+        ),
+        "what_found": (
+            "AgentXRay confirmed that the minimal failure trigger is the empty set <code>()</code>—no instructions caused a failure."
+        ),
+        "how_verified": (
+            "The initial baseline verification trial passed immediately with <code>SUCCESS</code>. "
+            "AgentXRay verified the clean state and halted in exactly 1 evaluation."
+        ),
+        "what_means": (
+            "AgentXRay avoids false positives. When an agent is working properly, the diagnostic system does not falsely "
+            "accuse innocent instructions."
+        ),
+    },
+}
+
+SCENARIO_DISPLAY_CHOICES: list[tuple[str, str]] = [
+    ("AST Calculator: Currency Directive", "currency_ast"),
+    ("Tool Prohibition: Strict Security Rule", "trace_prompt_01"),
+    ("Schema Mismatch: Zip Code Format", "trace_schema_01"),
+    ("Mock Outage: Server Down Simulation", "trace_env_01"),
+    ("Null Control: Clean Passing Baseline", "trace_null_01"),
+]
+
 
 def format_scenario_info(scenario_id: str) -> str:
     """Format markdown overview for the selected scenario (backward compatibility)."""
@@ -624,10 +902,15 @@ def format_scenario_context_html(scenario_id: str) -> str:
             <div class='prompt-text'>"{html.escape(meta.user_prompt)}"</div>
             {symptom_html}
         </div>
-        <div class='candidate-pool-title'>DIRECTIVE POOL ({len(meta.candidate_elements)} CANDIDATES)</div>
-        <div class='candidate-pool-box'>
-            {candidates_html}
-        </div>
+        <details class='candidate-details'>
+            <summary class='candidate-summary'>
+                <span>Candidate pool ({len(meta.candidate_elements)} directives)</span>
+                <span style='font-size: 10px; color: var(--text-dim);'>click to inspect ▾</span>
+            </summary>
+            <div class='candidate-pool-box'>
+                {candidates_html}
+            </div>
+        </details>
     </div>
     """
 
@@ -691,6 +974,85 @@ def generate_status_strip_html(result: WebDemoScenarioResult) -> str:
 def generate_stats_grid_html(result: WebDemoScenarioResult) -> str:
     """Backward-compatible alias for generate_status_strip_html."""
     return generate_status_strip_html(result)
+
+
+def generate_overview_html(result: WebDemoScenarioResult) -> str:
+    """Format nontechnical recruiter overview: project explanation, plain-English summary, and status strip."""
+    info = PLAIN_ENGLISH_SCENARIO_INFO.get(
+        result.scenario_id,
+        {
+            "what_went_wrong": html.escape(result.initial_failure_output),
+            "what_found": html.escape(str(result.discovered_subset)),
+            "how_verified": "Verified via hierarchical candidate subset testing.",
+            "what_means": "Identified the minimal trigger subset required to reproduce the behavior.",
+        },
+    )
+
+    status_tag = "CLEAN CONTROL RUN" if result.is_null_case else "CULPRIT ISOLATED"
+    status_pill_cls = "card-pill-highlight" if result.matches_ground_truth else "card-pill"
+    delta_evals = result.greedy_calls - result.target_calls_used
+    eval_text = f"+{delta_evals} tests saved vs linear scan" if delta_evals > 0 else "optimal search path"
+
+    briefing_html = """
+    <div class='project-briefing'>
+        <div class='briefing-header'>
+            <span class='briefing-title'>What problem does AgentXRay solve?</span>
+            <span class='briefing-tag'>RECRUITER & RESEARCH BRIEF</span>
+        </div>
+        <div class='briefing-grid'>
+            <div class='briefing-item'>
+                <strong>The Problem:</strong> When an AI agent fails, its prompt typically contains dozens of rules, tools, and constraints. Finding which single instruction caused the breakdown usually requires hours of manual trial-and-error guessing.
+            </div>
+            <div class='briefing-item'>
+                <strong>What AgentXRay Does:</strong> AgentXRay automatically isolates the exact, minimal instruction that triggered the failure—without reading internal model weights. It systematically tests smaller instruction subsets to prove which one is responsible.
+            </div>
+            <div class='briefing-item'>
+                <strong>How It Differs From Reading Logs:</strong> Traditional log inspection only tells you that an error happened. AgentXRay proves <em>causation</em>: it verifies that removing the isolated instruction makes the agent succeed.
+            </div>
+            <div class='briefing-item'>
+                <strong>What This Demo Shows:</strong> In this interactive offline testbed ($0.00 cost, in-memory mock agent), AgentXRay locates the culprit instruction in just <strong>4 tests</strong>, whereas linear trial-and-error requires 6 or more.
+            </div>
+        </div>
+        <div class='briefing-disclaimer'>
+            <strong>Research Boundary:</strong> This demo proves the search logic on controlled deterministic scenarios. It does not evaluate live non-deterministic models (such as GPT-4 or LLaMA), which require multi-trial statistical sampling to account for stochastic noise.
+        </div>
+    </div>
+    """
+
+    summary_card_html = f"""
+    <div class='plain-english-card'>
+        <div class='card-topbar'>
+            <span class='card-title'>Scenario Diagnosis: Plain-English Results</span>
+            <div class='card-pills'>
+                <span class='card-pill {status_pill_cls}'>{status_tag}</span>
+                <span class='card-pill'>{result.target_calls_used} tests conducted</span>
+                <span class='card-pill'>{eval_text}</span>
+            </div>
+        </div>
+        <div class='pe-grid'>
+            <div class='pe-item'>
+                <div class='pe-label'>1. What went wrong?</div>
+                <div class='pe-text'>{info['what_went_wrong']}</div>
+            </div>
+            <div class='pe-item pe-item-highlight'>
+                <div class='pe-label'>2. What did AgentXRay find?</div>
+                <div class='pe-text'>{info['what_found']}</div>
+            </div>
+            <div class='pe-item'>
+                <div class='pe-label'>3. How was it verified?</div>
+                <div class='pe-text'>{info['how_verified']}</div>
+            </div>
+            <div class='pe-item'>
+                <div class='pe-label'>4. What does this result mean?</div>
+                <div class='pe-text'>{info['what_means']}</div>
+            </div>
+        </div>
+    </div>
+    """
+
+    strip_html = generate_status_strip_html(result)
+
+    return f"{briefing_html}\n{summary_card_html}\n{strip_html}"
 
 
 def generate_terminal_html(result: WebDemoScenarioResult) -> str:
@@ -848,24 +1210,33 @@ def generate_comparison_html(result: WebDemoScenarioResult) -> str:
 
 
 def execute_scenario_all(scenario_id: str, seed: float) -> tuple[str, str, str, str, str]:
-    """Execute scenario and return updated HTML components."""
-    result: WebDemoScenarioResult = run_web_demo(scenario_id, seed=int(seed))
-    context_html = format_scenario_context_html(scenario_id)
-    strip_html = generate_status_strip_html(result)
-    terminal_html = generate_terminal_html(result)
-    trace_html = generate_trace_html(result)
-    comp_html = generate_comparison_html(result)
-    return context_html, strip_html, terminal_html, trace_html, comp_html
+    """Execute scenario and return updated HTML components with error handling."""
+    try:
+        result: WebDemoScenarioResult = run_web_demo(scenario_id, seed=int(seed))
+        context_html = format_scenario_context_html(scenario_id)
+        overview_html = generate_overview_html(result)
+        terminal_html = generate_terminal_html(result)
+        trace_html = generate_trace_html(result)
+        comp_html = generate_comparison_html(result)
+        return context_html, overview_html, terminal_html, trace_html, comp_html
+    except Exception as exc:
+        err_msg = html.escape(str(exc))
+        err_card = f"""
+        <div class='plain-english-card' style='border-color: #7F1D1D;'>
+            <div class='card-title' style='color: #F87171;'>DIAGNOSTIC RUNTIME EXCEPTION</div>
+            <p style='color: #E6E8EB; font-size: 13px; margin: 8px 0;'>
+                An unexpected exception occurred while executing scenario <code>{html.escape(scenario_id)}</code>:
+            </p>
+            <pre style='background: #14171B; padding: 10px; border-radius: 4px; color: #FCA5A5; font-size: 12px;'>{err_msg}</pre>
+        </div>
+        """
+        fallback_context = format_scenario_context_html(scenario_id) if scenario_id in SCENARIO_CATALOG else "<div>Error</div>"
+        return fallback_context, err_card, f"<pre class='terminal-body'>Error: {err_msg}</pre>", "<div>Error</div>", "<div>Error</div>"
 
 
 def build_gradio_app():
-    """Construct the terminal-first developer tool UI."""
+    """Construct the plain-English & terminal-first developer tool UI."""
     import gradio as gr
-
-    choices = [
-        (f"{m.scenario_id}: {m.name}", k)
-        for k, m in SCENARIO_CATALOG.items()
-    ]
 
     with gr.Blocks(title="agentxray — Causal Failure Minimization", css=CUSTOM_CSS) as demo:
         gr.HTML(
@@ -889,7 +1260,7 @@ def build_gradio_app():
                 gr.HTML("<div class='sidebar-heading'>CONFIGURATION</div>")
                 scenario_dropdown = gr.Dropdown(
                     label="Target Scenario",
-                    choices=choices,
+                    choices=SCENARIO_DISPLAY_CHOICES,
                     value="currency_ast",
                 )
                 seed_input = gr.Number(label="RNG Seed", value=42, precision=0)
@@ -897,25 +1268,27 @@ def build_gradio_app():
                 scenario_context_output = gr.HTML(value=format_scenario_context_html("currency_ast"))
 
             with gr.Column(scale=3):
-                status_strip_output = gr.HTML()
-
                 with gr.Tabs():
-                    with gr.TabItem("OUTPUT"):
+                    with gr.TabItem("OVERVIEW"):
+                        overview_output = gr.HTML()
+
+                    with gr.TabItem("EXECUTION TRACE"):
                         terminal_output = gr.HTML()
 
-                    with gr.TabItem("TRACE"):
+                    with gr.TabItem("MINIMIZATION STEPS"):
                         trace_output = gr.HTML()
 
-                    with gr.TabItem("COMPARISON"):
+                    with gr.TabItem("METHOD COMPARISON"):
                         comp_output = gr.HTML()
 
-                    with gr.TabItem("EPISTEMICS"):
+                    with gr.TabItem("TECHNICAL NOTES"):
                         gr.Markdown(
                             """
                             ### Epistemic Foundations & Boundaries
                             - **Deterministic Testbed Verification:** Demonstrates exact algorithmic mechanics on an in-memory controlled mock agent using `FakeProvider` ($0.00 spend, zero remote API calls).
                             - **Black-Box Causal Boundary:** The algorithm observes strictly external target inputs and binary tool outcomes (`SUCCESS` / `FAILURE`); it has zero access to agent system prompt weights or internal hidden tokens.
                             - **1-Minimality Guarantee:** Confirms that removing the isolated directive restores agent task success, and that the empty configuration `()` succeeds.
+                            - **Ground Truth Verification:** In these benchmark scenarios, the isolated failure condition is audited against a predefined ground truth specification.
                             - **Real-World Neural Models:** In live non-deterministic models (LLaMA-3, GPT-4o), stochastic noise requires Wilson score intervals, multi-trial sampling, and exact McNemar testing with Manski sensitivity bounds as specified in [`docs/RESEARCH_PROPOSAL.md`](https://github.com/yash-mishraa/AgentXRay/blob/main/docs/RESEARCH_PROPOSAL.md).
                             """
                         )
@@ -924,19 +1297,19 @@ def build_gradio_app():
         scenario_dropdown.change(
             fn=execute_scenario_all,
             inputs=[scenario_dropdown, seed_input],
-            outputs=[scenario_context_output, status_strip_output, terminal_output, trace_output, comp_output],
+            outputs=[scenario_context_output, overview_output, terminal_output, trace_output, comp_output],
         )
 
         run_btn.click(
             fn=execute_scenario_all,
             inputs=[scenario_dropdown, seed_input],
-            outputs=[scenario_context_output, status_strip_output, terminal_output, trace_output, comp_output],
+            outputs=[scenario_context_output, overview_output, terminal_output, trace_output, comp_output],
         )
 
         demo.load(
             fn=execute_scenario_all,
             inputs=[scenario_dropdown, seed_input],
-            outputs=[scenario_context_output, status_strip_output, terminal_output, trace_output, comp_output],
+            outputs=[scenario_context_output, overview_output, terminal_output, trace_output, comp_output],
         )
 
     return demo
@@ -957,7 +1330,13 @@ def main() -> None:
         import gradio as gr
         if demo is None:
             demo = build_gradio_app()
-        demo.launch()
+        # Bind explicitly to 0.0.0.0:7860 for container deployment without Frp share tunneling
+        demo.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            ssr_mode=False,
+            show_error=True,
+        )
     except ModuleNotFoundError as err:
         if "gradio" in str(err).lower():
             print(

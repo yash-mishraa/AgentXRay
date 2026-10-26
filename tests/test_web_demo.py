@@ -164,8 +164,12 @@ class TestWebDemoScenarios:
             banner, stats, term, pipe, matrix = app.execute_scenario_all(scenario_id, seed=42)
             assert SCENARIO_CATALOG[scenario_id].name in banner
             assert "scenario-card" in banner
+            assert "candidate-details" in banner
             assert "stat-box" in stats
             assert "status-strip" in stats
+            assert "What went wrong?" in stats
+            assert "What did AgentXRay find?" in stats
+            assert "What problem does AgentXRay solve?" in stats
             assert "terminal-window" in term
             assert "terminal-pane" in term
             assert "pipeline-flow" in pipe
