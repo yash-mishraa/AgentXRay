@@ -309,215 +309,37 @@ def run_stochastic_benchmark(
     return report
 
 
-def main() -> None:
-    """CLI entry point supporting deterministic, stochastic, model pilot benchmarks and offline demo."""
-    parser = argparse.ArgumentParser(
-        description="AgentXRay: Controlled Black-Box Probing and Behavioral Minimization Framework."
-    )
-    parser.add_argument(
-        "command",
-        nargs="?",
-        default=None,
-        help="Optional subcommand: 'demo' to run the offline deterministic demonstration.",
-    )
-    parser.add_argument(
-        "--mode",
-        type=str,
-        choices=["deterministic", "stochastic", "audit", "model", "all", "demo"],
-        default="deterministic",
-        help="Benchmark execution mode (default: deterministic).",
-    )
-    parser.add_argument(
-        "--provider",
-        type=str,
-        choices=["fake", "openai", "ollama"],
-        default="fake",
-        help="Model provider for model-backed pilot experiments: fake, openai, or ollama (default: fake).",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=None,
-        help="Model identifier (e.g. 'gpt-4o-mini' for openai, 'fake-model-pilot' for fake).",
-    )
-    parser.add_argument(
-        "--live",
-        action="store_true",
-        default=False,
-        help="Explicit authorization flag required to execute live model API calls.",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        default=False,
-        help="Pre-flight validation: inspect proposed experiment size and estimated costs without calling providers.",
-    )
-    parser.add_argument(
-        "--task",
-        type=str,
-        default="all",
-        help="Pilot task to run: 'all' (default), 'calibrated_currency', 'conflicting_prompt', 'distractor_override', 'baseline'.",
-    )
-    parser.add_argument(
-        "--max-spend",
-        type=float,
-        default=1.00,
-        help="Hard cap on estimated spend in USD for model-backed experiments (default: 1.00, max: 1.00 for initial pilot).",
-    )
-    parser.add_argument(
-        "--max-model-requests",
-        type=int,
-        default=150,
-        help="Hard cap on total model generation requests for model-backed experiments (default: 150).",
-    )
-    parser.add_argument(
-        "--enable-independent-verification",
-        action="store_true",
-        default=False,
-        help="Enable post-discovery independent 1-minimality verification audit (default: False).",
-    )
-    parser.add_argument(
-        "--max-discovery-requests",
-        type=int,
-        default=None,
-        help="Hard cap on model generation requests for discovery phase (default: None).",
-    )
-    parser.add_argument(
-        "--max-verification-requests",
-        type=int,
-        default=None,
-        help="Hard cap on model generation requests for verification phase (default: None).",
-    )
-    parser.add_argument(
-        "--verification-trials",
-        type=int,
-        default=None,
-        help="Number of trials per candidate subset in verification phase (default: trials-per-candidate).",
-    )
-    parser.add_argument(
-        "--verification-tier",
-        type=str,
-        choices=["exploratory", "confirmatory"],
-        default="exploratory",
-        help="Verification evidence tier classification (default: 'exploratory').",
-    )
-    parser.add_argument(
-        "--sample-size-rationale",
-        type=str,
-        default=None,
-        help="Sample size / statistical power rationale for verification trials (default: None).",
-    )
-    parser.add_argument(
-        "--audit-seeds",
-        type=str,
-        default="42,43,44,45,46",
-        help="Comma-separated random seeds for multi-seed stochastic audit (default: 42,43,44,45,46).",
-    )
-    parser.add_argument(
-        "--max-trials",
-        type=int,
-        default=None,
-        help="Maximum trial budget per algorithm execution (default: 100 for deterministic, 300 for stochastic, 50 for model pilot).",
-    )
-    parser.add_argument(
-        "--trials-per-candidate",
-        type=int,
-        default=None,
-        help="Number of trials per candidate subset evaluation in stochastic mode (default: 20 for synthetic, 5 for model pilot).",
-    )
-    parser.add_argument(
-        "--failure-threshold",
-        type=float,
-        default=0.30,
-        help="Failure proportion threshold to deem candidate failing in stochastic mode (default: 0.30).",
-    )
-    parser.add_argument(
-        "--alpha",
-        type=float,
-        default=0.05,
-        help="Statistical significance threshold for hypothesis tests and minimality verification (default: 0.05).",
-    )
-    parser.add_argument(
-        "--confidence",
-        type=float,
-        default=0.95,
-        help="Confidence level for Wilson and Newcombe uncertainty intervals (default: 0.95).",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=60.0,
-        help="Wall-clock timeout in seconds (default: 60.0).",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for algorithm sampling (default: 42).",
-    )
-    parser.add_argument(
-        "--target-seed",
-        type=int,
-        default=42,
-        help="Random seed for synthetic stochastic target outcomes (default: 42).",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default=".",
-        help="Directory to save output reports (default: current directory).",
-    )
-    parser.add_argument(
-        "--save",
-        action="store_true",
-        default=False,
-        help="Explicitly save report files to disk in output-dir (default: False for demo).",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        default=False,
-        help="Overwrite existing report files in output-dir if present (default: False).",
-    )
-
-    args = parser.parse_args()
-
+def _run_legacy_benchmark_mode(args: argparse.Namespace) -> int:
+    """Execute research benchmark suites (--mode deterministic|stochastic|audit|model)."""
     # Validate verification parameters
-    if args.max_discovery_requests is not None and args.max_discovery_requests <= 0:
-        parser.error("--max-discovery-requests must be a positive integer.")
-    if args.max_verification_requests is not None and args.max_verification_requests <= 0:
-        parser.error("--max-verification-requests must be a positive integer.")
-    if args.verification_trials is not None and args.verification_trials <= 0:
-        parser.error("--verification-trials must be a positive integer.")
-    if args.verification_tier.lower() == "confirmatory":
-        if args.verification_trials is None:
-            parser.error(
-                "Confirmatory verification requires an explicitly configured sample size (--verification-trials). "
-                "Defaulting to exploratory 5 trials is not permitted for confirmatory claims."
+    if getattr(args, "max_discovery_requests", None) is not None and args.max_discovery_requests <= 0:
+        print("Error: --max-discovery-requests must be a positive integer.", file=sys.stderr)
+        return 2
+    if getattr(args, "max_verification_requests", None) is not None and args.max_verification_requests <= 0:
+        print("Error: --max-verification-requests must be a positive integer.", file=sys.stderr)
+        return 2
+    if getattr(args, "verification_trials", None) is not None and args.verification_trials <= 0:
+        print("Error: --verification-trials must be a positive integer.", file=sys.stderr)
+        return 2
+    if getattr(args, "verification_tier", "exploratory").lower() == "confirmatory":
+        if getattr(args, "verification_trials", None) is None:
+            print(
+                "Error: Confirmatory verification requires an explicitly configured sample size (--verification-trials). "
+                "Defaulting to exploratory 5 trials is not permitted for confirmatory claims.",
+                file=sys.stderr,
             )
+            return 2
 
-    if args.command == "demo" or args.mode == "demo":
-        from agentxray.demo import format_demo_output, run_demo, write_demo_reports
-
-        demo_res = run_demo(seed=args.seed)
-        print(format_demo_output(demo_res))
-        if args.save:
-            try:
-                write_demo_reports(demo_res, output_dir=args.output_dir, overwrite=args.overwrite)
-                print(f"\n[Demo reports saved to: {args.output_dir}]")
-            except FileExistsError as err:
-                print(f"\n[Warning: {err}]")
-        return
-
+    mode = args.mode or "deterministic"
     print("=" * 75)
     print(" AgentXRay: Probing & Behavioral Minimization Execution")
     print("=" * 75)
-    print(f"Mode: {args.mode.upper()}")
+    print(f"Mode: {mode.upper()}")
     print(f"Algorithm Seed: {args.seed} | Target Seed: {args.target_seed}")
     print(f"Output Directory: {args.output_dir}")
     print("-" * 75)
 
-    if args.mode in ("deterministic", "all"):
+    if mode in ("deterministic", "all"):
         det_max_trials = args.max_trials if args.max_trials is not None else 100
         print(f"\n[Running Deterministic Prototype (max_trials={det_max_trials})]")
         det_report = run_synthetic_benchmark(
@@ -664,6 +486,16 @@ def main() -> None:
     print("\n" + "=" * 75)
     print(" Execution finished successfully.")
     print("=" * 75)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> None:
+    """CLI entry point supporting developer commands (demo, diagnose, version) and legacy benchmark suites."""
+    from agentxray.cli import cli_main
+
+    exit_code = cli_main(argv)
+    if exit_code != 0:
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":

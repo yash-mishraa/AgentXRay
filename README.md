@@ -58,6 +58,106 @@ pip install -e .
 
 ---
 
+### Developer CLI Quickstart
+
+AgentXRay provides a terminal command-line interface (`agentxray`) built on top of the public Python SDK.
+
+```bash
+# Display help and available subcommands
+agentxray --help
+
+# Run the offline deterministic demonstration (<0.02s, $0.00 spend)
+agentxray demo
+
+# Diagnose failure using a documented JSON scenario file
+agentxray diagnose examples/scenario_example.json
+
+# Diagnose one of the built-in catalog testbed scenarios
+agentxray diagnose --scenario trace_env_01
+
+# Inspect installed package version
+agentxray version
+```
+
+#### Representative Successful Output
+
+```text
+AgentXRay (currency_formatting_directive_failure)
+────────────────────────────────────────────────────────────────────────────
+
+DIAGNOSIS
+  The task fails when 1 specific candidate directive is active.
+
+ISOLATED CONDITION
+  [elem_0] strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. '$150' or '$250')
+
+VERIFICATION
+  Verified: removing this directive restores clean success (1-minimal).
+
+SEARCH TELEMETRY
+  Status:          CULPRIT ISOLATED & VERIFIED
+  Evaluations:     4 calls (ddmin)
+  Candidate Pool:  4 directives
+  Execution Time:  0.000s
+  Ground Truth:    True (100% match)
+
+MODE & BOUNDARIES
+  Execution:       Controlled offline execution ($0.00 spend, zero network requests)
+  Disclosures:     Operates strictly on observable tool-calling inputs/outputs.
+                   Does not inspect internal model weights or proprietary prompt logic.
+                   Offline testbeds do not evaluate live third-party stochastic noise.
+────────────────────────────────────────────────────────────────────────────
+```
+
+#### Exit-Code Contract
+
+The CLI conforms to a strict exit-code contract for CI/CD and automation pipelines:
+
+| Exit Code | Outcome Category | Description |
+| :---: | :--- | :--- |
+| **`0`** | `VERIFIED_CULPRIT` / `NO_FAILURE` | Minimal failure-inducing culprit isolated and 1-minimal verified, or clean passing baseline control. |
+| **`1`** | `INCONCLUSIVE` / `BUDGET_EXHAUSTED` / `TIMEOUT` | Search halted without proving 1-minimality, evaluation budget was exhausted, or timeout was exceeded. |
+| **`2`** | Argument / Schema Error | Invalid CLI flags, non-existent scenario file, malformed JSON, duplicate candidate, or schema validation error. |
+| **`3`** | `ERROR` | Evaluator raised an unexpected runtime exception or infrastructure failure during execution. |
+
+#### Scenario File Schema (`ScenarioFileSpec`)
+
+Declarative scenario specifications allow reproducible offline diagnosis without arbitrary code execution (`eval`, `exec`, or shell scripts):
+
+```json
+{
+  "name": "currency_formatting_directive_failure",
+  "description": "Controlled demonstration: currency symbol breaks arithmetic AST evaluator.",
+  "candidates": [
+    "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. '$150' or '$250')",
+    "monetary_precision: represent all invoice amounts with exactly two decimal places",
+    "professional_styling: use formal accounting terminology throughout summaries",
+    "audit_trail: annotate calculations with internal ledger voucher references"
+  ],
+  "failure_condition": {
+    "type": "contains_any",
+    "patterns": ["strict_currency_formatting"]
+  },
+  "ground_truth": [
+    "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. '$150' or '$250')"
+  ]
+}
+```
+
+Supported declarative failure condition types:
+* `contains_any`: Fails if active subset contains any candidate matching any pattern.
+* `contains_all`: Fails if all specified patterns are present in the active subset.
+* `exact_match`: Fails if the active subset contains all exact pattern strings.
+* `always_fail`: Synthetic failure baseline (fails under any candidate combination).
+* `never_fail`: Synthetic clean baseline (passes under all candidate combinations).
+
+#### Integration Boundary & Disclosures
+* **Zero Arbitrary Code Execution**: The CLI evaluates declarative scenario specifications and built-in benchmark scenarios offline. It does not execute arbitrary user-supplied Python strings or shell commands.
+* **Custom Python Agent Integration**: To diagnose dynamic multi-step agent harnesses (e.g., custom LangChain, LangGraph, or bespoke tool dispatchers), import the Python SDK directly (`from agentxray import diagnose`) and provide a Python evaluator callable.
+* **Controlled Offline Testbed**: The offline demo and testbed scenarios run deterministically with zero network calls and $0.00 spend. They validate causal minimization logic, not live third-party non-deterministic model performance.
+
+---
+
 ### Python SDK Quickstart
 
 You can use AgentXRay directly in Python to diagnose and isolate which prompt instructions, schema keys, or configuration flags cause an agent workflow to fail.

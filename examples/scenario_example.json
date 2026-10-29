@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/yash-mishraa/AgentXRay/main/schemas/scenario-v1.json",
+  "name": "currency_formatting_directive_failure",
+  "description": "Controlled demonstration of prompt directive failure: currency symbols inject syntax errors into arithmetic tool arguments.",
+  "candidates": [
+    "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. '$150' or '$250')",
+    "monetary_precision: represent all invoice amounts with exactly two decimal places",
+    "professional_styling: use formal accounting terminology throughout summaries",
+    "audit_trail: annotate calculations with internal ledger voucher references"
+  ],
+  "failure_condition": {
+    "type": "contains_any",
+    "patterns": [
+      "strict_currency_formatting"
+    ]
+  },
+  "ground_truth": [
+    "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. '$150' or '$250')"
+  ]
+}

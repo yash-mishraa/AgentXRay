@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from agentxray.agent_harness.agent import AgentExecutionTrace
+from agentxray.api import DiagnosticResult, diagnose
 from agentxray.baselines import run_greedy_ablation, run_seeded_random_search
 from agentxray.minimizer import DeltaDebugMinimizer
 from agentxray.models import (
@@ -21,6 +22,7 @@ from agentxray.models import (
     DiscoveredCondition,
     ExperimentConfig,
     InputCase,
+    SearchStatus,
     TargetOutcome,
     TargetResult,
 )
@@ -60,6 +62,7 @@ class DemoResult:
     greedy_comparison: BaselineComparison
     random_comparison: BaselineComparison
     dd_matches_ground_truth: bool = True
+    diagnostic_result: DiagnosticResult | None = None
 
 
 def run_demo(seed: int = 42) -> DemoResult:
@@ -75,27 +78,40 @@ def run_demo(seed: int = 42) -> DemoResult:
         seed=seed,
     )
 
-    # 1. Delta Debugging Minimizer with initial trace recording
+    # 1. Delta Debugging Minimizer through public Python SDK
     target.reset_call_count()
     initial_trace: AgentExecutionTrace | None = None
 
-    def recording_target_fn(inp: InputCase) -> TargetResult:
+    def recording_evaluator(subset: tuple[str, ...]) -> TargetResult:
         nonlocal initial_trace
-        res = target.execute(inp)
+        res = target.execute(InputCase(elements=subset))
         if initial_trace is None:
             initial_trace = target.last_trace
         return res
 
-    runner_dd = InterventionRunner(config=config, target_fn=recording_target_fn)
-    minimizer = DeltaDebugMinimizer(runner=runner_dd)
-    discovered_dd = minimizer.minimize(initial_input)
+    diag_result = diagnose(
+        candidates=initial_input.elements,
+        evaluator=recording_evaluator,
+        seed=seed,
+        max_evaluations=50,
+        ground_truth=ground_truth.trigger_elements,
+    )
 
-    # Dynamic post-hoc evaluation of Delta Debugging against ground truth
-    dd_matches_gt, _, _, _, _ = evaluate_model_pilot_ground_truth(ground_truth, discovered_dd)
+    discovered_dd = DiscoveredCondition(
+        subset_elements=diag_result.isolated_candidates,
+        status=SearchStatus.COMPLETE if diag_result.is_verified else SearchStatus.INCONCLUSIVE,
+        is_failure=True,
+        is_one_minimal=diag_result.is_one_minimal,
+        is_globally_minimal=diag_result.is_one_minimal,
+        verified_by_check=diag_result.is_verified,
+        target_calls_used=diag_result.evaluations_used,
+        status_message=diag_result.summary,
+    )
+    dd_matches_gt = diag_result.matches_ground_truth is True
 
     # Record step-by-step trajectory narrative
     steps: list[DemoStepRecord] = []
-    for idx, trial in enumerate(runner_dd.trials, start=1):
+    for idx, trial in enumerate(diag_result.trials, start=1):
         if trial.intervention_type == "baseline":
             action = "Failure reproduced on full input; initiate 2-way binary partition"
         elif trial.intervention_type == "partition_subset" and trial.result.outcome == TargetOutcome.FAILURE:
@@ -153,7 +169,7 @@ def run_demo(seed: int = 42) -> DemoResult:
     )
 
     # Dynamic derivation of initial diagnostic failure telemetry from trial 0
-    first_trial = runner_dd.trials[0]
+    first_trial = diag_result.trials[0]
     initial_err_msg = first_trial.result.output_message or "Calculator AST syntax error (currency symbol '$' rejected)"
     initial_err_code = first_trial.result.error_code or "AGENT_FAILURE"
 
@@ -182,6 +198,7 @@ def run_demo(seed: int = 42) -> DemoResult:
         greedy_comparison=greedy_comp,
         random_comparison=random_comp,
         dd_matches_ground_truth=dd_matches_gt,
+        diagnostic_result=diag_result,
     )
 
 

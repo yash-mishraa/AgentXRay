@@ -20,6 +20,7 @@ from agentxray.minimizer import DeltaDebugMinimizer
 from agentxray.baselines import run_greedy_ablation, run_seeded_random_search
 from agentxray.reporting import format_json_report, format_markdown_report, write_reports
 from agentxray.api import DiagnosticResult, DiagnosticStatus, diagnose
+from agentxray.cli import ScenarioFileSpec, cli_main, format_terminal_card
 
 __all__ = [
     "__version__",
@@ -36,13 +37,16 @@ __all__ = [
     "InputCase",
     "InterventionRunner",
     "ProbeTrial",
+    "ScenarioFileSpec",
     "SearchStatus",
     "TargetOutcome",
     "TargetResult",
     "TimeoutExceededError",
+    "cli_main",
     "diagnose",
     "format_json_report",
     "format_markdown_report",
+    "format_terminal_card",
     "run_greedy_ablation",
     "run_seeded_random_search",
     "write_reports",
