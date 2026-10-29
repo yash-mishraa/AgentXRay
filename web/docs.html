@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documentation &amp; API Reference — AgentXRay</title>
+  <meta name="description" content="Technical documentation and API reference for AgentXRay. CLI commands, exit codes, Python SDK contracts, and scenario schemas." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='4 17 10 11 4 5'></polyline><line x1='12' y1='19' x2='20' y2='19'></line></svg>" />
+</head>
+<body>
+
+  <!-- Site Header -->
+  <header class="site-header">
+    <div class="site-container header-inner">
+      <a href="index.html" class="brand" aria-label="AgentXRay Home">
+        <span class="brand-name">agentxray</span>
+        <span class="brand-divider">/</span>
+        <span class="brand-version">0.1.0</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary Navigation">
+        <a href="index.html" class="nav-item">Overview</a>
+        <a href="quickstart.html" class="nav-item">Quickstart</a>
+        <a href="docs.html" class="nav-item active">Documentation</a>
+        <a href="playground.html" class="nav-item">Playground</a>
+        <a href="research.html" class="nav-item">Research</a>
+      </nav>
+
+      <div class="header-actions">
+        <a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer" class="nav-link-subtle">
+          GitHub
+          <svg class="external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.5 2.5H9.5V8.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer" class="btn-sm btn-outline">
+          HF Space
+          <svg class="external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.5 2.5H9.5V8.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <button class="menu-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5H17M3 10H17M3 15H17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mobile Drawer -->
+  <div class="mobile-menu-drawer" aria-label="Mobile Navigation">
+    <a href="index.html" class="nav-item">Overview</a>
+    <a href="quickstart.html" class="nav-item">Quickstart Guide</a>
+    <a href="docs.html" class="nav-item active">Documentation &amp; API</a>
+    <a href="playground.html" class="nav-item">Interactive Playground</a>
+    <a href="research.html" class="nav-item">Research &amp; Methodology</a>
+  </div>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="site-container">
+        <div class="hero-meta-strip animate-fade-in">
+          <span>Technical Reference</span>
+          <span class="meta-bullet">/</span>
+          <span>API &amp; CLI Specifications</span>
+          <span class="meta-bullet">/</span>
+          <span>Process Contracts</span>
+        </div>
+
+        <h1 class="hero-title animate-fade-in animate-delay-1">
+          Complete Technical Reference
+        </h1>
+
+        <p class="hero-subhead animate-fade-in animate-delay-2">
+          Strict process exit codes, typed Python SDK contracts, evaluator function requirements, and declarative scenario schemas for automated diagnosis pipelines.
+        </p>
+      </div>
+    </section>
+
+    <!-- Docs Layout with Sidebar -->
+    <div class="site-container">
+      <div class="docs-layout">
+
+        <!-- Sidebar Navigation -->
+        <aside class="docs-nav-sidebar">
+          <div class="docs-sidebar-title">Reference Index</div>
+          <ul class="docs-sidebar-links">
+            <li><a href="#cli" class="docs-sidebar-link">CLI Commands &amp; Flags</a></li>
+            <li><a href="#exit-codes" class="docs-sidebar-link">Process Exit Codes</a></li>
+            <li><a href="#sdk" class="docs-sidebar-link">Python SDK Facade</a></li>
+            <li><a href="#evaluator" class="docs-sidebar-link">Evaluator Function Contract</a></li>
+            <li><a href="#status" class="docs-sidebar-link">DiagnosticStatus Enum</a></li>
+            <li><a href="#schema" class="docs-sidebar-link">Scenario JSON Schema</a></li>
+            <li><a href="#catalog" class="docs-sidebar-link">Built-in Testbed Catalog</a></li>
+            <li><a href="#boundaries" class="docs-sidebar-link">Operational Boundaries</a></li>
+          </ul>
+        </aside>
+
+        <!-- Main Documentation Content -->
+        <div class="docs-body">
+
+          <!-- Section 1: CLI Commands -->
+          <section id="cli" class="reveal-on-scroll" style="margin-bottom: 56px;">
+            <div class="section-label">CLI Reference</div>
+            <h2 class="section-heading">CLI Commands &amp; Flags</h2>
+            <p class="section-lead">
+              The AgentXRay CLI provides command-line subcommands designed for interactive debugging and automated shell pipelines.
+            </p>
+
+            <h3 style="margin: 24px 0 12px; font-size: 1.15rem;">agentxray demo</h3>
+            <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 12px;">
+              Runs an offline demonstration scenario and displays an ANSI terminal card.
+            </p>
+
+            <div class="code-container" style="margin-bottom: 16px;">
+              <div class="code-header-strip">
+                <span class="code-title">Syntax</span>
+              </div>
+              <div class="code-content">
+                <pre><span class="c-key">$</span> agentxray demo [--scenario &lt;id&gt;] [--seed &lt;int&gt;] [--no-color] [--json] [--save &lt;path&gt;]</pre>
+              </div>
+            </div>
+
+            <div class="table-scroller">
+              <table class="reference-table">
+                <thead>
+                  <tr>
+                    <th>Flag</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>--scenario &lt;id&gt;</code></td>
+                    <td>string</td>
+                    <td><code>currency_ast</code></td>
+                    <td>Target scenario identifier: <code>currency_ast</code>, <code>trace_prompt_01</code>, <code>trace_schema_01</code>, <code>trace_env_01</code>, <code>trace_null_01</code>.</td>
+                  </tr>
+                  <tr>
+                    <td><code>--seed &lt;int&gt;</code></td>
+                    <td>integer</td>
+                    <td><code>42</code></td>
+                    <td>Deterministic random seed for partitioning consistency.</td>
+                  </tr>
+                  <tr>
+                    <td><code>--no-color</code></td>
+                    <td>flag</td>
+                    <td><code>false</code></td>
+                    <td>Disable ANSI styling. Automatically active when <code>NO_COLOR</code> env var is set or output is piped.</td>
+                  </tr>
+                  <tr>
+                    <td><code>--json</code></td>
+                    <td>flag</td>
+                    <td><code>false</code></td>
+                    <td>Output raw machine-readable JSON representation of <code>DiagnosticResult</code>.</td>
+                  </tr>
+                  <tr>
+                    <td><code>--save &lt;path&gt;</code></td>
+                    <td>filepath</td>
+                    <td><code>None</code></td>
+                    <td>Write the complete JSON diagnosis result to disk at the specified path.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 style="margin: 32px 0 12px; font-size: 1.15rem;">agentxray diagnose</h3>
+            <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 12px;">
+              Loads a declarative scenario JSON file and isolates the failure-inducing directive.
+            </p>
+
+            <div class="code-container" style="margin-bottom: 16px;">
+              <div class="code-header-strip">
+                <span class="code-title">Syntax</span>
+              </div>
+              <div class="code-content">
+                <pre><span class="c-key">$</span> agentxray diagnose &lt;scenario.json&gt; [--seed &lt;int&gt;] [--max-evals &lt;int&gt;] [--timeout &lt;float&gt;] [--no-color] [--json] [--save &lt;path&gt;]</pre>
+              </div>
+            </div>
+
+            <h3 style="margin: 32px 0 12px; font-size: 1.15rem;">agentxray version</h3>
+            <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 12px;">
+              Prints package version string, Python version, and minimizer engine status.
+            </p>
+          </section>
+
+          <!-- Section 2: Exit Codes -->
+          <section id="exit-codes" class="reveal-on-scroll" style="margin-bottom: 56px;">
+            <div class="section-label">Process Contract</div>
+            <h2 class="section-heading">Process Exit Codes</h2>
+            <p class="section-lead">
+              AgentXRay adheres to strict POSIX process exit codes for integration into CI/CD pipelines, test runners, and bash automation scripts.
+            </p>
+
+            <div class="table-scroller">
+              <table class="reference-table">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Status</th>
+                    <th>Trigger Condition</th>
+                    <th>Recommended CI Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong style="color: var(--state-pass);">0</strong></td>
+                    <td><code>CLEAN / VERIFIED</code></td>
+                    <td>A minimal failure-inducing culprit was isolated and verified (<code>VERIFIED_CULPRIT</code>), or baseline input passed cleanly without faults (<code>NO_FAILURE</code>).</td>
+                    <td>Pass build step. Parse isolated directive from JSON or terminal card.</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: var(--state-warn);">1</strong></td>
+                    <td><code>INCONCLUSIVE</code></td>
+                    <td>Search halted without confirming 1-minimality: budget exhausted (<code>BUDGET_EXHAUSTED</code>), timeout exceeded (<code>TIMEOUT</code>), or ambiguous evaluator outcomes.</td>
+                    <td>Warn or fail build step depending on strictness. Inspect telemetry in saved output.</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: var(--state-fail);">2</strong></td>
+                    <td><code>USAGE_ERROR</code></td>
+                    <td>Invalid arguments, missing scenario file, duplicate candidate strings, or malformed JSON schema. Handled before search commences.</td>
+                    <td>Fail build step immediately. Fix command flags or scenario syntax.</td>
+                  </tr>
+                  <tr>
+                    <td><strong style="color: var(--state-fail);">3</strong></td>
+                    <td><code>RUNTIME_ERROR</code></td>
+                    <td>The provided evaluator callable or agent harness raised an unhandled Python exception (<code>ERROR</code>).</td>
+                    <td>Fail build step. Check stack trace printed to stderr.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Section 3: Python SDK Facade -->
+          <section id="sdk" class="reveal-on-scroll" style="margin-bottom: 56px;">
+            <div class="section-label">Python SDK</div>
+            <h2 class="section-heading">Public Python SDK Facade</h2>
+            <p class="section-lead">
+              The public SDK facade exposes a clean entry point <code>agentxray.diagnose</code> without requiring knowledge of internal research data structures.
+            </p>
+
+            <div class="code-container" style="margin-bottom: 24px;">
+              <div class="code-header-strip">
+                <span class="code-title">Python Signature</span>
+              </div>
+              <div class="code-content">
+                <pre><span class="c-key">def</span> <span class="c-fn">diagnose</span>(
+    candidates: Sequence[str] | None = None,
+    evaluator: Callable[[tuple[str, ...]], EvaluatorReturn] | None = None,
+    *,
+    elements: Sequence[str] | None = None,
+    max_evaluations: int = 50,
+    timeout_seconds: float = 60.0,
+    seed: int = 42,
+    ground_truth: Sequence[str] | None = None,
+    algorithm: str = <span class="c-str">"ddmin"</span>,
+) -&gt; DiagnosticResult</pre>
+              </div>
+            </div>
+
+            <h3 style="margin: 24px 0 12px; font-size: 1.15rem;">DiagnosticResult Properties</h3>
+            <div class="table-scroller">
+              <table class="reference-table">
+                <thead>
+                  <tr>
+                    <th>Property</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>status</code></td>
+                    <td><code>DiagnosticStatus</code></td>
+                    <td>Enum status indicating the search result.</td>
+                  </tr>
+                  <tr>
+                    <td><code>summary</code></td>
+                    <td><code>str</code></td>
+                    <td>Human-readable plain English summary of the diagnostic finding.</td>
+                  </tr>
+                  <tr>
+                    <td><code>is_verified</code></td>
+                    <td><code>bool</code></td>
+                    <td>True if the isolated condition was counterfactually verified (removing it restored success).</td>
+                  </tr>
+                  <tr>
+                    <td><code>is_one_minimal</code></td>
+                    <td><code>bool</code></td>
+                    <td>True if removing any single element from the isolated set restores clean success.</td>
+                  </tr>
+                  <tr>
+                    <td><code>isolated_candidates</code></td>
+                    <td><code>tuple[str, ...]</code></td>
+                    <td>The minimal failure-inducing directive strings.</td>
+                  </tr>
+                  <tr>
+                    <td><code>evaluations_used</code></td>
+                    <td><code>int</code></td>
+                    <td>Total number of agent evaluations conducted.</td>
+                  </tr>
+                  <tr>
+                    <td><code>execution_time_seconds</code></td>
+                    <td><code>float</code></td>
+                    <td>Wall-clock duration in seconds.</td>
+                  </tr>
+                  <tr>
+                    <td><code>candidate_map</code></td>
+                    <td><code>dict[str, str]</code></td>
+                    <td>Mapping of internal element IDs (e.g. <code>elem_0</code>) to raw candidate strings.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Section 4: Evaluator Contract -->
+          <section id="evaluator" class="reveal-on-scroll" style="margin-bottom: 56px;">
+            <div class="section-label">Evaluator Contract</div>
+            <h2 class="section-heading">Evaluator Callable Contract</h2>
+            <p class="section-lead">
+              The evaluator callable represents your test harness. It receives an active subset of candidate strings and returns whether that subset triggers a failure.
+            </p>
+
+            <div class="table-scroller">
+              <table class="reference-table">
+                <thead>
+                  <tr>
+                    <th>Return Type</th>
+                    <th>Meaning</th>
+                    <th>Example Usage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>bool</code></td>
+                    <td><code>True</code> = Failure reproduced.<br /><code>False</code> = Success / clean execution.</td>
+                    <td><code>return any("bad_rule" in x for x in subset)</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>tuple[bool, str]</code></td>
+                    <td><code>(is_failure, diagnostic_message)</code>. Allows passing failure output for logs.</td>
+                    <td><code>return (True, "SyntaxError in tool call")</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>TargetOutcome</code></td>
+                    <td>Explicit enum: <code>TargetOutcome.FAILURE</code>, <code>TargetOutcome.SUCCESS</code>, <code>TargetOutcome.INCONCLUSIVE</code>.</td>
+                    <td><code>return TargetOutcome.FAILURE</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>TargetResult</code></td>
+                    <td>Full structured outcome object with <code>outcome</code>, <code>output_message</code>, and <code>error_code</code>.</td>
+                    <td><code>return TargetResult(...)</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Section 5: DiagnosticStatus Enum -->
+          <section id="status" class="reveal-on-scroll" style="margin-bottom: 56px;">
+            <div class="section-label">Outcome Semantics</div>
+            <h2 class="section-heading">DiagnosticStatus Enum</h2>
+            <p class="section-lead">
+              Machine-readable outcome statuses returned in <code>DiagnosticResult.status</code>.
+            </p>
+
+            <div class="table-scroller">
+              <table class="reference-table">
+                <thead>
+                  <tr>
+                    <th>Status Value</th>
+                    <th>Semantics</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>VERIFIED_CULPRIT</code></td>
+                    <td>A minimal failure-inducing subset was isolated and proven via counterfactual verification (removing it restores clean execution).</td>
+                  </tr>
+                  <tr>
+                    <td><code>NO_FAILURE</code></td>
+                    <td>The full candidate set passed without failure; no error condition was present to minimize.</td>
+                  </tr>
+                  <tr>
+                    <td><code>INCONCLUSIVE</code></td>
+                    <td>The evaluator returned inconclusive outcomes or candidate search halted without verifying 1-minimality.</td>
+                  </tr>
+                  <tr>
+                    <td><code>BUDGET_EXHAUSTED</code></td>
+                    <td>The maximum evaluation budget (<code>max_evaluations</code>) was reached before search could verify minimality.</td>
+                  </tr>
+                  <tr>
+                    <td><code>TIMEOUT</code></td>
+                    <td>Search exceeded the configured wall-clock timeout (<code>timeout_seconds</code>).</td>
+                  </tr>
+                  <tr>
+                    <td><code>ERROR</code></td>
+                    <td>The evaluator callable or harness threw an unhandled Python exception during execution.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Section 6: Scenario JSON Schema -->
+          <section id="schema" class="reveal-on-scroll" style="margin-bottom: 56px;">
+            <div class="section-label">Declarative Schema</div>
+            <h2 class="section-heading">Scenario JSON File Specification</h2>
+            <p class="section-lead">
+              Standard JSON schema for declarative scenarios loaded by <code>agentxray diagnose</code>.
+            </p>
+
+            <div class="code-container">
+              <div class="code-header-strip">
+                <span class="code-title">Scenario File Schema</span>
+              </div>
+              <div class="code-content">
+                <pre>{
+  <span class="c-key">"$schema"</span>: <span class="c-str">"https://agentxray.dev/schemas/scenario.v1.json"</span>,
+  <span class="c-key">"name"</span>: <span class="c-str">"string (required, unique scenario identifier)"</span>,
+  <span class="c-key">"description"</span>: <span class="c-str">"string (optional summary)"</span>,
+  <span class="c-key">"candidates"</span>: [
+    <span class="c-str">"string (unique candidate directive 1)"</span>,
+    <span class="c-str">"string (unique candidate directive 2)"</span>
+  ],
+  <span class="c-key">"failure_condition"</span>: {
+    <span class="c-key">"type"</span>: <span class="c-str">"contains_any | contains_all | exact_match | always_fail | never_fail"</span>,
+    <span class="c-key">"patterns"</span>: [<span class="c-str">"substring pattern to match against active candidates"</span>]
+  },
+  <span class="c-key">"ground_truth"</span>: [<span class="c-str">"optional expected minimal failure subset"</span>]
+}</pre>
+              </div>
+            </div>
+          </section>
+
+          <!-- Section 7: Built-in Catalog -->
+          <section id="catalog" class="reveal-on-scroll" style="margin-bottom: 56px;">
+            <div class="section-label">Testbed Catalog</div>
+            <h2 class="section-heading">Built-in Benchmark Catalog</h2>
+            <p class="section-lead">
+              Self-contained offline scenarios included in the package for testing, calibration, and demonstrations.
+            </p>
+
+            <div class="table-scroller">
+              <table class="reference-table">
+                <thead>
+                  <tr>
+                    <th>Scenario ID</th>
+                    <th>Category</th>
+                    <th>Fault Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>currency_ast</code></td>
+                    <td>Prompt Formatting / Syntax</td>
+                    <td>Directive injects currency symbols into tool arguments, violating AST arithmetic parser.</td>
+                  </tr>
+                  <tr>
+                    <td><code>trace_prompt_01</code></td>
+                    <td>Prompt Steering / Policy</td>
+                    <td>Directive instructs agent to calculate mentally, breaching required tool-use policy.</td>
+                  </tr>
+                  <tr>
+                    <td><code>trace_schema_01</code></td>
+                    <td>Tool Interface Contract</td>
+                    <td>Directive changes parameter key from <code>expression</code> to <code>expr</code>, causing API rejection.</td>
+                  </tr>
+                  <tr>
+                    <td><code>trace_env_01</code></td>
+                    <td>Environment / Infrastructure</td>
+                    <td>Mock service returns HTTP 500 error, proving failure is external downtime rather than agent prompt flaw.</td>
+                  </tr>
+                  <tr>
+                    <td><code>trace_null_01</code></td>
+                    <td>Control / Null Baseline</td>
+                    <td>Clean candidate pool with zero planted faults; verifies <code>NO_FAILURE</code> control behavior.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Section 8: Boundaries -->
+          <section id="boundaries" class="reveal-on-scroll">
+            <div class="section-label">Boundaries</div>
+            <h2 class="section-heading">Operational Boundaries &amp; Disclosures</h2>
+            <p class="section-lead">
+              AgentXRay is a causal diagnostic instrument designed for deterministic and black-box verification:
+            </p>
+            <ul style="color: var(--text-secondary); font-size: 0.88rem; line-height: 1.7; padding-left: 20px;">
+              <li><strong>Black-Box Guarantee:</strong> AgentXRay does not inspect model weights, internal activation vectors, or proprietary attention heads.</li>
+              <li><strong>Zero Cloud Spend in Testbeds:</strong> All built-in benchmark tasks run completely in memory without making external network requests.</li>
+              <li><strong>Stochastic Agents:</strong> When evaluating live non-deterministic LLMs, repeated trials are required to establish statistical confidence (see Research Methodology).</li>
+            </ul>
+          </section>
+
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="site-container">
+      <div class="footer-grid">
+        <div>
+          <div class="brand">
+            <span class="brand-name">agentxray</span>
+            <span class="brand-divider">/</span>
+            <span class="brand-version">0.1.0</span>
+          </div>
+          <p class="footer-summary">
+            Black-box failure-condition minimization for tool-calling AI agents.
+            Counterfactual verification via hierarchical Delta Debugging.
+          </p>
+          <div class="footer-meta-line">
+            <span>Apache-2.0 License</span>
+            <span class="meta-dot">·</span>
+            <span>Zero Network Overhead</span>
+            <span class="meta-dot">·</span>
+            <span>$0.00 Offline Testbeds</span>
+          </div>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Product</h4>
+          <ul class="footer-nav">
+            <li><a href="index.html">Overview</a></li>
+            <li><a href="quickstart.html">Quickstart Guide</a></li>
+            <li><a href="playground.html">Interactive Playground</a></li>
+            <li><a href="docs.html">CLI Reference</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Reference</h4>
+          <ul class="footer-nav">
+            <li><a href="docs.html#sdk">Python SDK Facade</a></li>
+            <li><a href="docs.html#exit-codes">Process Exit Codes</a></li>
+            <li><a href="docs.html#evaluator">Evaluator Contract</a></li>
+            <li><a href="research.html">Methodology &amp; Bounds</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Ecosystem</h4>
+          <ul class="footer-nav">
+            <li><a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer">GitHub Repository ↗</a></li>
+            <li><a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer">Hugging Face Space ↗</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/issues" target="_blank" rel="noopener noreferrer">Issue Tracker ↗</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0 License ↗</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-subline">
+        <span>&copy; 2026 AgentXRay Contributors. Built for deterministic, observable agent engineering.</span>
+        <span class="font-mono" style="color: var(--text-muted); font-size: 0.78rem;">v0.1.0 · ddmin minimizer ready</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

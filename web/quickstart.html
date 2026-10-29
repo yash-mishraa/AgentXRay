@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quickstart Guide — AgentXRay</title>
+  <meta name="description" content="Get started with AgentXRay in under two minutes. Learn how to install the CLI, run offline verification demos, and integrate the Python SDK." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='4 17 10 11 4 5'></polyline><line x1='12' y1='19' x2='20' y2='19'></line></svg>" />
+</head>
+<body>
+
+  <!-- Site Header -->
+  <header class="site-header">
+    <div class="site-container header-inner">
+      <a href="index.html" class="brand" aria-label="AgentXRay Home">
+        <span class="brand-name">agentxray</span>
+        <span class="brand-divider">/</span>
+        <span class="brand-version">0.1.0</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary Navigation">
+        <a href="index.html" class="nav-item">Overview</a>
+        <a href="quickstart.html" class="nav-item active">Quickstart</a>
+        <a href="docs.html" class="nav-item">Documentation</a>
+        <a href="playground.html" class="nav-item">Playground</a>
+        <a href="research.html" class="nav-item">Research</a>
+      </nav>
+
+      <div class="header-actions">
+        <a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer" class="nav-link-subtle">
+          GitHub
+          <svg class="external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.5 2.5H9.5V8.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer" class="btn-sm btn-outline">
+          HF Space
+          <svg class="external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.5 2.5H9.5V8.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <button class="menu-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5H17M3 10H17M3 15H17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mobile Drawer -->
+  <div class="mobile-menu-drawer" aria-label="Mobile Navigation">
+    <a href="index.html" class="nav-item">Overview</a>
+    <a href="quickstart.html" class="nav-item active">Quickstart Guide</a>
+    <a href="docs.html" class="nav-item">Documentation &amp; API</a>
+    <a href="playground.html" class="nav-item">Interactive Playground</a>
+    <a href="research.html" class="nav-item">Research &amp; Methodology</a>
+  </div>
+
+  <main>
+    <!-- Editorial Hero -->
+    <section class="hero">
+      <div class="site-container">
+        <div class="hero-meta-strip animate-fade-in">
+          <span>Developer Onboarding</span>
+          <span class="meta-bullet">/</span>
+          <span>Fast Integration</span>
+          <span class="meta-bullet">/</span>
+          <span>Offline Execution</span>
+        </div>
+
+        <h1 class="hero-title animate-fade-in animate-delay-1">
+          From zero to failure minimization<br />in under two minutes.
+        </h1>
+
+        <p class="hero-subhead animate-fade-in animate-delay-2">
+          Install the package, run the self-contained verification demo in your terminal, or connect your existing agent harness via the Python SDK facade. Zero paid services, zero mandatory cloud credentials.
+        </p>
+
+        <div class="hero-tape animate-fade-in animate-delay-3" style="max-width: 720px;">
+          <div class="tape-cell">
+            <div class="tape-label">Python Version</div>
+            <div class="tape-value font-mono">&gt;= 3.10</div>
+          </div>
+          <div class="tape-cell">
+            <div class="tape-label">First Run Latency</div>
+            <div class="tape-value font-mono">&lt; 15 ms</div>
+          </div>
+          <div class="tape-cell">
+            <div class="tape-label">Cloud Dependencies</div>
+            <div class="tape-value font-mono">None ($0.00 spend)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Guided Steps -->
+    <section class="editorial-section">
+      <div class="site-container">
+
+        <!-- Step 1: Install -->
+        <div class="reveal-on-scroll" style="margin-bottom: 56px;">
+          <div class="section-label">01 / Installation</div>
+          <h2 class="section-heading">Install the local development package.</h2>
+          <p class="section-lead">
+            AgentXRay is structured as a standard Python package. Install editable mode from the repository root:
+          </p>
+
+          <div class="code-container">
+            <div class="code-header-strip">
+              <span class="code-title">Terminal</span>
+              <button class="copy-icon-btn" data-copy-target="pip install -e ." aria-label="Copy install command">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
+            <div class="code-content">
+              <pre><span class="c-dim"># Clone repository and install in editable development mode</span>
+<span class="c-key">$</span> git clone https://github.com/yash-mishraa/AgentXRay.git
+<span class="c-key">$</span> cd AgentXRay
+<span class="c-key">$</span> pip install -e .</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Run CLI Demo -->
+        <div class="reveal-on-scroll" style="margin-bottom: 56px;">
+          <div class="section-label">02 / Terminal Verification</div>
+          <h2 class="section-heading">Run the offline demonstration.</h2>
+          <p class="section-lead">
+            Verify the diagnostic engine immediately using the built-in calibrated testbed. The CLI prints a restrained monochrome diagnostic card with isolated directives, minimality verification, and search telemetry.
+          </p>
+
+          <div class="code-container" style="margin-bottom: 24px;">
+            <div class="code-header-strip">
+              <span class="code-title">Run Baseline Demo</span>
+              <button class="copy-icon-btn" data-copy-target="agentxray demo" aria-label="Copy demo command">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
+            <div class="code-content">
+              <pre><span class="c-key">$</span> agentxray demo</pre>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-header-strip">
+              <span class="code-title">Output Card Preview</span>
+            </div>
+            <div class="code-content">
+              <pre>AgentXRay (currency_ast)
+────────────────────────────────────────────────────────────────────────────
+DIAGNOSIS
+  The task fails when 1 specific candidate directive is active.
+
+ISOLATED CONDITION
+  [elem_0] strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. '$150' or '$250')
+
+VERIFICATION
+  Verified: removing this directive restores clean success (1-minimal).
+
+SEARCH TELEMETRY
+  Status:          <span class="c-val">CULPRIT ISOLATED &amp; VERIFIED</span>
+  Evaluations:     4 calls (ddmin) vs 6 calls (greedy)
+  Candidate Pool:  4 directives
+  Execution Time:  0.002s
+  Ground Truth:    True (100% match)
+
+MODE &amp; BOUNDARIES
+  Execution:       Controlled offline execution ($0.00 spend, zero network requests)
+────────────────────────────────────────────────────────────────────────────</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Python SDK Integration -->
+        <div class="reveal-on-scroll" style="margin-bottom: 56px;">
+          <div class="section-label">03 / Python SDK Integration</div>
+          <h2 class="section-heading">Diagnose custom agents via the Python API.</h2>
+          <p class="section-lead">
+            Import <code>diagnose</code> from <code>agentxray</code>. Pass your candidate directives as a sequence of strings and provide an evaluator callable that tests whether a given candidate subset reproduces the failure.
+          </p>
+
+          <div class="code-container">
+            <div class="code-header-strip">
+              <span class="code-title">diagnose_agent.py</span>
+              <button class="copy-icon-btn" data-copy-target="from agentxray import diagnose
+
+candidates = [
+    &quot;strict_currency_formatting: format numbers with $ symbol in tool calls&quot;,
+    &quot;monetary_precision: format all invoices with two decimal places&quot;,
+    &quot;professional_styling: use formal accounting terminology&quot;,
+    &quot;audit_trail: annotate calculations with ledger voucher references&quot;,
+]
+
+def my_agent_evaluator(active_subset: tuple[str, ...]) -> bool:
+    # Return True if the agent fails on this active subset, False if it succeeds cleanly
+    return any(&quot;strict_currency_formatting&quot; in c for c in active_subset)
+
+result = diagnose(candidates=candidates, evaluator=my_agent_evaluator)
+
+print(result.summary)
+print(f&quot;Verified 1-minimal: {result.is_verified}&quot;)
+print(f&quot;Isolated directive: {result.isolated_candidates}&quot;)
+print(f&quot;Evaluations used:   {result.evaluations_used}&quot;)" aria-label="Copy Python script">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
+            <div class="code-content">
+              <pre><span class="c-key">from</span> agentxray <span class="c-key">import</span> diagnose
+
+<span class="c-dim"># Candidate directives suspected of causing the agent breakdown</span>
+candidates = [
+    <span class="c-str">"strict_currency_formatting: format numbers with $ symbol in tool calls"</span>,
+    <span class="c-str">"monetary_precision: format all invoices with two decimal places"</span>,
+    <span class="c-str">"professional_styling: use formal accounting terminology"</span>,
+    <span class="c-str">"audit_trail: annotate calculations with ledger voucher references"</span>,
+]
+
+<span class="c-dim"># Evaluator function: receives active subset as tuple[str, ...]</span>
+<span class="c-dim"># Return True if agent FAILS on this subset, False if it SUCCEEDS cleanly</span>
+<span class="c-key">def</span> <span class="c-fn">my_agent_evaluator</span>(active_subset: tuple[str, ...]) -&gt; bool:
+    <span class="c-key">return</span> any(<span class="c-str">"strict_currency_formatting"</span> <span class="c-key">in</span> c <span class="c-key">for</span> c <span class="c-key">in</span> active_subset)
+
+<span class="c-dim"># Run Delta Debugging search and counterfactual verification</span>
+result = diagnose(candidates=candidates, evaluator=my_agent_evaluator)
+
+print(result.summary)
+print(<span class="c-str">f"Verified 1-minimal: {result.is_verified}"</span>)
+print(<span class="c-str">f"Isolated directive: {result.isolated_candidates}"</span>)
+print(<span class="c-str">f"Evaluations used:   {result.evaluations_used}"</span>)</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Declarative Scenarios -->
+        <div class="reveal-on-scroll" style="margin-bottom: 56px;">
+          <div class="section-label">04 / Declarative File Execution</div>
+          <h2 class="section-heading">Diagnose reproducible failures from JSON scenarios.</h2>
+          <p class="section-lead">
+            CI pipelines and automated regression harnesses can store candidate directives and offline failure conditions in declarative JSON files, evaluated via <code>agentxray diagnose</code>.
+          </p>
+
+          <div class="code-container" style="margin-bottom: 24px;">
+            <div class="code-header-strip">
+              <span class="code-title">scenario.json</span>
+              <button class="copy-icon-btn" data-copy-target='{
+  "name": "currency_ast_scenario",
+  "description": "AST arithmetic rejection on currency symbols",
+  "candidates": [
+    "strict_currency_formatting: format with $ in tool arguments",
+    "monetary_precision: format invoices with 2 decimal places",
+    "professional_styling: formal terminology",
+    "audit_trail: voucher numbers"
+  ],
+  "failure_condition": {
+    "type": "contains_any",
+    "patterns": ["strict_currency_formatting"]
+  }
+}' aria-label="Copy scenario JSON">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
+            <div class="code-content">
+              <pre>{
+  <span class="c-key">"name"</span>: <span class="c-str">"currency_ast_scenario"</span>,
+  <span class="c-key">"description"</span>: <span class="c-str">"AST arithmetic rejection on currency symbols"</span>,
+  <span class="c-key">"candidates"</span>: [
+    <span class="c-str">"strict_currency_formatting: format with $ in tool arguments"</span>,
+    <span class="c-str">"monetary_precision: format invoices with 2 decimal places"</span>,
+    <span class="c-str">"professional_styling: formal terminology"</span>,
+    <span class="c-str">"audit_trail: voucher numbers"</span>
+  ],
+  <span class="c-key">"failure_condition"</span>: {
+    <span class="c-key">"type"</span>: <span class="c-str">"contains_any"</span>,
+    <span class="c-key">"patterns"</span>: [<span class="c-str">"strict_currency_formatting"</span>]
+  }
+}</pre>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-header-strip">
+              <span class="code-title">Execute via CLI</span>
+              <button class="copy-icon-btn" data-copy-target="agentxray diagnose scenario.json" aria-label="Copy CLI command">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
+            <div class="code-content">
+              <pre><span class="c-key">$</span> agentxray diagnose scenario.json
+<span class="c-dim"># Outputs structured terminal card with exit code 0</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Next Links -->
+        <div class="reveal-on-scroll">
+          <div class="section-label">05 / Next Steps</div>
+          <h2 class="section-heading">Explore contracts, simulator, and methodology.</h2>
+          <div class="split-grid" style="margin-top: 24px;">
+            <div class="split-col">
+              <h3>Documentation &amp; Contracts</h3>
+              <p>Explore CLI flags, process exit codes (0, 1, 2, 3), SDK argument validation, and the complete evaluator return specification.</p>
+              <a href="docs.html" class="btn btn-outline" style="margin-top: 14px;">Open Documentation →</a>
+            </div>
+            <div class="split-col">
+              <h3>Interactive Playground</h3>
+              <p>Run all 5 benchmark scenarios in-browser, inspect execution traces step-by-step, or test custom directives in the client-side simulator.</p>
+              <a href="playground.html" class="btn btn-outline" style="margin-top: 14px;">Launch Playground →</a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="site-container">
+      <div class="footer-grid">
+        <div>
+          <div class="brand">
+            <span class="brand-name">agentxray</span>
+            <span class="brand-divider">/</span>
+            <span class="brand-version">0.1.0</span>
+          </div>
+          <p class="footer-summary">
+            Black-box failure-condition minimization for tool-calling AI agents.
+            Counterfactual verification via hierarchical Delta Debugging.
+          </p>
+          <div class="footer-meta-line">
+            <span>Apache-2.0 License</span>
+            <span class="meta-dot">·</span>
+            <span>Zero Network Overhead</span>
+            <span class="meta-dot">·</span>
+            <span>$0.00 Offline Testbeds</span>
+          </div>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Product</h4>
+          <ul class="footer-nav">
+            <li><a href="index.html">Overview</a></li>
+            <li><a href="quickstart.html">Quickstart Guide</a></li>
+            <li><a href="playground.html">Interactive Playground</a></li>
+            <li><a href="docs.html">CLI Reference</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Reference</h4>
+          <ul class="footer-nav">
+            <li><a href="docs.html#sdk">Python SDK Facade</a></li>
+            <li><a href="docs.html#exit-codes">Process Exit Codes</a></li>
+            <li><a href="docs.html#evaluator">Evaluator Contract</a></li>
+            <li><a href="research.html">Methodology &amp; Bounds</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Ecosystem</h4>
+          <ul class="footer-nav">
+            <li><a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer">GitHub Repository ↗</a></li>
+            <li><a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer">Hugging Face Space ↗</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/issues" target="_blank" rel="noopener noreferrer">Issue Tracker ↗</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0 License ↗</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-subline">
+        <span>&copy; 2026 AgentXRay Contributors. Built for deterministic, observable agent engineering.</span>
+        <span class="font-mono" style="color: var(--text-muted); font-size: 0.78rem;">v0.1.0 · ddmin minimizer ready</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

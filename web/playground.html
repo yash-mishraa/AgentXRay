@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive Playground — AgentXRay</title>
+  <meta name="description" content="Explore real agent failure testbeds with interactive execution playback, or simulate black-box Delta Debugging with custom directives in your browser." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='4 17 10 11 4 5'></polyline><line x1='12' y1='19' x2='20' y2='19'></line></svg>" />
+</head>
+<body>
+
+  <!-- Site Header -->
+  <header class="site-header">
+    <div class="site-container header-inner">
+      <a href="index.html" class="brand" aria-label="AgentXRay Home">
+        <span class="brand-name">agentxray</span>
+        <span class="brand-divider">/</span>
+        <span class="brand-version">0.1.0</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary Navigation">
+        <a href="index.html" class="nav-item">Overview</a>
+        <a href="quickstart.html" class="nav-item">Quickstart</a>
+        <a href="docs.html" class="nav-item">Documentation</a>
+        <a href="playground.html" class="nav-item active">Playground</a>
+        <a href="research.html" class="nav-item">Research</a>
+      </nav>
+
+      <div class="header-actions">
+        <a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer" class="nav-link-subtle">
+          GitHub
+          <svg class="external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.5 2.5H9.5V8.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer" class="btn-sm btn-outline">
+          HF Space
+          <svg class="external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.5 2.5H9.5V8.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <button class="menu-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5H17M3 10H17M3 15H17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mobile Drawer -->
+  <div class="mobile-menu-drawer" aria-label="Mobile Navigation">
+    <a href="index.html" class="nav-item">Overview</a>
+    <a href="quickstart.html" class="nav-item">Quickstart Guide</a>
+    <a href="docs.html" class="nav-item">Documentation &amp; API</a>
+    <a href="playground.html" class="nav-item active">Interactive Playground</a>
+    <a href="research.html" class="nav-item">Research &amp; Methodology</a>
+  </div>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="site-container">
+        <div class="hero-meta-strip animate-fade-in">
+          <span>Interactive Simulator</span>
+          <span class="meta-bullet">/</span>
+          <span>Benchmark Explorer</span>
+          <span class="meta-bullet">/</span>
+          <span>In-Memory Execution</span>
+        </div>
+
+        <h1 class="hero-title animate-fade-in animate-delay-1">
+          Interactive Testbed &amp; Simulator
+        </h1>
+
+        <p class="hero-subhead animate-fade-in animate-delay-2">
+          Step through genuine benchmark failure scenarios, inspect trial-by-trial Delta Debugging partitions, or test custom failure conditions in the client-side simulator.
+        </p>
+      </div>
+    </section>
+
+    <!-- Part 1: Genuine Benchmark Explorer -->
+    <section class="editorial-section">
+      <div class="site-container">
+        <div class="section-label">01 / Benchmark Explorer</div>
+        <h2 class="section-heading">Step through real agent failure scenarios.</h2>
+        <p class="section-lead">
+          Select a testbed from the catalog below. Use the playback controls to step through each binary partition trial or switch between raw terminal tape, formatted card, and JSON views.
+        </p>
+
+        <div class="terminal-frame reveal-on-scroll">
+          <div class="terminal-header">
+            <div class="terminal-id-tag font-mono" id="terminalIdTag">
+              scenario: currency_ast · seed: 42
+            </div>
+
+            <div class="terminal-controls">
+              <div class="scenario-select-group">
+                <select id="scenarioSelect" class="select-clean" aria-label="Select Benchmark Scenario">
+                  <option value="currency_ast">1. AST Currency Formatting (Syntax Error)</option>
+                  <option value="trace_prompt_01">2. Tool Prohibition Directive (Model Steering)</option>
+                  <option value="trace_schema_01">3. Schema Key Mismatch (Interface Contract)</option>
+                  <option value="trace_env_01">4. Mock Service 500 Outage (Environment Fault)</option>
+                  <option value="trace_null_01">5. Clean Control Pass (Null Baseline)</option>
+                </select>
+              </div>
+
+              <div class="terminal-mode-tabs" role="tablist">
+                <button class="mode-tab active" data-tape-mode="tape" role="tab" aria-selected="true">Terminal Tape</button>
+                <button class="mode-tab" data-tape-mode="card" role="tab" aria-selected="false">Formatted Card</button>
+                <button class="mode-tab" data-tape-mode="raw" role="tab" aria-selected="false">Raw JSON</button>
+              </div>
+
+              <div class="playback-group">
+                <button id="tapePlayBtn" class="btn-sm btn-outline" aria-label="Play or pause execution playback">Play</button>
+                <button id="tapeStepBtn" class="btn-sm btn-outline" aria-label="Step forward one trial">Step</button>
+                <button id="tapeResetBtn" class="btn-sm btn-outline" aria-label="Reset execution playback">Reset</button>
+                <select id="tapeSpeedSelect" class="select-clean" style="font-size: 0.76rem;" aria-label="Playback speed">
+                  <option value="1">1x Speed</option>
+                  <option value="2">2x Speed</option>
+                  <option value="0.5">0.5x Speed</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div id="terminalScreen" class="terminal-screen" role="region" aria-live="polite">
+            <!-- Populated dynamically by TerminalTapeController in app.js -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Part 2: Client-Side ddmin Sandbox -->
+    <section class="editorial-section" style="border-top: 1px solid var(--rule-hairline);">
+      <div class="site-container">
+        <div class="section-label">02 / In-Browser Sandbox</div>
+        <h2 class="section-heading">Test custom directives with client-side ddmin.</h2>
+        <p class="section-lead">
+          Input candidate prompt instructions or configuration flags, define a trigger pattern that simulates an agent failure, and execute the Delta Debugging partition search directly in your browser.
+        </p>
+
+        <div class="playground-shell reveal-on-scroll">
+          <!-- Inputs -->
+          <div>
+            <div style="margin-bottom: 20px;">
+              <label for="pgCandidates" class="field-label">Candidate Pool (one directive per line):</label>
+              <textarea id="pgCandidates" class="input-area" rows="7" aria-label="Candidate Pool">strict_currency_formatting: format all numbers within tool calls with '$' signs
+monetary_precision: format all invoices with two decimal places
+professional_styling: use formal enterprise accounting terminology
+audit_trail: annotate calculations with ledger voucher references</textarea>
+            </div>
+
+            <div style="margin-bottom: 24px;">
+              <label for="pgPattern" class="field-label">Simulated Failure Trigger (substring match):</label>
+              <input type="text" id="pgPattern" class="input-text" value="strict_currency_formatting" aria-label="Failure Trigger Substring" />
+            </div>
+
+            <button id="pgRunBtn" class="btn btn-primary" style="width: 100%;">
+              Run Delta Debugging Search →
+            </button>
+          </div>
+
+          <!-- Trace Output -->
+          <div>
+            <div class="field-label">ddmin Partition Trace &amp; Result:</div>
+            <div id="pgOutput" class="playground-results">
+              <span style="color: var(--text-tertiary);">Click "Run Delta Debugging Search" to execute client-side partition isolation and counterfactual verification.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="split-grid" style="margin-top: 48px;">
+          <div class="split-col">
+            <h3>Simulator Mechanics</h3>
+            <p>
+              The client-side sandbox implements Andreas Zeller's standard <code>ddmin</code> algorithm. It recursively splits the candidate pool into 2 partitions, tests each subset against the trigger condition, increases granularity when subsets pass, and executes an empty set counterfactual check to verify 1-minimality.
+            </p>
+          </div>
+          <div class="split-col">
+            <h3>Production Integration</h3>
+            <p>
+              In production, evaluations are not simple substring matches: your evaluator callable runs your agent harness, inspects tool call syntax, validates database queries, or queries mock APIs. Use the Python SDK (<code>agentxray.diagnose</code>) or explore the Hugging Face Space for full multi-mechanism evaluations.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="site-container">
+      <div class="footer-grid">
+        <div>
+          <div class="brand">
+            <span class="brand-name">agentxray</span>
+            <span class="brand-divider">/</span>
+            <span class="brand-version">0.1.0</span>
+          </div>
+          <p class="footer-summary">
+            Black-box failure-condition minimization for tool-calling AI agents.
+            Counterfactual verification via hierarchical Delta Debugging.
+          </p>
+          <div class="footer-meta-line">
+            <span>Apache-2.0 License</span>
+            <span class="meta-dot">·</span>
+            <span>Zero Network Overhead</span>
+            <span class="meta-dot">·</span>
+            <span>$0.00 Offline Testbeds</span>
+          </div>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Product</h4>
+          <ul class="footer-nav">
+            <li><a href="index.html">Overview</a></li>
+            <li><a href="quickstart.html">Quickstart Guide</a></li>
+            <li><a href="playground.html">Interactive Playground</a></li>
+            <li><a href="docs.html">CLI Reference</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Reference</h4>
+          <ul class="footer-nav">
+            <li><a href="docs.html#sdk">Python SDK Facade</a></li>
+            <li><a href="docs.html#exit-codes">Process Exit Codes</a></li>
+            <li><a href="docs.html#evaluator">Evaluator Contract</a></li>
+            <li><a href="research.html">Methodology &amp; Bounds</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Ecosystem</h4>
+          <ul class="footer-nav">
+            <li><a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer">GitHub Repository ↗</a></li>
+            <li><a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer">Hugging Face Space ↗</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/issues" target="_blank" rel="noopener noreferrer">Issue Tracker ↗</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0 License ↗</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-subline">
+        <span>&copy; 2026 AgentXRay Contributors. Built for deterministic, observable agent engineering.</span>
+        <span class="font-mono" style="color: var(--text-muted); font-size: 0.78rem;">v0.1.0 · ddmin minimizer ready</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

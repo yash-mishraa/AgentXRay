@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Research &amp; Methodology — AgentXRay</title>
+  <meta name="description" content="Research methodology and algorithmic foundation of AgentXRay: adapting Delta Debugging (ddmin) to tool-calling AI agents with counterfactual verification." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='4 17 10 11 4 5'></polyline><line x1='12' y1='19' x2='20' y2='19'></line></svg>" />
+</head>
+<body>
+
+  <!-- Site Header -->
+  <header class="site-header">
+    <div class="site-container header-inner">
+      <a href="index.html" class="brand" aria-label="AgentXRay Home">
+        <span class="brand-name">agentxray</span>
+        <span class="brand-divider">/</span>
+        <span class="brand-version">0.1.0</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary Navigation">
+        <a href="index.html" class="nav-item">Overview</a>
+        <a href="quickstart.html" class="nav-item">Quickstart</a>
+        <a href="docs.html" class="nav-item">Documentation</a>
+        <a href="playground.html" class="nav-item">Playground</a>
+        <a href="research.html" class="nav-item active">Research</a>
+      </nav>
+
+      <div class="header-actions">
+        <a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer" class="nav-link-subtle">
+          GitHub
+          <svg class="external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.5 2.5H9.5V8.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer" class="btn-sm btn-outline">
+          HF Space
+          <svg class="external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3.5 2.5H9.5V8.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <button class="menu-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5H17M3 10H17M3 15H17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mobile Drawer -->
+  <div class="mobile-menu-drawer" aria-label="Mobile Navigation">
+    <a href="index.html" class="nav-item">Overview</a>
+    <a href="quickstart.html" class="nav-item">Quickstart Guide</a>
+    <a href="docs.html" class="nav-item">Documentation &amp; API</a>
+    <a href="playground.html" class="nav-item">Interactive Playground</a>
+    <a href="research.html" class="nav-item active">Research &amp; Methodology</a>
+  </div>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="site-container">
+        <div class="hero-meta-strip animate-fade-in">
+          <span>Algorithmic Foundations</span>
+          <span class="meta-bullet">/</span>
+          <span>Delta Debugging (ddmin)</span>
+          <span class="meta-bullet">/</span>
+          <span>Counterfactual Proof</span>
+        </div>
+
+        <h1 class="hero-title animate-fade-in animate-delay-1">
+          Causal Failure Minimization for<br />Tool-Calling AI Agents
+        </h1>
+
+        <p class="hero-subhead animate-fade-in animate-delay-2">
+          How AgentXRay adapts classic Delta Debugging to isolate minimal failure-inducing conditions in black-box agents, proves causation counterfactually, and bounds evaluation budgets.
+        </p>
+
+        <div class="hero-tape animate-fade-in animate-delay-3" style="max-width: 800px;">
+          <div class="tape-cell">
+            <div class="tape-label">Search Formulation</div>
+            <div class="tape-value font-mono">Hierarchical ddmin</div>
+          </div>
+          <div class="tape-cell">
+            <div class="tape-label">Minimality Proof</div>
+            <div class="tape-value font-mono">Counterfactual (c \ {e})</div>
+          </div>
+          <div class="tape-cell">
+            <div class="tape-label">Sparse Complexity</div>
+            <div class="tape-value font-mono">O(log N) evaluations</div>
+          </div>
+          <div class="tape-cell">
+            <div class="tape-label">Inspection Level</div>
+            <div class="tape-value font-mono">Pure Black-Box</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Research Content -->
+    <section class="editorial-section">
+      <div class="site-container">
+
+        <!-- Section 1: The Combinatorial Challenge -->
+        <div class="reveal-on-scroll" style="margin-bottom: 64px;">
+          <div class="section-label">01 / The Combinatorial Challenge</div>
+          <h2 class="section-heading">Why manual agent debugging fails at scale.</h2>
+          <p class="section-lead">
+            Modern tool-calling AI agents are guided by composite prompts consisting of system instructions, few-shot examples, dynamic tool schema definitions, user input directives, and runtime environment flags.
+          </p>
+          <div class="split-grid" style="margin-top: 28px;">
+            <div class="split-col">
+              <h3>The 2<sup>N</sup> Search Space</h3>
+              <p>
+                When an agent produces an invalid tool call or violates a domain policy, the failure is rarely documented in standard logs. For an agent configuration with <em>N</em> candidate directives or schema parameters, there are <strong>2<sup>N</sup></strong> possible active subsets. Testing all combinations is computationally intractable even for moderate <em>N</em>.
+              </p>
+            </div>
+            <div class="split-col">
+              <h3>The Failure of Linear Ablation</h3>
+              <p>
+                Standard developer intuition leans toward linear ablation: disabling directives one by one. This approach requires <em>O(N)</em> full agent runs regardless of fault sparsity. On production LLM APIs, linear scans are prohibitively slow and expensive—and fail completely when multi-element interactions cause the failure.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Algorithmic Lineage -->
+        <div class="reveal-on-scroll" style="margin-bottom: 64px;">
+          <div class="section-label">02 / Algorithmic Lineage</div>
+          <h2 class="section-heading">Adapting Andreas Zeller's Delta Debugging.</h2>
+          <p class="section-lead">
+            AgentXRay builds upon the seminal Delta Debugging methodology introduced by Andreas Zeller (2002), adapting it from compiler input reduction to black-box agent intervention search.
+          </p>
+
+          <div class="mechanics-sequence" style="margin-top: 32px;">
+            <div class="mechanic-step">
+              <div class="mechanic-index">01</div>
+              <h3 class="mechanic-title">Binary Subsetting</h3>
+              <p class="mechanic-text">
+                The candidate pool <em>C</em> is partitioned into <em>n</em> subsets (starting with <em>n = 2</em>). Each subset Δ<sub>i</sub> is evaluated independently. If any partition reproduces the failure, the search zooms into that subset.
+              </p>
+            </div>
+            <div class="mechanic-step">
+              <div class="mechanic-index">02</div>
+              <h3 class="mechanic-title">Complement Testing</h3>
+              <p class="mechanic-text">
+                If no individual subset Δ<sub>i</sub> reproduces the failure, the algorithm evaluates each complement <em>C \ Δ<sub>i</sub></em>. If a complement reproduces the failure, the non-offending partition is discarded.
+              </p>
+            </div>
+            <div class="mechanic-step">
+              <div class="mechanic-index">03</div>
+              <h3 class="mechanic-title">Granularity Refinement</h3>
+              <p class="mechanic-text">
+                If neither subsets nor complements reproduce the failure, the partition granularity increases (<em>n = min(2n, |C|)</em>). On sparse single-fault configurations, this yields logarithmic convergence in <strong>O(log N)</strong> evaluations.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Counterfactual Verification -->
+        <div class="reveal-on-scroll" style="margin-bottom: 64px;">
+          <div class="section-label">03 / Causal Rigor</div>
+          <h2 class="section-heading">Counterfactual verification &amp; 1-minimality.</h2>
+          <p class="section-lead">
+            Isolation alone does not guarantee causation. AgentXRay proves causality by demonstrating counterfactual necessity.
+          </p>
+
+          <div class="split-grid" style="margin-top: 28px;">
+            <div class="split-col">
+              <h3>Formal 1-Minimality</h3>
+              <p>
+                A candidate subset <em>C' ⊆ C</em> is defined as <strong>1-minimal</strong> if:
+              </p>
+              <ul style="color: var(--text-secondary); font-size: 0.88rem; line-height: 1.7; padding-left: 20px; margin: 12px 0;">
+                <li><em>C'</em> triggers the failure condition: <code>evaluate(C') = FAILURE</code>.</li>
+                <li>Removing any single element <em>e ∈ C'</em> eliminates the failure: <code>evaluate(C' \ {e}) = SUCCESS</code>.</li>
+              </ul>
+              <p>
+                This guarantees that no irrelevant distractor directives remain in the diagnostic finding.
+              </p>
+            </div>
+            <div class="split-col">
+              <h3>Empty Set Baseline Verification</h3>
+              <p>
+                AgentXRay additionally tests the empty baseline <code>evaluate(∅)</code>. If removing the isolated candidate directive restores clean, successful execution, the condition is counterfactually verified:
+              </p>
+              <div class="code-container" style="margin-top: 12px;">
+                <div class="code-content" style="padding: 12px;">
+                  <pre style="margin: 0;"><span class="c-dim"># Counterfactual proof check</span>
+<span class="c-key">assert</span> evaluate([isolated_directive]) == FAILURE
+<span class="c-key">assert</span> evaluate([]) == SUCCESS</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 4: Deterministic vs Stochastic Agents -->
+        <div class="reveal-on-scroll" style="margin-bottom: 64px;">
+          <div class="section-label">04 / Statistical Rigor</div>
+          <h2 class="section-heading">Deterministic testbeds vs. live stochastic models.</h2>
+          <p class="section-lead">
+            AgentXRay differentiates between controlled deterministic benchmarks and non-deterministic live LLM interactions.
+          </p>
+
+          <div class="split-grid" style="margin-top: 28px;">
+            <div class="split-col">
+              <h3>Deterministic Testbeds ($0.00 Spend)</h3>
+              <p>
+                In offline testbeds and CI regression suites, agent behavior is deterministic (fixed seed or controlled mock agents). The minimizer evaluates each partition exactly once, completing full causal isolation in 2 to 15 milliseconds without network latency or API fees.
+              </p>
+            </div>
+            <div class="split-col">
+              <h3>Stochastic LLM Sampling</h3>
+              <p>
+                When diagnosing live generative agents (temperature &gt; 0), a single failure or success is insufficient due to stochastic noise. AgentXRay's research framework employs multi-trial binomial sampling:
+              </p>
+              <ul style="color: var(--text-secondary); font-size: 0.86rem; line-height: 1.65; padding-left: 20px; margin-top: 10px;">
+                <li><strong>Wilson Score Intervals:</strong> Asymmetric confidence intervals calculated over trial success rates.</li>
+                <li><strong>Berger's IUT:</strong> Intersection-Union Test for composite statistical hypothesis testing across candidate boundaries.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 5: Method Comparison -->
+        <div class="reveal-on-scroll" style="margin-bottom: 64px;">
+          <div class="section-label">05 / Empirical Efficiency</div>
+          <h2 class="section-heading">Algorithmic complexity comparison.</h2>
+          <p class="section-lead">
+            Empirical efficiency measured across our calibrated benchmark scenarios comparing Delta Debugging against baseline alternatives:
+          </p>
+
+          <div class="table-scroller">
+            <table class="reference-table">
+              <thead>
+                <tr>
+                  <th>Method</th>
+                  <th>Sparse Complexity</th>
+                  <th>1-Minimal Guarantee</th>
+                  <th>Counterfactual Proof</th>
+                  <th>Evaluation Calls (Avg)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong style="color: var(--state-pass);">Delta Debugging (ddmin)</strong></td>
+                  <td><code>O(log N)</code></td>
+                  <td>Yes (formal 1-minimality)</td>
+                  <td>Verified via complement test</td>
+                  <td><strong>4 calls</strong></td>
+                </tr>
+                <tr>
+                  <td><strong>Greedy Single Ablation</strong></td>
+                  <td><code>O(N)</code></td>
+                  <td>Yes</td>
+                  <td>Unverified</td>
+                  <td>6 calls (+50% calls)</td>
+                </tr>
+                <tr>
+                  <td><strong>Seeded Random Search</strong></td>
+                  <td><code>O(∞)</code></td>
+                  <td>No guarantee</td>
+                  <td>None</td>
+                  <td>5–12 calls (high variance)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 6: Scientific Boundaries -->
+        <div class="reveal-on-scroll">
+          <div class="section-label">06 / Scientific Integrity</div>
+          <h2 class="section-heading">Operational boundaries &amp; research disclosures.</h2>
+          <p class="section-lead">
+            To maintain scientific transparency and clear engineering expectations:
+          </p>
+          <ul style="color: var(--text-secondary); font-size: 0.88rem; line-height: 1.7; padding-left: 20px;">
+            <li><strong>Strict Black-Box Operation:</strong> AgentXRay does not analyze neural weights, internal token probability distributions, attention maps, or latent representations.</li>
+            <li><strong>Monotonicity Assumption:</strong> Standard <code>ddmin</code> assumes monotonicity (if a subset fails, supersets generally fail). For non-monotonic agents with adversarial cancelation effects, extended complement passes are executed.</li>
+            <li><strong>Evaluation Budget Caps:</strong> To protect developers against runaway API expenses, all searches enforce configurable <code>max_evaluations</code> and <code>timeout_seconds</code> limits.</li>
+          </ul>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="site-container">
+      <div class="footer-grid">
+        <div>
+          <div class="brand">
+            <span class="brand-name">agentxray</span>
+            <span class="brand-divider">/</span>
+            <span class="brand-version">0.1.0</span>
+          </div>
+          <p class="footer-summary">
+            Black-box failure-condition minimization for tool-calling AI agents.
+            Counterfactual verification via hierarchical Delta Debugging.
+          </p>
+          <div class="footer-meta-line">
+            <span>Apache-2.0 License</span>
+            <span class="meta-dot">·</span>
+            <span>Zero Network Overhead</span>
+            <span class="meta-dot">·</span>
+            <span>$0.00 Offline Testbeds</span>
+          </div>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Product</h4>
+          <ul class="footer-nav">
+            <li><a href="index.html">Overview</a></li>
+            <li><a href="quickstart.html">Quickstart Guide</a></li>
+            <li><a href="playground.html">Interactive Playground</a></li>
+            <li><a href="docs.html">CLI Reference</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Reference</h4>
+          <ul class="footer-nav">
+            <li><a href="docs.html#sdk">Python SDK Facade</a></li>
+            <li><a href="docs.html#exit-codes">Process Exit Codes</a></li>
+            <li><a href="docs.html#evaluator">Evaluator Contract</a></li>
+            <li><a href="research.html">Methodology &amp; Bounds</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4 class="footer-heading">Ecosystem</h4>
+          <ul class="footer-nav">
+            <li><a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer">GitHub Repository ↗</a></li>
+            <li><a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer">Hugging Face Space ↗</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/issues" target="_blank" rel="noopener noreferrer">Issue Tracker ↗</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0 License ↗</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-subline">
+        <span>&copy; 2026 AgentXRay Contributors. Built for deterministic, observable agent engineering.</span>
+        <span class="font-mono" style="color: var(--text-muted); font-size: 0.78rem;">v0.1.0 · ddmin minimizer ready</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
