@@ -52,6 +52,7 @@ reports/
 node_modules/
 web/node_modules/
 web/dist/
+.vercel/
 
 # Secrets & Credentials
 .env
