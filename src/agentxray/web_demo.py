@@ -85,6 +85,7 @@ class WebDemoScenarioResult:
     random_is_minimal: bool
     execution_time_seconds: float
     scientific_disclaimer: str
+    seed: int = 42
 
 
 SCENARIO_CATALOG: dict[str, ScenarioMetadata] = {
@@ -295,6 +296,7 @@ def _run_currency_ast_scenario(seed: int = 42) -> WebDemoScenarioResult:
             "Deterministic offline verification on FakeProvider ($0.00 cost, zero network calls). "
             "Delta Debugging isolated the 1-minimal causal trigger in 4 evaluations."
         ),
+        seed=seed,
     )
 
 
@@ -432,6 +434,7 @@ def _run_trace_scenario(scenario_id: str, seed: int = 42) -> WebDemoScenarioResu
             f"Deterministic offline verification on FakeProvider ($0.00 cost, zero network calls). "
             f"Evaluates {meta.category} within trace-evaluated testbed."
         ),
+        seed=seed,
     )
 
 

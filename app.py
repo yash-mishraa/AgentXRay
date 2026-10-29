@@ -658,102 +658,128 @@ label span {
 }
 """
 
-PLAIN_ENGLISH_SCENARIO_INFO: dict[str, dict[str, str]] = {
-    "currency_ast": {
-        "what_went_wrong": (
-            "The accounting assistant inserted a currency symbol (<code>$</code>) into the calculator's arithmetic expression. "
-            "Because the calculator tool expects pure mathematical syntax (e.g. <code>150 + 250</code>), "
-            "it crashed with an AST syntax error."
-        ),
-        "what_found": (
-            "AgentXRay isolated the single culprit prompt instruction: "
-            "<code>\"Always format numbers with currency symbols ($ or €) before calling ast_calc\"</code>."
-        ),
-        "how_verified": (
-            "The system tested candidate subsets. Whenever this instruction was included, the agent failed. "
-            "When this instruction was removed, the agent passed clean numbers and succeeded."
-        ),
-        "what_means": (
-            "Developers do not need to guess or inspect 6 different prompt rules. "
-            "Fixing or removing this one formatting instruction completely resolves the failure."
-        ),
-    },
-    "trace_prompt_01": {
-        "what_went_wrong": (
-            "The customer service agent refused to look up the customer's account, stating that it was not permitted "
-            "to invoke external diagnostic tools."
-        ),
-        "what_found": (
-            "AgentXRay isolated the conflicting security instruction: "
-            "<code>\"Do not invoke any external tool under any circumstances\"</code>."
-        ),
-        "how_verified": (
-            "With this instruction active, the agent refused tool invocation in 100% of trials. "
-            "Removing it allowed the agent to call the lookup tool normally and satisfy the request."
-        ),
-        "what_means": (
-            "A conflicting guardrail overrode the agent's core workflow. Removing this single rule restored "
-            "tool execution without touching any other system prompt instructions."
-        ),
-    },
-    "trace_schema_01": {
-        "what_went_wrong": (
-            "The weather assistant called the weather API with an integer zip code (e.g. <code>10001</code>) "
-            "instead of a text string (<code>\"10001\"</code>), triggering an API schema validation rejection."
-        ),
-        "what_found": (
-            "AgentXRay isolated the exact type-casting instruction: "
-            "<code>\"Cast zip_code to integer prior to dispatch\"</code>."
-        ),
-        "how_verified": (
-            "Subsets containing this casting rule consistently triggered schema validation errors from the API tool. "
-            "When excluded, the agent passed string arguments and the tool call succeeded."
-        ),
-        "what_means": (
-            "A subtle formatting instruction caused a silent API contract violation. Identifying this rule "
-            "prevents unnecessary modifications to the tool interface or agent architecture."
-        ),
-    },
-    "trace_env_01": {
-        "what_went_wrong": (
-            "The payment processing agent failed because the downstream payment gateway returned an "
-            "<code>HTTP 503 Service Unavailable</code> error."
-        ),
-        "what_found": (
-            "AgentXRay isolated the environment configuration setting: "
-            "<code>\"simulate_outage: true\"</code>."
-        ),
-        "how_verified": (
-            "The failure occurred exclusively when this environment flag was active. With the flag disabled, "
-            "the agent successfully completed the payment transaction."
-        ),
-        "what_means": (
-            "The failure was caused by external infrastructure downtime, not flawed reasoning in the agent's prompt. "
-            "This saves developers from debugging prompt logic when third-party APIs are down."
-        ),
-    },
-    "trace_null_01": {
-        "what_went_wrong": (
-            "Nothing went wrong. The agent executed the user request cleanly on its very first attempt with zero errors."
-        ),
-        "what_found": (
-            "AgentXRay confirmed that the minimal failure trigger is the empty set <code>()</code>—no instructions caused a failure."
-        ),
-        "how_verified": (
+def generate_plain_english_summary(result: WebDemoScenarioResult) -> dict[str, str]:
+    """Generate accurate plain-English explanation derived strictly from structured result and metadata."""
+    meta = SCENARIO_CATALOG.get(result.scenario_id)
+    candidate_elements = meta.candidate_elements if meta else result.initial_elements
+    candidate_map = {elem: f"elem_{idx}" for idx, elem in enumerate(candidate_elements)}
+
+    # 1. What went wrong?
+    if result.is_null_case or not result.initial_failure_reproduced:
+        what_went_wrong = (
+            "Nothing went wrong. The agent executed the user request cleanly on its baseline run "
+            "with zero errors (control baseline with 0 planted triggers)."
+        )
+    elif result.scenario_id == "currency_ast":
+        what_went_wrong = (
+            f"The agent attempted to execute arithmetic tool call <code>{html.escape(result.initial_failure_tool_call)}</code>, "
+            f"which failed with syntax error: <code>{html.escape(result.initial_failure_output)}</code>."
+        )
+    elif result.scenario_id == "trace_prompt_01":
+        what_went_wrong = (
+            f"The agent answered using mental estimation and failed to invoke the required <code>calculator</code> tool, "
+            f"triggering diagnostic failure: <code>{html.escape(result.initial_failure_output)}</code>."
+        )
+    elif result.scenario_id == "trace_schema_01":
+        what_went_wrong = (
+            f"The agent called <code>{html.escape(result.initial_failure_tool_call)}</code> with mismatched parameter keys, "
+            f"triggering schema validation rejection: <code>{html.escape(result.initial_failure_output)}</code>."
+        )
+    elif result.scenario_id == "trace_env_01":
+        what_went_wrong = (
+            f"The agent invoked <code>{html.escape(result.initial_failure_tool_call)}</code>, but the downstream service "
+            f"failed with: <code>{html.escape(result.initial_failure_output)}</code>."
+        )
+    else:
+        what_went_wrong = (
+            f"The agent encountered an execution failure during <code>{html.escape(result.initial_failure_tool_call)}</code>: "
+            f"<code>{html.escape(result.initial_failure_output)}</code>."
+        )
+
+    # 2. What did AgentXRay find?
+    if result.is_null_case or not result.initial_failure_reproduced:
+        what_found = (
+            "AgentXRay confirmed that the minimal failure trigger is the empty set "
+            "<code>()</code>—no candidate directives induced a failure."
+        )
+    elif result.discovered_subset:
+        culprits: list[str] = []
+        for elem in result.discovered_subset:
+            elem_id = candidate_map.get(elem, "")
+            id_prefix = f"<code>{html.escape(elem_id)}</code>: " if elem_id else ""
+            escaped_elem = html.escape(elem)
+            culprits.append(f"{id_prefix}<code>\"{escaped_elem}\"</code>")
+        culprits_html = "<br>".join(culprits)
+        what_found = (
+            f"AgentXRay isolated {len(result.discovered_subset)} minimal culprit condition(s):<br>"
+            f"{culprits_html}"
+        )
+    else:
+        what_found = f"No causal trigger isolated ({html.escape(result.status_message)})."
+
+    # 3. How was it verified?
+    if result.is_null_case or not result.initial_failure_reproduced:
+        how_verified = (
             "The initial baseline verification trial passed immediately with <code>SUCCESS</code>. "
             "AgentXRay verified the clean state and halted in exactly 1 evaluation."
-        ),
-        "what_means": (
-            "AgentXRay avoids false positives. When an agent is working properly, the diagnostic system does not falsely "
-            "accuse innocent instructions."
-        ),
-    },
-}
+        )
+    elif result.is_one_minimal:
+        elem_ids = [candidate_map[e] for e in result.discovered_subset if e in candidate_map]
+        id_str = f" ({', '.join(elem_ids)})" if elem_ids else ""
+        how_verified = (
+            f"The failure occurred when the isolated candidate{id_str} was active. "
+            f"Counterfactual minimality verified: removing this trigger restores agent success, "
+            f"and the empty candidate set <code>()</code> passes without errors."
+        )
+    else:
+        how_verified = (
+            f"Evaluated candidate subsets across {result.target_calls_used} trials. "
+            f"Minimality status: {html.escape(result.status_message)}."
+        )
+
+    # 4. What does this result mean?
+    if result.is_null_case:
+        what_means = (
+            "AgentXRay avoids false positives. When an agent is working properly, the diagnostic system "
+            "does not falsely accuse innocent instructions."
+        )
+    elif result.scenario_id == "trace_env_01":
+        what_means = (
+            "The failure was caused by external infrastructure downtime (backend service 500 error), "
+            "not flawed reasoning in the agent prompt. This saves developers from debugging prompt logic "
+            "when third-party or backend APIs are down."
+        )
+    elif result.scenario_id == "trace_schema_01":
+        what_means = (
+            "The failure was caused by a tool interface / parameter key contract mismatch. "
+            "Aligning parameter naming between the prompt and tool schema resolves the issue."
+        )
+    elif result.scenario_id in ("currency_ast", "trace_prompt_01"):
+        what_means = (
+            "The failure was caused by a conflicting prompt directive, not tool code or model capability. "
+            "Refining or removing this single instruction restores correct tool execution."
+        )
+    else:
+        what_means = (
+            "Identified the minimal causal condition required to reproduce the failure. "
+            "Isolating this subset enables targeted remediation without modifying unaffected components."
+        )
+
+    return {
+        "what_went_wrong": what_went_wrong,
+        "what_found": what_found,
+        "how_verified": how_verified,
+        "what_means": what_means,
+    }
+
+
+# Retained for backwards-compatibility
+PLAIN_ENGLISH_SCENARIO_INFO: dict[str, dict[str, str]] = {}
 
 SCENARIO_DISPLAY_CHOICES: list[tuple[str, str]] = [
     ("AST Calculator: Currency Directive", "currency_ast"),
-    ("Tool Prohibition: Strict Security Rule", "trace_prompt_01"),
-    ("Schema Mismatch: Zip Code Format", "trace_schema_01"),
+    ("Tool Prohibition: Mental Math Directive", "trace_prompt_01"),
+    ("Schema Mismatch: Parameter Key Abbreviation", "trace_schema_01"),
     ("Mock Outage: Server Down Simulation", "trace_env_01"),
     ("Null Control: Clean Passing Baseline", "trace_null_01"),
 ]
@@ -978,22 +1004,25 @@ def generate_stats_grid_html(result: WebDemoScenarioResult) -> str:
 
 def generate_overview_html(result: WebDemoScenarioResult) -> str:
     """Format nontechnical recruiter overview: project explanation, plain-English summary, and status strip."""
-    info = PLAIN_ENGLISH_SCENARIO_INFO.get(
-        result.scenario_id,
-        {
-            "what_went_wrong": html.escape(result.initial_failure_output),
-            "what_found": html.escape(str(result.discovered_subset)),
-            "how_verified": "Verified via hierarchical candidate subset testing.",
-            "what_means": "Identified the minimal trigger subset required to reproduce the behavior.",
-        },
-    )
+    info = generate_plain_english_summary(result)
 
-    status_tag = "CLEAN CONTROL RUN" if result.is_null_case else "CULPRIT ISOLATED"
-    status_pill_cls = "card-pill-highlight" if result.matches_ground_truth else "card-pill"
+    if result.is_null_case:
+        status_tag = "CLEAN CONTROL RUN"
+        status_pill_cls = "card-pill-highlight"
+    elif result.is_one_minimal:
+        status_tag = "CULPRIT ISOLATED"
+        status_pill_cls = "card-pill-highlight"
+    elif not result.initial_failure_reproduced:
+        status_tag = "NO FAILURE REPRODUCED"
+        status_pill_cls = "card-pill"
+    else:
+        status_tag = "UNVERIFIED RESULT"
+        status_pill_cls = "card-pill"
+
     delta_evals = result.greedy_calls - result.target_calls_used
     eval_text = f"+{delta_evals} tests saved vs linear scan" if delta_evals > 0 else "optimal search path"
 
-    briefing_html = """
+    briefing_html = f"""
     <div class='project-briefing'>
         <div class='briefing-header'>
             <span class='briefing-title'>What problem does AgentXRay solve?</span>
@@ -1010,7 +1039,7 @@ def generate_overview_html(result: WebDemoScenarioResult) -> str:
                 <strong>How It Differs From Reading Logs:</strong> Traditional log inspection only tells you that an error happened. AgentXRay proves <em>causation</em>: it verifies that removing the isolated instruction makes the agent succeed.
             </div>
             <div class='briefing-item'>
-                <strong>What This Demo Shows:</strong> In this interactive offline testbed ($0.00 cost, in-memory mock agent), AgentXRay locates the culprit instruction in just <strong>4 tests</strong>, whereas linear trial-and-error requires 6 or more.
+                <strong>What This Demo Shows:</strong> In this interactive offline testbed ($0.00 cost, in-memory mock agent), AgentXRay locates the culprit instruction in just <strong>{result.target_calls_used} tests</strong>, whereas linear trial-and-error requires {result.greedy_calls} or more.
             </div>
         </div>
         <div class='briefing-disclaimer'>
@@ -1058,7 +1087,7 @@ def generate_overview_html(result: WebDemoScenarioResult) -> str:
 def generate_terminal_html(result: WebDemoScenarioResult) -> str:
     """Format monospace terminal output view backed by existing execution results."""
     lines: list[str] = [
-        f"<span style='color: #9298A3;'>$</span> <span style='color: #E6E8EB; font-weight: 600;'>agentxray probe</span> <span style='color: #9298A3;'>--scenario</span> <span style='color: #E6E8EB;'>{html.escape(result.scenario_id)}</span> <span style='color: #9298A3;'>--seed</span> <span style='color: #E6E8EB;'>42</span>",
+        f"<span style='color: #9298A3;'>$</span> <span style='color: #E6E8EB; font-weight: 600;'>agentxray probe</span> <span style='color: #9298A3;'>--scenario</span> <span style='color: #E6E8EB;'>{html.escape(result.scenario_id)}</span> <span style='color: #9298A3;'>--seed</span> <span style='color: #E6E8EB;'>{result.seed}</span>",
         "",
         f"<span style='color: #5C626E;'>[00:00.000] [INIT]</span>    Target: {html.escape(result.agent_description)}",
         f"<span style='color: #5C626E;'>[00:00.000] [INIT]</span>    Query:  \"{html.escape(result.user_prompt)}\"",
@@ -1103,7 +1132,7 @@ def generate_terminal_html(result: WebDemoScenarioResult) -> str:
     return f"""
     <div class='terminal-pane terminal-window'>
         <div class='terminal-bar'>
-            <div class='term-session'>session: agentxray probe --scenario {html.escape(result.scenario_id)} --seed 42</div>
+            <div class='term-session'>session: agentxray probe --scenario {html.escape(result.scenario_id)} --seed {result.seed}</div>
             <div class='term-badge'>OFFLINE MOCK HARNESS</div>
         </div>
         <pre class='terminal-body'>{body_content}</pre>
@@ -1166,6 +1195,15 @@ def generate_comparison_html(result: WebDemoScenarioResult) -> str:
     rd_min = "Yes" if result.random_is_minimal else ("N/A (Null)" if result.is_null_case else "No")
     rd_gt = "100% Match" if result.random_matches_ground_truth else "Mismatch"
 
+    dd_gt_cls = "val-success" if result.matches_ground_truth else "val-failure"
+    dd_min_cls = "val-success" if (result.is_one_minimal or result.is_null_case) else "val-failure"
+
+    gr_gt_cls = "val-success" if result.greedy_matches_ground_truth else "val-failure"
+    gr_min_cls = "val-success" if (result.greedy_is_minimal or result.is_null_case) else "val-failure"
+
+    rd_gt_cls = "val-success" if result.random_matches_ground_truth else "val-failure"
+    rd_min_cls = "val-success" if (result.random_is_minimal or result.is_null_case) else "val-failure"
+
     return f"""
     <div class='comparison-container'>
         <table class='data-table'>
@@ -1185,22 +1223,22 @@ def generate_comparison_html(result: WebDemoScenarioResult) -> str:
                         <span class='badge-tag tag-pass' style='margin-left: 6px;'>OPTIMAL</span>
                     </td>
                     <td class='mono-bold' style='color: #A3E6B0;'>{result.target_calls_used} calls</td>
-                    <td class='val-success'>{dd_min}</td>
-                    <td class='val-success'>{dd_gt}</td>
+                    <td class='{dd_min_cls}'>{dd_min}</td>
+                    <td class='{dd_gt_cls}'>{dd_gt}</td>
                     <td class='table-desc'>Hierarchical 2-way subset & complement search with explicit 1-minimality check. Provably isolates 1-minimal trigger in O(log N) evaluations on sparse single-fault topologies.</td>
                 </tr>
                 <tr>
                     <td><span class='alg-title'>Greedy Single Ablation</span></td>
                     <td class='mono-dim'>{result.greedy_calls} calls</td>
-                    <td class='val-success'>{gr_min}</td>
-                    <td class='val-success'>{gr_gt}</td>
+                    <td class='{gr_min_cls}'>{gr_min}</td>
+                    <td class='{gr_gt_cls}'>{gr_gt}</td>
                     <td class='table-desc'>Sequential single-element removal pass (O(N) linear scan). Eliminates candidates one by one; tests every distractor individually regardless of fault sparsity.</td>
                 </tr>
                 <tr>
                     <td><span class='alg-title'>Seeded Random Search</span></td>
                     <td class='mono-dim'>{result.random_calls} calls</td>
-                    <td class='mono-dim'>{rd_min}</td>
-                    <td class='mono-dim'>{rd_gt}</td>
+                    <td class='{rd_min_cls}'>{rd_min}</td>
+                    <td class='{rd_gt_cls}'>{rd_gt}</td>
                     <td class='table-desc'>Budget-capped Monte Carlo random subset sampling (budget=20). High variance in call counts; non-deterministic without fixed RNG seed.</td>
                 </tr>
             </tbody>
@@ -1295,6 +1333,12 @@ def build_gradio_app():
 
         # Wire callbacks
         scenario_dropdown.change(
+            fn=execute_scenario_all,
+            inputs=[scenario_dropdown, seed_input],
+            outputs=[scenario_context_output, overview_output, terminal_output, trace_output, comp_output],
+        )
+
+        seed_input.submit(
             fn=execute_scenario_all,
             inputs=[scenario_dropdown, seed_input],
             outputs=[scenario_context_output, overview_output, terminal_output, trace_output, comp_output],
