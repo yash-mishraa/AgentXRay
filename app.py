@@ -23,6 +23,38 @@ def _asyncio_cleanup_excepthook(exc_type, exc_val, exc_tb):
 
 sys.excepthook = _asyncio_cleanup_excepthook
 
+_orig_unraisablehook = getattr(sys, "unraisablehook", None)
+
+
+def _asyncio_unraisablehook(unraisable):
+    if unraisable.exc_type is ValueError and "Invalid file descriptor: -1" in str(unraisable.exc_value):
+        return
+    if _orig_unraisablehook:
+        _orig_unraisablehook(unraisable)
+    else:
+        sys.__unraisablehook__(unraisable)
+
+
+sys.unraisablehook = _asyncio_unraisablehook
+
+try:
+    from asyncio.selector_events import BaseSelectorEventLoop
+    _orig_close_self_pipe = BaseSelectorEventLoop._close_self_pipe
+
+    def _safe_close_self_pipe(self):
+        try:
+            if getattr(self, "_ssock", None) is not None:
+                if self._ssock.fileno() == -1:
+                    self._ssock = None
+                    return
+            _orig_close_self_pipe(self)
+        except Exception:
+            pass
+
+    BaseSelectorEventLoop._close_self_pipe = _safe_close_self_pipe
+except Exception:
+    pass
+
 # Hugging Face ZeroGPU compatibility hook:
 # If the Space is configured on ZeroGPU hardware, Hugging Face mandates an @spaces.GPU hook at startup.
 try:
@@ -1276,7 +1308,8 @@ def build_gradio_app():
     """Construct the plain-English & terminal-first developer tool UI."""
     import gradio as gr
 
-    with gr.Blocks(title="agentxray — Causal Failure Minimization", css=CUSTOM_CSS) as demo:
+    with gr.Blocks(title="agentxray — Causal Failure Minimization") as demo:
+        gr.HTML(f"<style>{CUSTOM_CSS}</style>")
         gr.HTML(
             """
             <header class='app-topbar'>
