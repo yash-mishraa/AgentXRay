@@ -19,6 +19,7 @@ from agentxray.runner import BudgetExhaustedError, InterventionRunner, TimeoutEx
 from agentxray.minimizer import DeltaDebugMinimizer
 from agentxray.baselines import run_greedy_ablation, run_seeded_random_search
 from agentxray.reporting import format_json_report, format_markdown_report, write_reports
+from agentxray.api import DiagnosticResult, DiagnosticStatus, diagnose
 
 __all__ = [
     "__version__",
@@ -26,6 +27,8 @@ __all__ = [
     "BaselineComparison",
     "BudgetExhaustedError",
     "DeltaDebugMinimizer",
+    "DiagnosticResult",
+    "DiagnosticStatus",
     "DiscoveredCondition",
     "EvaluationResult",
     "ExperimentConfig",
@@ -37,6 +40,7 @@ __all__ = [
     "TargetOutcome",
     "TargetResult",
     "TimeoutExceededError",
+    "diagnose",
     "format_json_report",
     "format_markdown_report",
     "run_greedy_ablation",

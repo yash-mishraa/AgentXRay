@@ -56,6 +56,83 @@ pip install -e .
 
 *(Alternatively, if using `uv`: `uv venv && source .venv/bin/activate && uv pip install -e .`)*
 
+---
+
+### Python SDK Quickstart
+
+You can use AgentXRay directly in Python to diagnose and isolate which prompt instructions, schema keys, or configuration flags cause an agent workflow to fail.
+
+#### 1. What AgentXRay Diagnoses
+AgentXRay treats the agent and its tools as a black-box subject. It partitions a candidate pool of directives (e.g. system instructions, tool definitions, environment flags) and repeatedly evaluates candidate subsets to find the **1-minimal culprit**—meaning the failure reproduces with that candidate active, and eliminating that candidate restores task success.
+
+Currently diagnosed failure modes:
+* **Prompt Steering Violations**: Directives that forbid tool usage or steer models to omit required actions.
+* **Grammar / Syntax Constraints**: Formatting rules (e.g. currency signs `$`) that break downstream parsers.
+* **Schema Contract Mismatches**: Tool argument naming policies (`expr` vs `expression`) rejected by APIs.
+* **Environment / Outage Flags**: Downstream microservice downtime or infrastructure faults.
+
+#### 2. The Evaluator Contract
+An evaluator is any callable accepting a tuple of currently active candidates (`tuple[str, ...]`) and returning:
+* `bool`: `True` if the agent failed on this subset, `False` if the agent passed cleanly.
+* `tuple[bool, str]`: `(is_failure, diagnostic_message)`.
+* `TargetResult`: full structured outcome object.
+* `None`: if the trial was inconclusive.
+
+If the evaluator raises an unexpected exception (e.g., network drop or syntax bug), AgentXRay halts and marks the run as `DiagnosticStatus.ERROR` rather than falsely attributing failure.
+
+#### 3. Complete Runnable Example
+
+```python
+from agentxray import diagnose, DiagnosticStatus
+
+# 1. Define candidate prompt directives
+candidates = [
+    "strict_currency: format arithmetic arguments with currency signs (e.g. '$150').",
+    "concise_summary: keep final output under 50 words.",
+    "markdown_tables: render financial summaries in markdown tables.",
+    "formal_tone: use formal business accounting terminology.",
+]
+
+# 2. Implement the evaluator (agent execution + tool verification)
+def my_agent_evaluator(active_directives: tuple[str, ...]) -> bool:
+    for directive in active_directives:
+        if "strict_currency" in directive:
+            return True   # Failure reproduced: currency symbol triggers AST syntax crash
+    return False          # Clean pass: valid arithmetic expression executed
+
+# 3. Run black-box causal diagnosis
+result = diagnose(
+    candidates=candidates,
+    evaluator=my_agent_evaluator,
+    max_evaluations=20,
+    seed=42,
+)
+
+# 4. Inspect results
+print("Status:           ", result.status.value)        # VERIFIED_CULPRIT
+print("Verified 1-Minimal:", result.is_verified)         # True
+print("Evaluations Used: ", result.evaluations_used)     # 4
+print("Isolated Culprit: ", result.isolated_candidates) # ('strict_currency: ...',)
+print("Candidate IDs:    ", result.isolated_candidate_ids) # ('elem_0',)
+print("Summary:          ", result.summary)
+```
+
+*(See [`examples/diagnose_custom_agent.py`](examples/diagnose_custom_agent.py) for the complete standalone script.)*
+
+#### 4. Interpreting Outcomes
+* **`VERIFIED_CULPRIT`**: A minimal subset was isolated and counterfactually verified: removing the isolated elements restores task success.
+* **`NO_FAILURE`**: The full candidate set passed without error on the baseline trial. No failure condition to minimize.
+* **`INCONCLUSIVE`**: The evaluator returned inconclusive or 1-minimality could not be confirmed.
+* **`BUDGET_EXHAUSTED`**: The evaluation budget (`max_evaluations`) was reached before search finished.
+* **`TIMEOUT`**: Wall-clock timeout exceeded.
+* **`ERROR`**: The evaluator raised an unhandled exception or returned an unsupported type.
+
+#### 5. Scope & Current Limitations
+* **Deterministic / Controlled Agents**: The primary `diagnose(...)` entry point uses deterministic hierarchical Delta Debugging (`ddmin`), ideal for CI/CD testbeds, reproducible harness runs, and unit-level failure analysis.
+* **Live Stochastic Neural Agents**: Stochastic models (e.g. GPT-4o, LLaMA-3) exhibit probabilistic noise across trials. Minimizing stochastic failures requires multi-trial statistical sampling and exact McNemar hypothesis testing with Manski bounds, available via AgentXRay's research benchmark tier (`benchmarks/`).
+
+---
+
 ### Run the Offline Demonstration
 
 AgentXRay provides two zero-cost offline demonstration interfaces that run entirely in-memory using controlled mock environments with zero external network calls and zero commercial API spend ($0.00):
