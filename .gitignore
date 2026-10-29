@@ -48,6 +48,11 @@ model_pilot_report.json
 model_pilot_report.md
 reports/
 
+# Frontend & Web Build
+node_modules/
+web/node_modules/
+web/dist/
+
 # Secrets & Credentials
 .env
 .env.*

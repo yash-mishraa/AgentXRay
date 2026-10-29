@@ -267,6 +267,20 @@ streamlit run streamlit_app.py
 
 *(Opens locally at `http://localhost:8501`.)*
 
+#### Option D: Standalone Product Website & Client-Side Playground
+
+The repository includes a dedicated static developer product website in `web/` featuring an interactive terminal demonstrator, client-side Delta Debugging simulator, and comprehensive API documentation:
+
+```bash
+# Serve locally using standard Python
+python3 -m http.server --directory web 3000
+
+# Or build static production bundle with Vite
+npx vite build web
+```
+
+*(Opens locally at `http://localhost:3000`.)*
+
 ---
 
 ### Available Demonstration Scenarios

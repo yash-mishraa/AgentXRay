@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentXRay — Causal Failure-Condition Minimization for AI Agents</title>
+  <meta name="description" content="AgentXRay isolates minimal subsets of prompt instructions, tool definitions, and configuration conditions causing AI agent failures using black-box Delta Debugging." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2358a6ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='4 17 10 11 4 5'></polyline><line x1='12' y1='19' x2='20' y2='19'></line></svg>" />
+</head>
+<body>
+
+  <!-- =========================================================================
+       Navigation Header
+       ========================================================================= -->
+  <header class="site-header">
+    <div class="container nav-container">
+      <a href="#hero" class="brand-link" aria-label="AgentXRay Home">
+        <svg class="brand-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 17 10 11 4 5"></polyline>
+          <line x1="12" y1="19" x2="20" y2="19"></line>
+        </svg>
+        <span class="brand-title">agentxray</span>
+        <span class="brand-version">v0.1.0</span>
+      </a>
+
+      <nav aria-label="Main Navigation">
+        <ul class="nav-links">
+          <li><a href="#problem" class="nav-link">The Problem</a></li>
+          <li><a href="#demo" class="nav-link">Terminal Demo</a></li>
+          <li><a href="#how-it-works" class="nav-link">How It Works</a></li>
+          <li><a href="#sdk-cli" class="nav-link">SDK &amp; CLI</a></li>
+          <li><a href="#playground" class="nav-link">Playground</a></li>
+          <li><a href="#docs" class="nav-link">Docs</a></li>
+          <li><a href="#boundaries" class="nav-link">Boundaries</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+          HF Space Demo
+        </a>
+        <a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" aria-label="GitHub Repository">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+        <button class="nav-toggle" aria-label="Toggle navigation menu">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- =======================================================================
+         Hero Section
+         ======================================================================= -->
+    <section id="hero" class="hero-section">
+      <div class="container">
+        <div class="hero-badge-strip">
+          <span class="hero-badge">
+            <span class="hero-badge-pulse"></span>
+            Open Source Causal Failure Minimizer
+          </span>
+          <span class="hero-badge font-mono">Python SDK &amp; CLI</span>
+        </div>
+
+        <h1 class="hero-title">
+          Find the exact prompt or config<br />
+          <span class="highlight">breaking your AI agent.</span>
+        </h1>
+
+        <p class="hero-subtitle">
+          When an agent task breaks, don't waste hours manually ablating dozens of rules.
+          AgentXRay applies black-box Delta Debugging (ddmin) to isolate the minimal failure-inducing instruction in seconds—offline, deterministically, with zero commercial API spend ($0.00).
+        </p>
+
+        <div class="hero-cta-group">
+          <div class="command-pill">
+            <span class="prompt-symbol">$</span>
+            <span>pip install -e .</span>
+            <button class="copy-btn" data-copy-text="pip install -e ." aria-label="Copy installation command">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+          </div>
+
+          <div class="command-pill">
+            <span class="prompt-symbol">$</span>
+            <span>agentxray demo</span>
+            <button class="copy-btn" data-copy-text="agentxray demo" aria-label="Copy demo command">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+          </div>
+
+          <a href="#demo" class="btn btn-primary">
+            Explore Interactive Terminal
+          </a>
+        </div>
+
+        <div class="hero-metrics-grid">
+          <div class="metric-card">
+            <div class="metric-card-label">Minimality Guarantee</div>
+            <div class="metric-card-value font-mono" style="color: var(--status-green);">1-Minimal Verified</div>
+            <div class="metric-card-desc">Proves removing the isolated directive restores clean task success.</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-card-label">Search Complexity</div>
+            <div class="metric-card-value font-mono" style="color: var(--status-cyan);">O(log N) Evaluations</div>
+            <div class="metric-card-desc">Hierarchical subset &amp; complement search beats linear O(N) trial-and-error.</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-card-label">Black-Box Boundary</div>
+            <div class="metric-card-value font-mono">Strict Black-Box</div>
+            <div class="metric-card-desc">Observes tool calls and outputs only; zero access to weights or hidden tokens.</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-card-label">Cost &amp; Network</div>
+            <div class="metric-card-value font-mono" style="color: var(--status-green);">$0.00 / 0 Network Calls</div>
+            <div class="metric-card-desc">Offline deterministic testbeds run entirely on local CPU in milliseconds.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         The Problem Section
+         ======================================================================= -->
+    <section id="problem" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Causal Fault Localization</span>
+          <h2 class="section-title">Observability tells you what happened.<br />AgentXRay isolates what caused it.</h2>
+          <p class="section-desc">
+            Production agent prompts frequently combine dozens of instructions, schema definitions, and few-shot examples. When an agent emits a malformed tool call, breaks syntax, or violates API contracts, finding which single line caused the break takes hours of manual guessing.
+          </p>
+        </div>
+
+        <div class="comparison-grid">
+          <div class="comparison-box traditional">
+            <div class="comparison-header">
+              <span class="comparison-badge">Traditional Workflow</span>
+              <span class="font-mono" style="color: var(--status-red); font-size: 0.8rem;">O(N) Linear Scan</span>
+            </div>
+            <h3 class="comparison-title">Reading Logs &amp; Manual Ablation</h3>
+            <ul class="comparison-list">
+              <li class="comparison-item">
+                <svg class="comparison-bullet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                <div>
+                  <strong>Observability Without Causality</strong>
+                  Tracing platforms record tool crashes (e.g. <code>SyntaxError</code>), but cannot explain which of the 25 prompt instructions provoked it.
+                </div>
+              </li>
+              <li class="comparison-item">
+                <svg class="comparison-bullet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                <div>
+                  <strong>Linear Single-Element Removal</strong>
+                  Engineers test removing instructions one by one. Slow, repetitive, and burns unnecessary API credits.
+                </div>
+              </li>
+              <li class="comparison-item">
+                <svg class="comparison-bullet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                <div>
+                  <strong>Unverified Minimality</strong>
+                  Developers guess when to stop ablating, often leaving irrelevant distractor instructions falsely accused.
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="comparison-box agentxray">
+            <div class="comparison-header">
+              <span class="comparison-badge">AgentXRay Engine</span>
+              <span class="font-mono" style="color: var(--status-green); font-size: 0.8rem;">O(log N) Delta Debugging</span>
+            </div>
+            <h3 class="comparison-title">Algorithmic Failure Minimization</h3>
+            <ul class="comparison-list">
+              <li class="comparison-item">
+                <svg class="comparison-bullet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="9 11 12 14 22 4"></polyline></svg>
+                <div>
+                  <strong>Systematic 2-Way Partitioning</strong>
+                  Splits candidate pool into hierarchical subsets and complements, rapidly zooming in on the active fault.
+                </div>
+              </li>
+              <li class="comparison-item">
+                <svg class="comparison-bullet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="9 11 12 14 22 4"></polyline></svg>
+                <div>
+                  <strong>Provable 1-Minimality Verification</strong>
+                  Explicitly evaluates removing the isolated candidate. If removal eliminates the failure, causality is verified.
+                </div>
+              </li>
+              <li class="comparison-item">
+                <svg class="comparison-bullet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="9 11 12 14 22 4"></polyline></svg>
+                <div>
+                  <strong>Plain-English Diagnostic Diagnosis</strong>
+                  Reports exact isolated trigger, step-by-step trajectory, evaluation count, and clean pass status in milliseconds.
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         Interactive Terminal Demonstration Section
+         ======================================================================= -->
+    <section id="demo" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Interactive Terminal Demonstration</span>
+          <h2 class="section-title">Watch AgentXRay isolate a culprit live.</h2>
+          <p class="section-desc">
+            Explore genuine execution trajectories across five curated benchmark testbeds. Every step, candidate evaluation, and verification outcome reflects actual offline testbed execution.
+          </p>
+        </div>
+
+        <div class="terminal-showcase">
+          <div class="terminal-topbar">
+            <div class="terminal-window-buttons">
+              <span class="window-dot close"></span>
+              <span class="window-dot min"></span>
+              <span class="window-dot max"></span>
+            </div>
+            <div class="terminal-titlebar font-mono" id="terminalTitle">
+              agentxray probe --scenario currency_ast --seed 42
+            </div>
+            <div class="terminal-status-pill">
+              <span class="hero-badge-pulse"></span>
+              OFFLINE HARNESS READY
+            </div>
+          </div>
+
+          <div class="terminal-controls-bar">
+            <div style="display: flex; align-items: center;">
+              <label for="scenarioSelect" class="scenario-select-label">Scenario:</label>
+              <select id="scenarioSelect" class="scenario-selector">
+                <option value="currency_ast">currency_ast: AST Calculator Currency Syntax</option>
+                <option value="trace_prompt_01">trace_prompt_01: Tool Prohibition Directive</option>
+                <option value="trace_schema_01">trace_schema_01: Schema Parameter Key Mismatch</option>
+                <option value="trace_env_01">trace_env_01: Mock Service 500 Outage</option>
+                <option value="trace_null_01">trace_null_01: Clean Control (Zero Faults)</option>
+              </select>
+            </div>
+
+            <div class="terminal-tabs" role="tablist">
+              <button class="tab-btn active" data-terminal-view="trace" role="tab">Execution Trace</button>
+              <button class="tab-btn" data-terminal-view="card" role="tab">CLI Summary Card</button>
+              <button class="tab-btn" data-terminal-view="json" role="tab">SDK JSON Output</button>
+            </div>
+
+            <div class="terminal-action-buttons">
+              <button id="playBtn" class="playback-btn" aria-label="Play or Pause Trace Animation">
+                <span>▶</span> Play
+              </button>
+              <button id="stepBtn" class="playback-btn" aria-label="Step to Next Evaluation">
+                Next Step
+              </button>
+              <button id="resetBtn" class="playback-btn" aria-label="Reset Terminal">
+                Reset
+              </button>
+              <select id="speedSelect" class="scenario-selector" style="font-size: 0.75rem; padding: 2px 6px;">
+                <option value="1">1x Speed</option>
+                <option value="2">2x Speed</option>
+                <option value="0">Instant</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="terminalContent" class="terminal-content-area" tabindex="0" aria-label="Terminal Trace Output Area">
+            <!-- Rendered dynamically by app.js -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         How It Works Section
+         ======================================================================= -->
+    <section id="how-it-works" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Under The Hood</span>
+          <h2 class="section-title">The 3-Step Black-Box Minimization Cycle</h2>
+          <p class="section-desc">
+            How AgentXRay isolates minimal failure conditions without inspecting model weights or reading private prompts.
+          </p>
+        </div>
+
+        <div class="steps-grid">
+          <div class="step-card">
+            <span class="step-number-tag">[STEP 01]</span>
+            <h3 class="step-title">Ingest Candidate Directives</h3>
+            <p class="step-desc">
+              Pass your candidate pool (system directives, schema parameters, or configuration flags) and an evaluator callable that tests whether the failure still occurs.
+            </p>
+            <div class="step-visual">
+              <code>candidates = ["strict_currency", "concise_summary", "formal_tone"]</code>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <span class="step-number-tag">[STEP 02]</span>
+            <h3 class="step-title">Hierarchical Delta Debugging</h3>
+            <p class="step-desc">
+              AgentXRay partitions the active set into subsets and complements. When a subset reproduces the failure, it zooms in. If not, it increases partition granularity.
+            </p>
+            <div class="step-visual">
+              <code>Trial 1: [4 items] -> FAILURE<br>Trial 2: [2 items] -> FAILURE<br>Trial 3: [1 item]  -> FAILURE</code>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <span class="step-number-tag">[STEP 03]</span>
+            <h3 class="step-title">1-Minimality Verification</h3>
+            <p class="step-desc">
+              Once an element is isolated, AgentXRay evaluates removing it. If removing the element restores clean pass, 1-minimality is empirically confirmed.
+            </p>
+            <div class="step-visual" style="border-left: 2px solid var(--status-green);">
+              <span style="color: var(--status-green);">CONFIRMED: Removing 'strict_currency' eliminates failure.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         Product Showcase: SDK & CLI
+         ======================================================================= -->
+    <section id="sdk-cli" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Developer Ergonomics</span>
+          <h2 class="section-title">Use it in Python. Or run it from your terminal.</h2>
+          <p class="section-desc">
+            AgentXRay provides two first-class interfaces: a typed Python SDK facade and a developer CLI with strict exit-code contracts for CI/CD pipelines.
+          </p>
+        </div>
+
+        <div class="showcase-container">
+          <div class="showcase-nav">
+            <button class="showcase-tab active" data-showcase-tab="panel-sdk">Python SDK</button>
+            <button class="showcase-tab" data-showcase-tab="panel-cli">Developer CLI</button>
+            <button class="showcase-tab" data-showcase-tab="panel-json">Declarative Scenario JSON</button>
+          </div>
+
+          <div class="showcase-body">
+            <!-- Python SDK Panel -->
+            <div id="panel-sdk" class="showcase-panel" style="display: block;">
+              <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 16px;">
+                Diagnose failures in custom Python agent harnesses by providing candidate directives and a pass/fail evaluator callable.
+              </p>
+              <div class="code-display">
+                <button class="copy-code-btn" data-copy-text='from agentxray import diagnose
+
+candidates = [
+    "strict_currency: format arithmetic arguments with currency signs (e.g. \"$150\").",
+    "concise_summary: keep final output under 50 words.",
+    "markdown_tables: render financial summaries in markdown tables.",
+    "formal_tone: use formal business accounting terminology.",
+]
+
+def my_agent_evaluator(active_subset: tuple[str, ...]) -> bool:
+    # Return True if failure reproduces; False if task passes cleanly
+    for directive in active_subset:
+        if "strict_currency" in directive:
+            return True   # Failure: AST rejects currency signs
+    return False          # Success: clean arithmetic execution
+
+result = diagnose(
+    candidates=candidates,
+    evaluator=my_agent_evaluator,
+    max_evaluations=20,
+    seed=42,
+)
+
+print(result.summary)
+print(result.is_verified)           # True (1-minimal confirmed)
+print(result.isolated_candidates)    # ("strict_currency: ...",)'>Copy Python</button>
+                <pre><code><span style="color: #ff7b72;">from</span> agentxray <span style="color: #ff7b72;">import</span> diagnose
+
+<span style="color: #8b949e;"># 1. Define candidate directives (prompts, tool rules, environment flags)</span>
+candidates = [
+    <span style="color: #a5d6ff;">"strict_currency: format arithmetic arguments with currency signs (e.g. '$150')."</span>,
+    <span style="color: #a5d6ff;">"concise_summary: keep final output under 50 words."</span>,
+    <span style="color: #a5d6ff;">"markdown_tables: render financial summaries in markdown tables."</span>,
+    <span style="color: #a5d6ff;">"formal_tone: use formal business accounting terminology."</span>,
+]
+
+<span style="color: #8b949e;"># 2. Define evaluator (returns True for failure, False for clean pass)</span>
+<span style="color: #ff7b72;">def</span> <span style="color: #d2a8ff;">my_agent_evaluator</span>(active_subset: tuple[str, ...]) -&gt; bool:
+    <span style="color: #ff7b72;">for</span> directive <span style="color: #ff7b72;">in</span> active_subset:
+        <span style="color: #ff7b72;">if</span> <span style="color: #a5d6ff;">"strict_currency"</span> <span style="color: #ff7b72;">in</span> directive:
+            <span style="color: #ff7b72;">return</span> <span style="color: #79c0ff;">True</span>   <span style="color: #8b949e;"># Failure reproduced: syntax error in calculator</span>
+    <span style="color: #ff7b72;">return</span> <span style="color: #79c0ff;">False</span>          <span style="color: #8b949e;"># Clean pass</span>
+
+<span style="color: #8b949e;"># 3. Minimize failure condition counterfactually</span>
+result = diagnose(
+    candidates=candidates,
+    evaluator=my_agent_evaluator,
+    max_evaluations=<span style="color: #79c0ff;">20</span>,
+    seed=<span style="color: #79c0ff;">42</span>,
+)
+
+<span style="color: #79c0ff;">print</span>(result.summary)
+<span style="color: #79c0ff;">print</span>(result.is_verified)           <span style="color: #8b949e;"># True (1-minimal confirmed)</span>
+<span style="color: #79c0ff;">print</span>(result.isolated_candidates)    <span style="color: #8b949e;"># ("strict_currency: ...",)</span></code></pre>
+              </div>
+            </div>
+
+            <!-- CLI Panel -->
+            <div id="panel-cli" class="showcase-panel" style="display: none;">
+              <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 16px;">
+                Execute offline demonstrations, diagnose declarative JSON scenario files, or test built-in testbed tasks directly from your shell.
+              </p>
+              <div class="code-display">
+                <button class="copy-code-btn" data-copy-text="# 1. Run deterministic offline demo
+agentxray demo
+
+# 2. Diagnose declarative scenario JSON file
+agentxray diagnose examples/scenario_example.json
+
+# 3. Diagnose built-in testbed scenario
+agentxray diagnose --scenario trace_env_01
+
+# 4. Output raw JSON for pipeline parsing
+agentxray diagnose examples/scenario_example.json --json">Copy Commands</button>
+                <pre><code><span style="color: #8b949e;"># 1. Run the deterministic offline demonstration (&lt;0.02s, $0.00 spend)</span>
+$ agentxray demo
+
+<span style="color: #8b949e;"># 2. Diagnose a custom declarative scenario file</span>
+$ agentxray diagnose examples/scenario_example.json
+
+<span style="color: #8b949e;"># 3. Diagnose a built-in catalog testbed scenario</span>
+$ agentxray diagnose --scenario trace_env_01
+
+<span style="color: #8b949e;"># 4. Machine-readable JSON output for CI pipelines</span>
+$ agentxray diagnose examples/scenario_example.json --json
+
+<span style="color: #8b949e;"># 5. Disable ANSI colors for plain logging environments</span>
+$ agentxray diagnose examples/scenario_example.json --no-color</code></pre>
+              </div>
+            </div>
+
+            <!-- JSON Scenario Panel -->
+            <div id="panel-json" class="showcase-panel" style="display: none;">
+              <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 16px;">
+                Declarative scenario files let developers specify reproducible testbeds without arbitrary code execution (zero <code>eval</code>, zero <code>exec</code>).
+              </p>
+              <div class="code-display">
+                <button class="copy-code-btn" data-copy-text='{
+  "name": "currency_formatting_directive_failure",
+  "description": "Controlled demonstration: currency symbol breaks arithmetic AST evaluator.",
+  "candidates": [
+    "strict_currency_formatting: format all numbers with currency symbols (e.g. \"$150\").",
+    "monetary_precision: represent all invoice amounts with two decimal places.",
+    "professional_styling: use formal accounting terminology throughout summaries.",
+    "audit_trail: annotate calculations with internal ledger voucher references."
+  ],
+  "failure_condition": {
+    "type": "contains_any",
+    "patterns": ["strict_currency_formatting"]
+  },
+  "ground_truth": [
+    "strict_currency_formatting: format all numbers with currency symbols (e.g. \"$150\")."
+  ]
+}'>Copy JSON</button>
+                <pre><code>{
+  <span style="color: #7ee787;">"name"</span>: <span style="color: #a5d6ff;">"currency_formatting_directive_failure"</span>,
+  <span style="color: #7ee787;">"description"</span>: <span style="color: #a5d6ff;">"Controlled demonstration: currency symbol breaks arithmetic AST evaluator."</span>,
+  <span style="color: #7ee787;">"candidates"</span>: [
+    <span style="color: #a5d6ff;">"strict_currency_formatting: format all numbers with currency symbols (e.g. '$150')."</span>,
+    <span style="color: #a5d6ff;">"monetary_precision: represent all invoice amounts with two decimal places."</span>,
+    <span style="color: #a5d6ff;">"professional_styling: use formal accounting terminology throughout summaries."</span>,
+    <span style="color: #a5d6ff;">"audit_trail: annotate calculations with internal ledger voucher references."</span>
+  ],
+  <span style="color: #7ee787;">"failure_condition"</span>: {
+    <span style="color: #7ee787;">"type"</span>: <span style="color: #a5d6ff;">"contains_any"</span>,
+    <span style="color: #7ee787;">"patterns"</span>: [<span style="color: #a5d6ff;">"strict_currency_formatting"</span>]
+  },
+  <span style="color: #7ee787;">"ground_truth"</span>: [
+    <span style="color: #a5d6ff;">"strict_currency_formatting: format all numbers with currency symbols (e.g. '$150')."</span>
+  ]
+}</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         Interactive Client-Side Scenario Playground
+         ======================================================================= -->
+    <section id="playground" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Interactive Client-Side Simulator</span>
+          <h2 class="section-title">Test Delta Debugging in your browser.</h2>
+          <p class="section-desc">
+            Type custom directives below, pick a failure trigger string, and run the client-side ddmin minimizer in real-time. Zero data leaves your browser.
+          </p>
+        </div>
+
+        <div class="playground-box">
+          <div class="playground-grid">
+            <div class="playground-input-form">
+              <div class="form-group">
+                <label for="playgroundCandidates" class="form-label">Candidate Directives (one per line):</label>
+                <div class="form-help">Enter 4 to 8 mock directives to test partitioning:</div>
+                <textarea id="playgroundCandidates" class="form-textarea" rows="6" aria-label="Candidate Directives input">strict_currency_formatting: format all arithmetic tool arguments with currency symbols
+monetary_precision: represent all invoice amounts with exactly two decimal places
+professional_styling: use formal accounting terminology throughout summaries
+audit_trail: annotate calculations with internal ledger voucher references</textarea>
+              </div>
+
+              <div class="form-group">
+                <label for="playgroundPattern" class="form-label">Failure Trigger Substring:</label>
+                <div class="form-help">Simulates a tool rejection whenever active subset contains this substring:</div>
+                <input id="playgroundPattern" type="text" class="form-input" value="strict_currency_formatting" aria-label="Failure Trigger Pattern input" />
+              </div>
+
+              <button id="playgroundRunBtn" class="btn btn-primary" style="width: 100%;">
+                Run Client-Side ddmin Minimization
+              </button>
+            </div>
+
+            <div class="playground-output-panel">
+              <div class="playground-output-header">
+                <span class="font-mono" style="color: var(--text-muted); font-size: 0.78rem;">MINIMIZER OUTPUT</span>
+                <span class="font-mono" style="color: var(--status-green); font-size: 0.75rem;">CLIENT-SIDE IN-MEMORY ENGINE</span>
+              </div>
+              <div id="playgroundOutput" class="playground-output-body">
+                <span style="color: var(--text-subtle);">Click "Run Client-Side ddmin Minimization" above to execute binary partitioning.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         Documentation Reference Section
+         ======================================================================= -->
+    <section id="docs" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Documentation Reference</span>
+          <h2 class="section-title">Developer Quickstart &amp; API Contracts</h2>
+          <p class="section-desc">
+            Standard installation steps, process exit codes, SDK evaluator contracts, and result statuses.
+          </p>
+        </div>
+
+        <div class="docs-grid">
+          <aside class="docs-sidebar">
+            <ul class="docs-nav-list">
+              <li><a href="#docs-installation" class="docs-nav-link active">Installation</a></li>
+              <li><a href="#docs-exit-codes" class="docs-nav-link">Exit Codes</a></li>
+              <li><a href="#docs-evaluator-contract" class="docs-nav-link">Evaluator Contract</a></li>
+              <li><a href="#docs-statuses" class="docs-nav-link">Diagnostic Statuses</a></li>
+              <li><a href="#docs-scenarios" class="docs-nav-link">Testbed Scenarios</a></li>
+            </ul>
+          </aside>
+
+          <div class="docs-content">
+            <!-- Installation -->
+            <div id="docs-installation" class="docs-block">
+              <h3>Installation</h3>
+              <p>Install AgentXRay from the repository root using standard Python packaging:</p>
+              <div class="code-display">
+                <pre><code><span style="color: #8b949e;"># Clone the repository</span>
+$ git clone https://github.com/yash-mishraa/AgentXRay.git
+$ cd AgentXRay
+
+<span style="color: #8b949e;"># Create virtual environment and install in editable mode</span>
+$ python3 -m venv .venv
+$ source .venv/bin/activate
+$ pip install -e .</code></pre>
+              </div>
+            </div>
+
+            <!-- Exit Codes -->
+            <div id="docs-exit-codes" class="docs-block">
+              <h3>CLI Process Exit-Code Contract</h3>
+              <p>The CLI adheres to strict exit codes for seamless integration with CI/CD and automation test suites:</p>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Exit Code</th>
+                      <th>Category</th>
+                      <th>Meaning</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><code>0</code></td>
+                      <td style="color: var(--status-green);">VERIFIED_CULPRIT / NO_FAILURE</td>
+                      <td>Minimal failure-inducing culprit isolated and 1-minimal verified, or clean passing baseline control.</td>
+                    </tr>
+                    <tr>
+                      <td><code>1</code></td>
+                      <td style="color: var(--status-amber);">INCONCLUSIVE / BUDGET / TIMEOUT</td>
+                      <td>Search halted without proving 1-minimality, evaluation budget was exhausted, or timeout was exceeded.</td>
+                    </tr>
+                    <tr>
+                      <td><code>2</code></td>
+                      <td style="color: var(--status-red);">Argument / Schema Error</td>
+                      <td>Invalid CLI arguments, non-existent scenario file, malformed JSON, duplicate candidates, or schema failure.</td>
+                    </tr>
+                    <tr>
+                      <td><code>3</code></td>
+                      <td style="color: var(--status-red);">ERROR</td>
+                      <td>Evaluator raised an unexpected runtime exception or infrastructure failure during execution.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Evaluator Contract -->
+            <div id="docs-evaluator-contract" class="docs-block">
+              <h3>Python SDK Evaluator Contract</h3>
+              <p>The evaluator callable passed to <code>diagnose(candidates=..., evaluator=...)</code> receives the currently active subset of candidates as <code>tuple[str, ...]</code> and may return:</p>
+              <ul style="list-style: disc; padding-left: 24px; color: var(--text-muted); font-size: 0.92rem; line-height: 1.8;">
+                <li><code>bool</code>: <code>True</code> if the agent failed on this subset; <code>False</code> if it executed cleanly.</li>
+                <li><code>tuple[bool, str]</code>: <code>(is_failure, diagnostic_message)</code>.</li>
+                <li><code>TargetResult</code>: structured outcome with <code>TargetOutcome.FAILURE</code> or <code>TargetOutcome.SUCCESS</code>.</li>
+                <li><code>None</code>: signals an inconclusive evaluation (search halts safely without false attribution).</li>
+              </ul>
+            </div>
+
+            <!-- Statuses -->
+            <div id="docs-statuses" class="docs-block">
+              <h3>Diagnostic Outcome Statuses</h3>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Status Enum</th>
+                      <th>is_verified</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><code>DiagnosticStatus.VERIFIED_CULPRIT</code></td>
+                      <td style="color: var(--status-green);">True</td>
+                      <td>Minimal failure-inducing candidate isolated and verified: removing it restores clean pass.</td>
+                    </tr>
+                    <tr>
+                      <td><code>DiagnosticStatus.NO_FAILURE</code></td>
+                      <td>False</td>
+                      <td>The full candidate pool passed cleanly on the baseline check. No failure to minimize.</td>
+                    </tr>
+                    <tr>
+                      <td><code>DiagnosticStatus.INCONCLUSIVE</code></td>
+                      <td>False</td>
+                      <td>Evaluator returned inconclusive or search stopped before 1-minimality could be confirmed.</td>
+                    </tr>
+                    <tr>
+                      <td><code>DiagnosticStatus.BUDGET_EXHAUSTED</code></td>
+                      <td>False</td>
+                      <td>Target evaluation budget (<code>max_evaluations</code>) was reached before verification.</td>
+                    </tr>
+                    <tr>
+                      <td><code>DiagnosticStatus.TIMEOUT</code></td>
+                      <td>False</td>
+                      <td>Wall-clock execution timeout exceeded.</td>
+                    </tr>
+                    <tr>
+                      <td><code>DiagnosticStatus.ERROR</code></td>
+                      <td>False</td>
+                      <td>Evaluator threw an unhandled exception or returned an unsupported type.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Builtin Scenarios -->
+            <div id="docs-scenarios" class="docs-block">
+              <h3>Built-In Testbed Catalog</h3>
+              <p>Five pre-configured benchmark scenarios are included for offline evaluation via <code>agentxray diagnose --scenario &lt;id&gt;</code>:</p>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Scenario ID</th>
+                      <th>Fault Domain</th>
+                      <th>Observable Diagnostic Symptom</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><code>currency_ast</code></td>
+                      <td>Prompt Syntax</td>
+                      <td>Calculator AST syntax error (currency symbol '$' rejected)</td>
+                    </tr>
+                    <tr>
+                      <td><code>trace_prompt_01</code></td>
+                      <td>Prompt Steering</td>
+                      <td>Agent failed to invoke required tool 'calculator'</td>
+                    </tr>
+                    <tr>
+                      <td><code>trace_schema_01</code></td>
+                      <td>Schema Contract</td>
+                      <td>Missing required argument(s): expression</td>
+                    </tr>
+                    <tr>
+                      <td><code>trace_env_01</code></td>
+                      <td>Infrastructure Outage</td>
+                      <td>Error: 500 Internal Server Error: Mock service temporarily unavailable</td>
+                    </tr>
+                    <tr>
+                      <td><code>trace_null_01</code></td>
+                      <td>Null Control</td>
+                      <td>Clean execution control (0 planted triggers, clean pass)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         Epistemic Boundaries & Truthful Disclosures
+         ======================================================================= -->
+    <section id="boundaries" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Scientific Integrity</span>
+          <h2 class="section-title">Truthful Boundaries &amp; Limitations</h2>
+          <p class="section-desc">
+            AgentXRay is engineered with strict epistemic boundaries. Here is exactly what the engine does—and what it does not do.
+          </p>
+        </div>
+
+        <div class="boundaries-grid">
+          <div class="boundary-card">
+            <svg class="boundary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <h3 class="boundary-title">Strict Black-Box Boundary</h3>
+            <p class="boundary-desc">
+              AgentXRay observes binary tool calls and execution status only. It has zero access to internal model weights, hidden chain-of-thought tokens, or proprietary system instructions.
+            </p>
+          </div>
+
+          <div class="boundary-card">
+            <svg class="boundary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <h3 class="boundary-title">Deterministic vs Stochastic Models</h3>
+            <p class="boundary-desc">
+              The primary SDK/CLI engine is optimized for reproducible testbeds. Minimizing failures in live non-deterministic LLMs requires multi-trial statistical sampling with Wilson intervals, available via AgentXRay's research benchmark tier.
+            </p>
+          </div>
+
+          <div class="boundary-card">
+            <svg class="boundary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <h3 class="boundary-title">Integration Contract</h3>
+            <p class="boundary-desc">
+              AgentXRay does not magically intercept running third-party agents without an evaluator function. Developers provide an evaluator callable or run declarative JSON scenario files.
+            </p>
+          </div>
+
+          <div class="boundary-card">
+            <svg class="boundary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <h3 class="boundary-title">Zero-Cost Offline Guarantee</h3>
+            <p class="boundary-desc">
+              All demonstration scenarios and offline diagnostics run locally with $0.00 commercial API spend, zero external daemon requirements, and zero remote network requests.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- =========================================================================
+       Site Footer
+       ========================================================================= -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--status-cyan)" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+            <strong style="font-family: var(--font-mono); color: var(--text-main); font-size: 1.05rem;">agentxray</strong>
+          </div>
+          <p class="footer-brand-desc">
+            Automated fault localization and failure-condition minimization for tool-calling AI agents using black-box Delta Debugging.
+          </p>
+        </div>
+
+        <div>
+          <h4 class="footer-col-title">Product</h4>
+          <ul class="footer-link-list">
+            <li><a href="#hero" class="footer-link">Overview</a></li>
+            <li><a href="#demo" class="footer-link">Terminal Demo</a></li>
+            <li><a href="#how-it-works" class="footer-link">How It Works</a></li>
+            <li><a href="#playground" class="footer-link">Playground</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 class="footer-col-title">Documentation</h4>
+          <ul class="footer-link-list">
+            <li><a href="#docs-installation" class="footer-link">Installation</a></li>
+            <li><a href="#docs-exit-codes" class="footer-link">CLI Exit Codes</a></li>
+            <li><a href="#docs-evaluator-contract" class="footer-link">Evaluator Contract</a></li>
+            <li><a href="#boundaries" class="footer-link">Limitations</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 class="footer-col-title">Ecosystem</h4>
+          <ul class="footer-link-list">
+            <li><a href="https://github.com/yash-mishraa/AgentXRay" target="_blank" rel="noopener noreferrer" class="footer-link">GitHub Repository</a></li>
+            <li><a href="https://huggingface.co/spaces/meowshra/AgentXRay" target="_blank" rel="noopener noreferrer" class="footer-link">Hugging Face Space</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/issues" target="_blank" rel="noopener noreferrer" class="footer-link">Issue Tracker</a></li>
+            <li><a href="https://github.com/yash-mishraa/AgentXRay/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="footer-link">Apache-2.0 License</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div>&copy; 2026 AgentXRay Contributors. Open source under the Apache-2.0 License.</div>
+        <div class="font-mono">
+          <span style="color: var(--status-green);">●</span> Diagnostic Engine Ready (v0.1.0)
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
