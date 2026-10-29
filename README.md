@@ -11,80 +11,101 @@ license: apache-2.0
 
 # AgentXRay
 
-> **Automated fault localization and failure-condition minimization for tool-calling AI agents.**
+<div align="center">
 
-AgentXRay isolates minimal subsets of prompt directives, context elements, or configuration parameters that empirically induce a tool-calling AI agent to fail. It treats the agent strictly as a black-box subject—analyzing observable tool calls and outputs without requiring access to internal model weights, hidden chain-of-thought tokens, or proprietary system instructions.
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Tests Passing](https://img.shields.io/badge/tests-640%20passed-brightgreen.svg)](tests/)
+[![Offline Testbed Cost](https://img.shields.io/badge/testbed%20spend-%240.00%20offline-success.svg)](#)
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-yellow.svg)](https://huggingface.co/spaces/meowshra/AgentXRay)
+
+**Causal failure-condition minimization for tool-calling AI agents.**<br>
+*Isolate minimal failure-inducing prompt instructions, tool schemas, and environment flags in milliseconds—proven with counterfactual verification.*
+
+[Overview](#1-the-problem) •
+[Python SDK](#2-python-sdk-facade) •
+[Developer CLI](#3-developer-cli) •
+[How It Works](#4-how-it-works-delta-debugging--counterfactual-proof) •
+[Documentation](#5-documentation-index) •
+[Interactive Web App](#6-interactive-web-app--playground)
+
+</div>
 
 ---
 
 ## 1. The Problem: Debugging Complex Agent Failures
 
-Modern AI agents execute multi-step workflows by combining language models with tool calling, prompt directives, and external environment interactions. When an agent fails—by emitting malformed tool arguments, violating schema constraints, triggering API syntax errors, or hallucinating parameters—diagnosing the failure is difficult:
+When a tool-calling AI agent breaks—emitting malformed JSON, violating tool argument schemas, triggering API syntax errors, or hallucinating arguments—diagnosing the exact root cause is frustrating:
 
-* **Context Clutter**: Real-world prompts contain dozens of instructions, schema specifications, few-shot examples, and irrelevant distractors.
-* **Manual Ablation is Slow & Costly**: Sequentially testing directives one by one requires substantial engineering time and burns unnecessary API credits.
-* **Observability Alone Does Not Explain Causality**: Standard tracing platforms log what happened, but do not isolate minimal reproducing failure subsets.
-* **White-Box Tools Require Full Access**: White-box debugging tools require model activation inspection, local gradient access, or execution rollback hooks that proprietary APIs do not provide.
+* **Massive Prompt Bloat**: Agent prompts contain dozens of instructions, schema definitions, few-shot examples, and irrelevant distractors ($N$ candidate directives).
+* **Combinatorial Explosion**: There are $2^N$ potential directive combinations.
+* **Manual Ablation is Slow & Expensive**: Sequentially disabling rules one by one ($O(N)$ linear scan) burns developer hours and thousands of LLM API tokens.
+* **Observability Logs Don't Prove Causality**: Traditional tracing platforms log *what* happened, but cannot isolate *which specific directive caused* the breakdown.
 
-**AgentXRay applies black-box Delta Debugging (ddmin) to automate fault localization.** It systematically partitions and reduces candidate input elements, tests whether candidate subsets still trigger failure, and confirms that the resulting condition is **1-minimal**—meaning removing any single directive eliminates the failure for that candidate.
+**AgentXRay applies black-box Delta Debugging (`ddmin`) and counterfactual verification to automate root cause isolation.** It hierarchically partitions candidates in $O(\log N)$ evaluations and mathematically verifies that removing the isolated directive restores clean task success ($c \setminus \{e\}$).
 
 ---
 
-## 2. Quick Start & Offline Demo
+## 2. Python SDK Facade
 
-### Prerequisites
-
-* Python `>=3.12`
-* Standard virtual environment
-
-### Installation
-
-Initial installation requires internet access to clone the repository and install dependencies:
+Install AgentXRay and diagnose your agent harness in 3 lines of Python:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/yash-mishraa/AgentXRay.git
-cd AgentXRay
-
-# 2. Create and activate a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 3. Install in editable mode
 pip install -e .
 ```
 
-*(Alternatively, if using `uv`: `uv venv && source .venv/bin/activate && uv pip install -e .`)*
+```python
+from agentxray import diagnose
+
+# 1. Directives suspected of causing the agent breakdown
+candidates = [
+    "strict_currency: format arithmetic tool arguments with '$' (e.g. '$150')",
+    "monetary_precision: format all invoices with two decimal places",
+    "professional_styling: use formal enterprise accounting terminology",
+    "audit_trail: annotate calculations with ledger voucher references",
+]
+
+# 2. Test harness callable: return True if the agent fails on this active subset
+def my_agent_evaluator(active_subset: tuple[str, ...]) -> bool:
+    # Example: downstream arithmetic parser crashes on currency signs '$'
+    return any("strict_currency" in directive for directive in active_subset)
+
+# 3. Isolate minimal failure trigger with counterfactual proof
+result = diagnose(candidates=candidates, evaluator=my_agent_evaluator)
+
+print(result.summary)
+print(f"Verified 1-minimal: {result.is_verified}")       # True
+print(f"Isolated culprit:   {result.isolated_candidates}") # ('strict_currency: ...',)
+print(f"Evaluations used:   {result.evaluations_used}")    # 4 calls (vs 6 greedy)
+```
+
+*(See [`docs/SDK.md`](docs/SDK.md) for full parameter references, custom evaluator return types, and exception-safety contracts.)*
 
 ---
 
-### Developer CLI Quickstart
+## 3. Developer CLI
 
-AgentXRay provides a terminal command-line interface (`agentxray`) built on top of the public Python SDK.
+AgentXRay includes a developer-facing CLI (`agentxray`) with restrained monochrome/ANSI cards and strict POSIX exit codes:
 
 ```bash
-# Display help and available subcommands
-agentxray --help
-
-# Run the offline deterministic demonstration (<0.02s, $0.00 spend)
+# Run the built-in offline demonstration (<0.01s, $0.00 spend)
 agentxray demo
 
-# Diagnose failure using a documented JSON scenario file
+# Diagnose a custom failure using a declarative JSON scenario file
 agentxray diagnose examples/scenario_example.json
 
 # Diagnose one of the built-in catalog testbed scenarios
 agentxray diagnose --scenario trace_env_01
 
-# Inspect installed package version
-agentxray version
+# Output machine-readable JSON for CI/CD scripting
+agentxray demo --json
 ```
 
-#### Representative Successful Output
+### Representative Terminal Output
 
 ```text
-AgentXRay (currency_formatting_directive_failure)
+AgentXRay (currency_ast)
 ────────────────────────────────────────────────────────────────────────────
-
 DIAGNOSIS
   The task fails when 1 specific candidate directive is active.
 
@@ -96,553 +117,154 @@ VERIFICATION
 
 SEARCH TELEMETRY
   Status:          CULPRIT ISOLATED & VERIFIED
-  Evaluations:     4 calls (ddmin)
+  Evaluations:     4 calls (ddmin) vs 6 calls (greedy)
   Candidate Pool:  4 directives
-  Execution Time:  0.000s
+  Execution Time:  0.002s
   Ground Truth:    True (100% match)
 
 MODE & BOUNDARIES
   Execution:       Controlled offline execution ($0.00 spend, zero network requests)
-  Disclosures:     Operates strictly on observable tool-calling inputs/outputs.
-                   Does not inspect internal model weights or proprietary prompt logic.
-                   Offline testbeds do not evaluate live third-party stochastic noise.
 ────────────────────────────────────────────────────────────────────────────
 ```
 
-#### Exit-Code Contract
+### Process Exit-Code Contract
 
-The CLI conforms to a strict exit-code contract for CI/CD and automation pipelines:
+The CLI conforms to a strict POSIX exit-code contract for CI/CD pipelines:
 
-| Exit Code | Outcome Category | Description |
+| Exit Code | Classification | Description |
 | :---: | :--- | :--- |
-| **`0`** | `VERIFIED_CULPRIT` / `NO_FAILURE` | Minimal failure-inducing culprit isolated and 1-minimal verified, or clean passing baseline control. |
-| **`1`** | `INCONCLUSIVE` / `BUDGET_EXHAUSTED` / `TIMEOUT` | Search halted without proving 1-minimality, evaluation budget was exhausted, or timeout was exceeded. |
-| **`2`** | Argument / Schema Error | Invalid CLI flags, non-existent scenario file, malformed JSON, duplicate candidate, or schema validation error. |
-| **`3`** | `ERROR` | Evaluator raised an unexpected runtime exception or infrastructure failure during execution. |
+| **`0`** | `CLEAN / VERIFIED` | Minimal failure culprit isolated and verified (`VERIFIED_CULPRIT`), or clean passing baseline (`NO_FAILURE`). |
+| **`1`** | `INCONCLUSIVE` | Search halted without proving 1-minimality: budget exhausted (`BUDGET_EXHAUSTED`) or timeout exceeded (`TIMEOUT`). |
+| **`2`** | `USAGE_ERROR` | Bad arguments, missing file, duplicate candidate strings, or malformed JSON schema. |
+| **`3`** | `RUNTIME_ERROR` | The evaluator callable or agent harness raised an unhandled Python exception (`ERROR`). |
 
-#### Scenario File Schema (`ScenarioFileSpec`)
-
-Declarative scenario specifications allow reproducible offline diagnosis without arbitrary code execution (`eval`, `exec`, or shell scripts):
-
-```json
-{
-  "name": "currency_formatting_directive_failure",
-  "description": "Controlled demonstration: currency symbol breaks arithmetic AST evaluator.",
-  "candidates": [
-    "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. '$150' or '$250')",
-    "monetary_precision: represent all invoice amounts with exactly two decimal places",
-    "professional_styling: use formal accounting terminology throughout summaries",
-    "audit_trail: annotate calculations with internal ledger voucher references"
-  ],
-  "failure_condition": {
-    "type": "contains_any",
-    "patterns": ["strict_currency_formatting"]
-  },
-  "ground_truth": [
-    "strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. '$150' or '$250')"
-  ]
-}
-```
-
-Supported declarative failure condition types:
-* `contains_any`: Fails if active subset contains any candidate matching any pattern.
-* `contains_all`: Fails if all specified patterns are present in the active subset.
-* `exact_match`: Fails if the active subset contains all exact pattern strings.
-* `always_fail`: Synthetic failure baseline (fails under any candidate combination).
-* `never_fail`: Synthetic clean baseline (passes under all candidate combinations).
-
-#### Integration Boundary & Disclosures
-* **Zero Arbitrary Code Execution**: The CLI evaluates declarative scenario specifications and built-in benchmark scenarios offline. It does not execute arbitrary user-supplied Python strings or shell commands.
-* **Custom Python Agent Integration**: To diagnose dynamic multi-step agent harnesses (e.g., custom LangChain, LangGraph, or bespoke tool dispatchers), import the Python SDK directly (`from agentxray import diagnose`) and provide a Python evaluator callable.
-* **Controlled Offline Testbed**: The offline demo and testbed scenarios run deterministically with zero network calls and $0.00 spend. They validate causal minimization logic, not live third-party non-deterministic model performance.
+*(See [`docs/CLI.md`](docs/CLI.md) for complete CLI flag tables and automation examples.)*
 
 ---
 
-### Python SDK Quickstart
+## 4. How It Works: Delta Debugging & Counterfactual Proof
 
-You can use AgentXRay directly in Python to diagnose and isolate which prompt instructions, schema keys, or configuration flags cause an agent workflow to fail.
-
-#### 1. What AgentXRay Diagnoses
-AgentXRay treats the agent and its tools as a black-box subject. It partitions a candidate pool of directives (e.g. system instructions, tool definitions, environment flags) and repeatedly evaluates candidate subsets to find the **1-minimal culprit**—meaning the failure reproduces with that candidate active, and eliminating that candidate restores task success.
-
-Currently diagnosed failure modes:
-* **Prompt Steering Violations**: Directives that forbid tool usage or steer models to omit required actions.
-* **Grammar / Syntax Constraints**: Formatting rules (e.g. currency signs `$`) that break downstream parsers.
-* **Schema Contract Mismatches**: Tool argument naming policies (`expr` vs `expression`) rejected by APIs.
-* **Environment / Outage Flags**: Downstream microservice downtime or infrastructure faults.
-
-#### 2. The Evaluator Contract
-An evaluator is any callable accepting a tuple of currently active candidates (`tuple[str, ...]`) and returning:
-* `bool`: `True` if the agent failed on this subset, `False` if the agent passed cleanly.
-* `tuple[bool, str]`: `(is_failure, diagnostic_message)`.
-* `TargetResult`: full structured outcome object.
-* `None`: if the trial was inconclusive.
-
-If the evaluator raises an unexpected exception (e.g., network drop or syntax bug), AgentXRay halts and marks the run as `DiagnosticStatus.ERROR` rather than falsely attributing failure.
-
-#### 3. Complete Runnable Example
-
-```python
-from agentxray import diagnose, DiagnosticStatus
-
-# 1. Define candidate prompt directives
-candidates = [
-    "strict_currency: format arithmetic arguments with currency signs (e.g. '$150').",
-    "concise_summary: keep final output under 50 words.",
-    "markdown_tables: render financial summaries in markdown tables.",
-    "formal_tone: use formal business accounting terminology.",
-]
-
-# 2. Implement the evaluator (agent execution + tool verification)
-def my_agent_evaluator(active_directives: tuple[str, ...]) -> bool:
-    for directive in active_directives:
-        if "strict_currency" in directive:
-            return True   # Failure reproduced: currency symbol triggers AST syntax crash
-    return False          # Clean pass: valid arithmetic expression executed
-
-# 3. Run black-box causal diagnosis
-result = diagnose(
-    candidates=candidates,
-    evaluator=my_agent_evaluator,
-    max_evaluations=20,
-    seed=42,
-)
-
-# 4. Inspect results
-print("Status:           ", result.status.value)        # VERIFIED_CULPRIT
-print("Verified 1-Minimal:", result.is_verified)         # True
-print("Evaluations Used: ", result.evaluations_used)     # 4
-print("Isolated Culprit: ", result.isolated_candidates) # ('strict_currency: ...',)
-print("Candidate IDs:    ", result.isolated_candidate_ids) # ('elem_0',)
-print("Summary:          ", result.summary)
-```
-
-*(See [`examples/diagnose_custom_agent.py`](examples/diagnose_custom_agent.py) for the complete standalone script.)*
-
-#### 4. Interpreting Outcomes
-* **`VERIFIED_CULPRIT`**: A minimal subset was isolated and counterfactually verified: removing the isolated elements restores task success.
-* **`NO_FAILURE`**: The full candidate set passed without error on the baseline trial. No failure condition to minimize.
-* **`INCONCLUSIVE`**: The evaluator returned inconclusive or 1-minimality could not be confirmed.
-* **`BUDGET_EXHAUSTED`**: The evaluation budget (`max_evaluations`) was reached before search finished.
-* **`TIMEOUT`**: Wall-clock timeout exceeded.
-* **`ERROR`**: The evaluator raised an unhandled exception or returned an unsupported type.
-
-#### 5. Scope & Current Limitations
-* **Deterministic / Controlled Agents**: The primary `diagnose(...)` entry point uses deterministic hierarchical Delta Debugging (`ddmin`), ideal for CI/CD testbeds, reproducible harness runs, and unit-level failure analysis.
-* **Live Stochastic Neural Agents**: Stochastic models (e.g. GPT-4o, LLaMA-3) exhibit probabilistic noise across trials. Minimizing stochastic failures requires multi-trial statistical sampling and exact McNemar hypothesis testing with Manski bounds, available via AgentXRay's research benchmark tier (`benchmarks/`).
-
----
-
-### Run the Offline Demonstration
-
-AgentXRay provides two zero-cost offline demonstration interfaces that run entirely in-memory using controlled mock environments with zero external network calls and zero commercial API spend ($0.00):
-
-#### Option A: Terminal CLI Demo (<0.02s)
-
-```bash
-python -m agentxray demo
-```
-
-*(Observed runtime: ~0.01s on reference development hardware; executes Delta Debugging, Greedy Ablation, and Random Search on an AST calculator accounting agent.)*
-
-#### Option B: Native Gradio Web Demo (Hugging Face Spaces Default)
-
-Install demo dependencies and launch the Gradio browser interface:
-
-```bash
-# 1. Install optional demo dependencies
-pip install -e .[demo]
-
-# 2. Launch the Gradio UI
-python app.py
-```
-
-*(Opens locally at `http://127.0.0.1:7860`. All scenario runs execute in <0.05s in-memory without making any remote network or model requests.)*
-
-#### Option C: Streamlit Web Demo
-
-```bash
-streamlit run streamlit_app.py
-```
-
-*(Opens locally at `http://localhost:8501`.)*
-
-#### Option D: Standalone Product Website & Client-Side Playground
-
-The repository includes a dedicated static developer product website in `web/` featuring an interactive terminal demonstrator, client-side Delta Debugging simulator, and comprehensive API documentation:
-
-```bash
-# Serve locally using standard Python
-python3 -m http.server --directory web 3000
-
-# Or build static production bundle with Vite
-npx vite build web
-```
-
-*(Opens locally at `http://localhost:3000`.)*
-
----
-
-### Available Demonstration Scenarios
-
-The web interface exposes five curated benchmark scenarios designed to demonstrate algorithmic failure-condition isolation across distinct fault domains with verified ground truth:
-
-| Scenario Key | Scenario Name | Fault Domain | Description | Initial Observable Symptom |
-| :--- | :--- | :--- | :--- | :--- |
-| `currency_ast` | **AST Calculator Currency Directive** | Prompt Syntax | Prompt constraint forces currency symbols (`$`) into tool arguments, violating AST arithmetic grammar. | AST `SyntaxError: invalid syntax` |
-| `trace_prompt_01` | **Tool Prohibition Directive** | Prompt Steering | Natural-language prompt directive forbids external math utilities; agent answers via mental math and omits required tool. | `Agent failed to invoke required tool 'calculator'` |
-| `trace_schema_01` | **Schema Parameter Key Mismatch** | Schema Contract | Dynamic tool schema renames parameter `expression` to `expr`; agent complies with schema but backend service rejects argument. | `Missing required argument(s): expression` |
-| `trace_env_01` | **Backend Service 500 Outage** | Environment Fault | Mock calculator service cluster experiences node-level failure and returns HTTP 500 error during execution. | `Error: 500 Internal Server Error: Mock calculator service temporarily unavailable` |
-| `trace_null_01` | **Clean Execution Control** | Null Baseline | Passing baseline with 0 planted triggers. Used to evaluate whether diagnostic methods falsely attribute failure when none exists. | Clean passing execution (`SUCCESS`) |
-
----
-
-### Epistemic Status: Demonstration vs. Confirmatory Evidence
-
-* **Offline Testbed Scope**: The interactive demo executes against controlled mock agents using `FakeProvider` and deterministic tool environments. It demonstrates **exact algorithmic mechanics** (hierarchical subset/complement partitioning, 1-minimality verification, and search call counts).
-* **Not an Assertion of Real LLM Superiority**: Demonstrating sample efficiency on synthetic or mock targets does **not** establish empirical superiority over commercial language models (e.g., GPT-4o, Claude 3.5, LLaMA-3).
-* **Live Model Epistemics**: Live LLMs exhibit non-monotonicity, prompt sensitivity, and probabilistic noise. Confirmatory scientific claims on live models require multi-trial stochastic sampling, Wilson score intervals, and pre-registered McNemar exact tests with Manski sensitivity bounds, as detailed in [`docs/RESEARCH_PROPOSAL.md`](docs/RESEARCH_PROPOSAL.md).
-
----
-
-### Web Demo Cloud Hosting
-
-The repository root includes a deployment-ready `requirements.txt` (`-e .`, `gradio`, `streamlit`, `pydantic`):
-
-#### Deploying to Hugging Face Spaces (Gradio)
-1. In your Hugging Face Space (e.g. `meowshra/AgentXRay`), select **Gradio** SDK on the free CPU tier.
-2. Push or sync this repository.
-3. Hugging Face automatically detects the YAML frontmatter in `README.md`, installs `requirements.txt`, and launches `app.py`.
-
-#### Deploying to Streamlit Community Cloud
-1. Sign in to [Streamlit Community Cloud](https://share.streamlit.io/) with GitHub.
-2. Select the `AgentXRay` repository, branch `main`, and main file `streamlit_app.py` (or `app.py`).
-3. Click **Deploy**. Streamlit Cloud installs `requirements.txt` and serves the app.
-
-*(Note: Live deployment links should be published only after the public URL has been verified.)*
-
----
-
-### Run the Full Test Suite
-
-```bash
-pytest
-```
-
-*(Observed runtime: ~2.5s for all 597 automated tests on reference development hardware.)*
-
----
-
-## 3. Offline Demonstration Walkthrough
-
-When you run `python -m agentxray demo`, AgentXRay investigates an automated accounting assistant tasked with expense calculation. The input context contains 4 directives (1 causal trigger and 3 non-causal distractors):
+AgentXRay adapts Andreas Zeller’s classic Delta Debugging algorithm (`ddmin`) from program input minimization to black-box agent intervention search:
 
 ```text
-================================================================================
- AgentXRay: Deterministic Offline Demonstration
- Black-Box Failure-Condition Minimization on a Tool-Calling Agent
-================================================================================
-
-[1/5] Scenario Setup & Observable Failure
---------------------------------------------------------------------------------
-Agent Type:         Automated Accounting Assistant (Controlled Mock Agent with AST Calculator)
-Available Tools:    calculator (AST arithmetic evaluator)
-Evaluator Criteria: Tool 'calculator' invoked with valid expression, producing exact result 400
-User Prompt:        "Calculate total reimbursement for expenses of 150 and 250."
-
-Input Context Elements (4 candidate elements: 1 failure trigger + 3 distractors):
-  [1] [CAUSAL TRIGGER] strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. "$150" or "$250")
-  [2] [distractor] concise_summary: provide clear one-line reimbursement statement
-  [3] [distractor] compliance_tag: include audit reference code REF-2026
-  [4] [distractor] audit_memo: append verification timestamp to final answer
-
-Observed Agent Behavior under Full Context:
-  - Agent Invocation: calculator(expression='$150 + $250')
-  - Tool Diagnostic:  Required tool 'calculator' returned an error: Error: invalid syntax (<unknown>, line 1)
-  - Outcome:          FAILURE (AGENT_FAILURE)
-
-[2/5] Delta Debugging Execution Trajectory
---------------------------------------------------------------------------------
-Hierarchical subset partitioning to isolate the minimal causal failure condition:
-
-Step | Intervention Type       | Subset Size | Outcome  | Action Taken
------+-------------------------+-------------+----------+----------------------------------
-  1  | baseline                | 4  elements | FAILURE  | Failure reproduced on full input; initiate 2-way binary partition
-  2  | partition_subset        | 2  elements | FAILURE  | Subset of size 2 reproduced failure; zoom into this partition
-  3  | partition_subset        | 1  elements | FAILURE  | Subset of size 1 reproduced failure; zoom into this partition
-  4  | minimality_verification | 0  elements | SUCCESS  | Empty subset test verified: removing single element eliminates failure (1-minimal)
-
-[3/5] Isolated Minimal Failure-Inducing Condition
---------------------------------------------------------------------------------
-Discovery Outcome:
-  - Isolated Trigger:   'strict_currency_formatting: format all numbers within arithmetic tool arguments with currency symbols (e.g. "$150" or "$250")'
-  - Trigger Size:       1 element(s) (reduced from 4 initial elements)
-  - Distractors Left:   0 elements falsely retained
-  - 1-Minimality:       CONFIRMED (1-minimal: explicitly verified that empty set () does not reproduce failure)
-  - Target Calls Used:  4 evaluations
-
-[4/5] Baseline Method Comparison
---------------------------------------------------------------------------------
-Method                       | Target Calls | 1-Minimal  | Matches Ground Truth
------------------------------+--------------+------------+---------------------
-Delta Debugging              | 4            | YES        | YES
-Greedy Ablation              | 6            | YES        | YES
-Seeded Random Search         | 5            | YES        | YES
-
-Efficiency Summary: Delta Debugging required only 4 calls, outperforming Greedy Ablation (6 calls) and Random Search (5 calls).
-================================================================================
+Candidate Directives (N=4)
+[ e0: currency_$ ]  [ e1: precision_2 ]  [ e2: formal_tone ]  [ e3: audit_tag ]
+                            │
+               ┌────────────┴────────────┐
+               ▼                         ▼
+      Partition Δ1 (e0, e1)     Partition Δ2 (e2, e3)
+             [FAILS]                   [PASSES]
+               │
+        ┌──────┴──────┐
+        ▼             ▼
+    Subset (e0)   Subset (e1)
+      [FAILS]       [PASSES]
+        │
+        ▼
+   Counterfactual Verification: evaluate( ∅ )
+      [PASSES]  -->  e0 is PROVEN 1-MINIMAL CULPRIT!
 ```
 
-### Exporting Demonstration Reports
+### 1-Minimality Guarantee
 
-Save machine-readable JSON and Markdown reports to disk using `--save`:
+An isolated candidate subset $c$ is **1-minimal** if:
+1. $c$ reproduces the failure: $\text{evaluate}(c) = \text{FAILURE}$.
+2. For every element $e \in c$, removing $e$ restores success: $\text{evaluate}(c \setminus \{e\}) = \text{SUCCESS}$.
+
+AgentXRay ensures zero false attributions by explicitly testing the counterfactual complement.
+
+---
+
+## 5. Documentation Index
+
+Comprehensive guides for integrating and extending AgentXRay:
+
+| Document | Description |
+| :--- | :--- |
+| **[`docs/SDK.md`](docs/SDK.md)** | Python SDK facade reference (`agentxray.diagnose`), type annotations, and evaluator contracts. |
+| **[`docs/CLI.md`](docs/CLI.md)** | Complete developer CLI command reference, JSON streaming, flags, and exit codes. |
+| **[`docs/SCENARIOS.md`](docs/SCENARIOS.md)** | Declarative scenario JSON specification for automated CI/CD regression suites. |
+| **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** | Technical reference, internal component contracts, domain models, and execution envelope. |
+| **[`docs/DECISIONS.md`](docs/DECISIONS.md)** | Architectural Decision Records (ADRs) explaining core design trade-offs. |
+| **[`CONTRIBUTING.md`](CONTRIBUTING.md)** | Developer setup, testing guidelines, and pull request workflow. |
+| **[`LICENSE`](LICENSE)** | Official Apache-2.0 open-source software license. |
+
+---
+
+## 6. Interactive Web App & Playground
+
+AgentXRay provides multiple interfaces to explore and simulate failure minimization:
+
+### Option A: Standalone Editorial Product Website (`web/`)
+
+A multi-page developer product website built with pure standard web technologies (HTML5, CSS3, ES6 modules, Vite):
 
 ```bash
-python -m agentxray demo --save --output-dir reports/
+# Serve locally
+python3 -m http.server --directory web 3000
+
+# Or compile production bundle
+npx --yes vite build web
 ```
 
-To protect against unintended data loss, `agentxray demo --save` enforces overwrite protection and will not overwrite existing report files unless `--overwrite` is specified.
+* **Interactive Terminal Tape**: Step through all 5 benchmark scenarios with play/step/reset playback controls.
+* **Client-Side ddmin Sandbox**: Enter custom directives, define a trigger pattern, and simulate Delta Debugging live in your browser.
 
----
+### Option B: Hugging Face Spaces Gradio Demo (`app.py`)
 
-## 4. System Architecture & Decoupled Design
-
-AgentXRay enforces a strict architectural boundary: **the search algorithms observe only external target inputs and binary tool execution outcomes**. Ground-truth failure specifications are never leaked into the search loop and are evaluated strictly post-hoc.
-
-```mermaid
-flowchart TD
-    subgraph Inputs["1. Candidate Input Configuration"]
-        IC["Input Case\n(Candidate Directives & Distractors)"]
-    end
-
-    subgraph Search["2. Black-Box Search Minimization Engine"]
-        direction TB
-        DD["Delta Debugging (ddmin)\nHierarchical Partitioning"]
-        GA["Greedy Ablation\nSequential Elimination"]
-        RS["Seeded Random Search\nBudget-Capped Sampling"]
-        Runner["Intervention Runner\n(Budget & Timeout Envelopes)"]
-        MinCheck["1-Minimality Verification\n(Ablate Factor & Test Empty Set)"]
-    end
-
-    subgraph Target["3. Target Agent Execution (Hermetic Black-Box)"]
-        direction TB
-        Agent["Controlled AI Agent\n(System Prompt + User Prompt)"]
-        Provider["Model Provider Adapter\n(FakeProvider / Ollama / OpenAI)"]
-        Tools["Tool Environment\n(AST Calculator / Sandboxed Tools)"]
-        Trace["Observable Trace\n(Tool Invocations & Diagnostics)"]
-    end
-
-    subgraph Outcome["4. Outcome Evaluation & Discovery"]
-        direction TB
-        Eval["Outcome Evaluator\n(Success / Failure Classification)"]
-        Result["Discovered 1-Minimal Condition\n(Verified Active Trigger Subset)"]
-    end
-
-    subgraph Verification["5. Post-Hoc Benchmark Evaluation (Strictly Decoupled)"]
-        GT["Ground-Truth Spec\n(Planted Benchmark Reference)"]
-        GTEval["Post-Hoc Evaluator\n(Precision, Recall, Match Status)"]
-    end
-
-    IC --> DD
-    IC --> GA
-    IC --> RS
-    DD --> Runner
-    GA --> Runner
-    RS --> Runner
-    Runner --> Agent
-    Agent --> Provider
-    Agent --> Tools
-    Tools --> Trace
-    Trace --> Eval
-    Eval --> Runner
-    Runner --> MinCheck
-    MinCheck --> Result
-    Result -.-> GTEval
-    GT -.-> GTEval
-```
-
-### Component Responsibilities
-
-| Subsystem | Source Path | Responsibility |
-| :--- | :--- | :--- |
-| **Search Engine** | `src/agentxray/minimizer.py`<br>`src/agentxray/baselines.py` | Executes Delta Debugging, Greedy Ablation, and Seeded Random Search. Makes all intervention decisions with zero ground-truth knowledge. |
-| **Intervention Runner** | `src/agentxray/runner.py` | Enforces trial budgets (`max_trials`), wall-clock timeouts (`timeout_seconds`), and trial audit history. |
-| **Domain Models** | `src/agentxray/models.py` | Strict Pydantic v2 schemas for trials, candidate evaluations, results, and report models. |
-| **Statistical Layer** | `src/agentxray/statistics.py` | Wilson score intervals, Newcombe hybrid difference CIs, exact Fisher tests, and Benjamini-Hochberg FDR control. |
-| **Agent Harness** | `src/agentxray/agent_harness/` | Controlled multi-turn agent runner, tool invocation parsing, and AST safe arithmetic tools. |
-| **Provider Adapters** | `src/agentxray/providers/` | Pluggable providers: zero-cost `FakeProvider`, local `OllamaProvider`, and rate-limited `OpenAIProvider`. |
-| **Report Generation** | `src/agentxray/reporting.py` | Generates structured JSON and Markdown execution reports from actual telemetry. |
-| **Benchmark Testbed** | `benchmarks/` | Synthetic benchmark tasks (deterministic and stochastic) and model-backed pilot configurations. |
-
----
-
-## 5. Comparison of Search Algorithms
-
-AgentXRay implements three search strategies to isolate minimal failure-inducing conditions:
-
-| Algorithm | Search Strategy | Observed & Theoretical Call Complexity | Strengths | Trade-Offs & Complexity Bounds | 1-Minimality Verification |
-| :--- | :--- | :--- | :--- | :--- | :---: |
-| **Delta Debugging** (`ddmin`) | Hierarchical $n$-way partitioning. Tests candidate subsets and complements, increasing granularity when neither reproduces failure. | **Favorable case**: Can reduce the search space efficiently when the failure predicate is monotonic and the failure-inducing condition is sufficiently well-behaved.<br>**Worst case**: May require substantially more target evaluations when interactions are non-monotonic or partitioning cannot eliminate large portions of the candidate set. The configured `max_trials` budget limits the search. | Fast isolation on large candidate sets when a single trigger dominates; eliminates entire blocks of non-causal distractors early via subset/complement tests. | Does **not** guarantee efficient reduction in general. Requires predicate monotonicity for optimal partitioning; non-monotonic prompt interactions degrade search efficiency until bounded by the `max_trials` budget. | **Yes**: explicitly removes each remaining element; tests $\emptyset$ on singletons. |
-| **Greedy Ablation** | Sequential element-by-element elimination pass ($O(N)$ linear scan) followed by verification of retained subset. | **Total calls**: $N + 1$ to $2N + 1$ evaluations ($1$ baseline check $+ N$ ablation trials $+ |S|$ verification trials on retained subset $S$). Overall complexity is $O(N)$. | Simple, deterministic, sequential elimination; predictable $O(N)$ execution. | Inefficient on large contexts; evaluates every single element one by one even when a single directive is the sole trigger. | **Yes**: verifies each retained element and confirms $\emptyset$ succeeds. |
-| **Seeded Random Search** | Budget-capped random sampling of non-empty proper subsets with singleton early-stopping. | **Variable**: Bounded by `max_trials`. Randomly samples proper subsets without systematic partitioning. | Unbiased baseline; may stumble upon small subsets quickly by chance on small search spaces. | Non-deterministic; high variance in call counts; no guarantee of finding a minimal reproducer within polynomial calls on combinatorial triggers. | **Yes**: checks single-element removals on best failing subset found. |
-
-### 5.1 Distinguishing Causality, 1-Minimality, and Global Minimality
-
-When interpreting discovered failure conditions, AgentXRay explicitly distinguishes between four distinct concepts:
-
-1. **Empirical Failure-Inducing Subset**: Any candidate subset $S \subseteq I$ under which the target agent reproduces the failure in observed trials ($r(S) = \text{FAILURE}$).
-2. **1-Minimal Subset**: A failure-inducing subset $S$ where removing any single directive causes the failure to disappear:
-   $$\forall e \in S, \quad r(S \setminus \{e\}) = \text{SUCCESS}$$
-   For single-element candidates ($|S| = 1$), removing the element leaves the empty configuration $\emptyset = ()$, which must also succeed ($r(\emptyset) = \text{SUCCESS}$).
-3. **Globally Smallest Subset**: A failure-inducing subset $S^*$ that has the minimum cardinality among all failing subsets across the full exponential power set $2^N$. While 1-minimality guarantees that no element in $S$ is redundant, proving global minimality requires an exhaustive search of all $2^N$ combinations, which is computationally intractable for large prompts.
-4. **Causal Attribution Boundary**: Isolating an empirical 1-minimal subset establishes a sound, minimal reproducer for the observed failure, but does **not** prove it is the unique or ultimate underlying "cause" of the failure in a complex model. In real-world neural agents, multiple distinct prompt subsets may independently trigger failure, prompt directives may exhibit non-monotonic interactions, and stochastic model sensitivity may yield different reproducing conditions across runs.
-
----
-
-## 6. Deterministic vs. Stochastic Probing
-
-AgentXRay supports both deterministic testbed targets and noisy, probabilistic language models:
-
-### Deterministic Probing
-
-* **Target Type**: Mock agents, schema validators, AST arithmetic parsers, and synthetic deterministic rules.
-* **Trial Model**: Single evaluation per candidate subset; failure is binary ($0$ or $1$).
-* **Use Case**: Fast regression testing, algorithm verification, and tool-interface validation.
-* **CLI Command**:
-  ```bash
-  python -m agentxray --mode deterministic
-  ```
-
-### Stochastic Probing with FDR Control
-
-* **Target Type**: Live neural LLMs (e.g. Llama-3 via Ollama, GPT-4o-mini) where model outputs exhibit probabilistic variation.
-* **Trial Model**: Repeated evaluations ($n=20$ trials per candidate subset).
-* **Statistical Rigor**:
-  * **Failure Probability**: Estimated with **Wilson score confidence intervals**.
-  * **Significance Testing**: Two-sample **Fisher's exact test** compares the candidate failure rate against each single-element removal.
-  * **Multiple Testing Correction**: **Benjamini-Hochberg False Discovery Rate (BH-FDR)** adjustment controls false positives across all ablation tests.
-  * **Empirical Classification**: Classifies outcomes into 5 rigorous tiers: `statistically_supported`, `observed_only`, `not_minimal`, `inconclusive`, and `not_applicable`.
-* **CLI Command**:
-  ```bash
-  python -m agentxray --mode stochastic --max-trials 300 --trials-per-candidate 20
-  ```
-
----
-
-## 7. Results, Evidence & Test Suite
-
-### Automated Test Coverage
-
-AgentXRay maintains a comprehensive, 100% offline test suite:
+A full Gradio application with execution traces, partition steps, method comparisons, and research disclosures:
 
 ```bash
-pytest
-# 597 passed in ~2.5s
+pip install -e ".[demo]"
+python app.py
+# Opens at http://127.0.0.1:7860
 ```
 
-*(Timing observed on reference macOS test hardware; runtimes may vary across environments.)*
+*(Hosted live on [Hugging Face Spaces](https://huggingface.co/spaces/meowshra/AgentXRay).)*
 
-The 268 tests cover:
-* **Algorithmic Correctness**: Delta debugging, greedy ablation, and seeded random search.
-* **Statistical Conformance**: Wilson intervals, Newcombe hybrid intervals, exact Fisher tests, binomial tests, and Benjamini-Hochberg FDR adjustments.
-* **Architectural Isolation**: Static inspection asserting zero ground-truth imports in search modules (`tests/test_isolation.py`).
-* **Empty-Set Minimality**: Handling singletons, empty subsets, and unconditional failure detection (`tests/test_minimizer.py`, `tests/test_baselines.py`).
-* **Safety & Cost Safeguards**: Spend tracking, request limits, timeout enforcement, and pre-flight dry runs.
+---
 
-### Cryptographic Benchmark Reproducibility
+## 7. Built-in Testbed Catalog
 
-AgentXRay includes automated verification of 7 cryptographically frozen benchmark artifacts from historical testbed executions:
+AgentXRay includes five calibrated testbeds that execute hermetically in memory at $0.00 spend:
+
+| Scenario Key | Domain | Description | Symptom |
+| :--- | :--- | :--- | :--- |
+| `currency_ast` | Prompt Syntax | Currency symbols (`$150`) injected into math expression. | AST `SyntaxError: invalid syntax` |
+| `trace_prompt_01` | Prompt Steering | Directive instructs agent to compute mentally, omitting required tool. | Policy breach: `Failed to invoke calculator` |
+| `trace_schema_01` | Tool Contract | Directive renames parameter `expression` to `expr`. | API rejection: `Missing argument: expression` |
+| `trace_env_01` | Infrastructure | Downstream calculator microservice returns HTTP 500 error. | `HTTP 500: Service Unavailable` |
+| `trace_null_01` | Control Baseline | Clean candidate pool with zero planted faults. | Clean passing control (`SUCCESS`) |
+
+---
+
+## 8. Test Suite & Verification
+
+AgentXRay maintains a comprehensive offline test suite with **640 passing automated tests**:
 
 ```bash
-pytest tests/test_phase_3_3_reproducibility.py -v
-# 9 passed in 0.04s
+pytest tests/
+# Output: 640 passed in 2.8s
 ```
 
-*(Timing observed on reference macOS test hardware.)*
-
-All 7 baseline files (including raw trial event logs, execution manifests, and summary tables) are verified against immutable SHA-256 digests to prevent silent drift or retroactive modification of historical evidence.
-
----
-
-## 8. Safety, Cost Controls & Provider Adapters
-
-AgentXRay includes safety envelopes to prevent runaway execution and unintended API usage. The implementation differentiates between code-enforced safeguards, client-side estimations, and configuration defaults:
-
-| Safety Mechanism | Enforcement Location | Default Setting | Scope & Operational Guarantees |
-| :--- | :--- | :---: | :--- |
-| **Default Provider** | `src/agentxray/providers/fake.py` | `FakeProvider` (in-memory) | **Code-enforced**: Purely in-memory string evaluation; makes 0 network socket calls and incurs $0.00 spend. |
-| **Trial Budget Cap** | `src/agentxray/runner.py` | 100 trials (det) / 300 (stoch) / 50 (pilot) | **Code-enforced**: Halts search immediately with `BudgetExhaustedError` when evaluations reach `--max-trials`. |
-| **Wall-Clock Timeout** | `src/agentxray/runner.py` | 60.0 seconds | **Code-enforced**: Halts execution with `TimeoutExceededError` if total run duration exceeds `--timeout`. (Per-request HTTP timeout is 20.0s). |
-| **Estimated Spend Cap** | `src/agentxray/agent_harness/cost_tracker.py` | $\le \$1.00$ USD ceiling | **Client-side enforced**: Tracks token usage against local pricing tables (`--max-spend`), halting with `CostBudgetExceededError`. *Note: Client-side estimation is a safety guardrail, not an absolute guarantee against provider-side billing discrepancies.* |
-| **Model Request Cap** | `src/agentxray/agent_harness/cost_tracker.py` | 150 requests | **Code-enforced**: Halts before or after model calls if requests reach `--max-model-requests` (capped at 120 for Ollama). |
-| **Pre-Flight Dry-Run** | `benchmarks/model_pilot/runner.py` | CLI flag: `--dry-run` | **Code-enforced**: Inspects task setup and calculates projected tokens/costs without opening network connections. |
-| **Loopback Binding** | `src/agentxray/providers/ollama_adapter.py` | `127.0.0.1` / `localhost` | **Code-enforced**: Validates base URL and rejects connections to remote network hosts. |
-| **Secret Scrubbing** | `src/agentxray/providers/openai_adapter.py` | Automatic regex filter | **Code-enforced**: Redacts API keys (`sk-...`) from all exception messages and error traces. |
-
-### Provider Execution Modes
-
-* **Offline Dry Run (Zero Network Calls, Zero Cost)**:
-  ```bash
-  python -m agentxray --mode model --provider openai --task calibrated_currency --dry-run
-  ```
-* **Ollama (Local Open-Weights via Local Loopback)**:
-  ```bash
-  python -m agentxray --mode model --provider ollama --model llama3.2:3b --task calibrated_currency
-  ```
-  *(Requires a locally running Ollama daemon at `http://127.0.0.1:11434` with the specified model pulled).*
-* **OpenAI (Live Commercial API — Explicit Opt-In Required)**:
-  ```bash
-  OPENAI_API_KEY="sk-..." python -m agentxray --mode model --provider openai --model gpt-4o-mini --task calibrated_currency --live --max-spend 1.00
-  ```
-  *(Live model experiments require explicit user authorization via the `--live` flag and a valid API key in the environment).*
+The test suite covers:
+- **Algorithmic Correctness**: Delta debugging partition logic, complement search, and 1-minimality verification.
+- **SDK & CLI Contracts**: Input validation, return type coercion, exception handling, and POSIX exit codes.
+- **Budget Envelopes**: Hard caps on evaluation counts and wall-clock execution timeouts.
+- **Architectural Isolation**: Static AST analysis ensuring zero ground-truth leakage into search loops.
+- **Cryptographic Reproducibility**: SHA-256 verification of frozen historical benchmark artifacts.
 
 ---
 
-## 9. Repository Navigation
+## 9. Operational Boundaries & Disclosures
 
-```
-AgentXRay/
-├── src/agentxray/              # Core framework package
-│   ├── __main__.py             # Unified CLI entry point
-│   ├── demo.py                 # Deterministic offline demonstration runner
-│   ├── minimizer.py            # Hierarchical 1-Minimal Delta Debugging (ddmin)
-│   ├── baselines.py            # Greedy Ablation and Seeded Random Search baselines
-│   ├── models.py               # Pydantic v2 domain models and result schemas
-│   ├── runner.py               # InterventionRunner with budget and timeout enforcement
-│   ├── statistics.py           # Wilson score CIs, Fisher exact, and BH-FDR adjustments
-│   ├── reporting.py            # JSON and Markdown report export utilities
-│   ├── stochastic_minimizer.py # Probabilistic delta debugging with FDR control
-│   ├── stochastic_baselines.py # Probabilistic greedy and random baselines
-│   ├── agent_harness/          # Controlled agent wrapper, evaluator, and AST mock tools
-│   └── providers/              # FakeProvider, OllamaProvider, and OpenAIProvider
-├── benchmarks/                 # Benchmark testbed and tasks
-│   ├── synthetic/              # Synthetic benchmark tasks (deterministic & stochastic)
-│   ├── model_pilot/            # Model-backed pilot benchmark tasks and calibration runners
-│   └── results/                # Cryptographically frozen historical benchmark artifacts
-├── tests/                      # 268 automated offline tests (pytest)
-│   ├── test_cli_demo.py        # Demo CLI execution, formatting, and report tests
-│   ├── test_minimizer.py       # Delta debugging unit and edge-case tests
-│   ├── test_baselines.py       # Baseline isolation and empty-set minimality tests
-│   ├── test_isolation.py       # Architectural import isolation verification
-│   └── test_phase_3_3_reproducibility.py # SHA-256 artifact integrity tests
-├── docs/                       # Technical design, decision records (ADRs), and research logs
-│   ├── TECHNICAL_PLAN.md       # Architectural specification and access mode boundaries
-│   ├── DECISIONS.md            # Architecture Decision Records (ADRs)
-│   └── PRIOR_ART_REVIEW.md     # Prior art review (CAR, DoVer, CausalTrace, Phoenix, LangSmith)
-└── pyproject.toml              # Build configuration and dependency declarations (PEP 621)
-```
+* **Pure Black-Box Operation**: AgentXRay treats agents and tools as black boxes. It does not inspect neural weights, hidden states, or proprietary chain-of-thought tokens.
+* **1-Minimality vs Global Minimality**: AgentXRay guarantees that the isolated subset is 1-minimal. Proving global minimality across all $2^N$ combinations would require exhaustive search.
+* **Deterministic Testbeds vs Live Stochastic Models**: Built-in testbeds execute deterministically in milliseconds at $0.00 spend. When diagnosing live stochastic LLMs (temperature > 0), multi-trial statistical sampling and Wilson score confidence intervals are required to handle probabilistic variation.
 
 ---
 
-## 10. Limitations
+## 10. License & Attribution
 
-* **1-Minimality vs. Global Minimality**: AgentXRay discovers 1-minimal subsets. It does not perform an exhaustive search of all $2^N$ combinations and does not claim that the discovered subset is the unique globally smallest subset across the full power set.
-* **Non-Monotonicity & Worst-Case Behavior**: Prompt directives may interact non-monotonically (e.g. Directive A and Directive B both induce failure independently, but pass when combined). Delta debugging handles non-monotonic behavior conservatively by re-verifying subsets, but worst-case non-monotonic landscapes can cause call counts to degrade toward exhaustive linear checking or trigger the configured trial budget limit (`--max-trials`).
-* **Causal Non-Uniqueness**: In complex language model pipelines, identifying a minimal failure-reproducing prompt subset demonstrates an active trigger condition, but does not prove that it is the sole underlying causal defect. Multiple independent directives may induce identical tool-calling errors.
-* **Synthetic Testbed vs. Real-World Model Generalization**: Deterministic testbed benchmarks verify algorithm mechanics and harness coordination under hermetic conditions. Real-world LLMs exhibit prompt sensitivity, context-length drift, and temperature noise, requiring AgentXRay's stochastic mode and false discovery rate control.
-
----
-
-## 11. License
-
-Apache 2.0. See [LICENSE](LICENSE) for details.
+AgentXRay is open-source software licensed under the [Apache-2.0 License](LICENSE).
+Built by **Yash Mishra** and AgentXRay contributors for observable, robust AI agent engineering.
